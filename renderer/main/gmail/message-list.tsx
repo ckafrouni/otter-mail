@@ -9,15 +9,29 @@ import {
   Text,
 } from "@glaze/core/components";
 import { ArchiveIcon, StarIcon, StarOffIcon, Trash2Icon } from "lucide-react";
-import { useMessages, useModifyMessage, useTrashMessage, useLabels } from "./hooks";
+import {
+  useMessages,
+  useCombinedMessages,
+  useModifyMessage,
+  useTrashMessage,
+  useLabelResolver,
+  type CombinedQuery,
+} from "./hooks";
 import { LabelChip } from "./label-chip";
 import type { GmailLabel, GmailMessageSummary, SyncStatus } from "./types";
 
+type ResolveLabel = (accountId: string | undefined, labelId: string) => GmailLabel | undefined;
+
 type MessageListProps = {
+  /** Active account — used for account-mode queries and as a fallback owner id. */
   accountId: string;
   labelId: string;
+  /** When set, the list is cross-account (Combined mailbox). */
+  combined: CombinedQuery | null;
+  /** All connected account ids, for resolving label chips across accounts. */
+  accountIds: string[];
   selectedMessageId: string | null;
-  onSelectMessage: (messageId: string) => void;
+  onSelectMessage: (messageId: string, accountId: string) => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
   syncStatus: SyncStatus | null;
@@ -44,8 +58,9 @@ type MessageRowProps = {
   message: GmailMessageSummary;
   selected: boolean;
   onSelect: () => void;
+  /** Fallback owner id when a summary has no accountId (e.g. live search results). */
   accountId: string;
-  labelsById: Map<string, GmailLabel>;
+  resolveLabel: ResolveLabel;
 };
 
 function MessageRow({
@@ -53,13 +68,15 @@ function MessageRow({
   selected,
   onSelect,
   accountId,
-  labelsById,
+  resolveLabel,
 }: MessageRowProps) {
   const modifyMessage = useModifyMessage();
   const trashMessage = useTrashMessage();
 
+  const ownerAccountId = message.accountId ?? accountId;
+
   const messageLabels = message.labelIds
-    .map((id) => labelsById.get(id))
+    .map((id) => resolveLabel(ownerAccountId, id))
     .filter((l): l is GmailLabel => l != null && l.type === "user");
 
   const handleStarToggle = (e: React.MouseEvent) => {
@@ -70,13 +87,13 @@ function MessageRow({
     });
     if (message.starred) {
       void modifyMessage.mutateAsync({
-        accountId,
+        accountId: ownerAccountId,
         messageId: message.id,
         removeLabelIds: ["STARRED"],
       });
     } else {
       void modifyMessage.mutateAsync({
-        accountId,
+        accountId: ownerAccountId,
         messageId: message.id,
         addLabelIds: ["STARRED"],
       });
@@ -87,7 +104,7 @@ function MessageRow({
     e.stopPropagation();
     console.log("[MessageList:archive]", { messageId: message.id });
     void modifyMessage.mutateAsync({
-      accountId,
+      accountId: ownerAccountId,
       messageId: message.id,
       removeLabelIds: ["INBOX"],
     });
@@ -96,7 +113,7 @@ function MessageRow({
   const handleTrash = (e: React.MouseEvent) => {
     e.stopPropagation();
     console.log("[MessageList:trash]", { messageId: message.id });
-    void trashMessage.mutateAsync({ accountId, messageId: message.id });
+    void trashMessage.mutateAsync({ accountId: ownerAccountId, messageId: message.id });
   };
 
   return (
@@ -206,17 +223,22 @@ function syncLabel(status: SyncStatus): string {
 export function MessageList({
   accountId,
   labelId,
+  combined,
+  accountIds,
   selectedMessageId,
   onSelectMessage,
   searchQuery,
   onSearchChange,
   syncStatus,
 }: MessageListProps) {
-  const messagesQuery = useMessages(accountId, labelId, searchQuery);
-  const labelsQuery = useLabels(accountId);
-  const labelsById = new Map(
-    (labelsQuery.data ?? []).map((l) => [l.id, l]),
-  );
+  const isCombined = combined != null;
+
+  // Both hooks are always called (rules of hooks); the inactive one is disabled.
+  const accountMessages = useMessages(isCombined ? null : accountId, labelId, searchQuery);
+  const combinedMessages = useCombinedMessages(combined ?? { kind: "inbox" }, isCombined);
+  const messagesQuery = isCombined ? combinedMessages : accountMessages;
+
+  const resolveLabel = useLabelResolver(isCombined ? accountIds : [accountId]);
 
   const allMessages: GmailMessageSummary[] =
     messagesQuery.data?.pages.flatMap((p) => p.messages) ?? [];
@@ -234,16 +256,18 @@ export function MessageList({
     <ScrollArea
       toolbar={
         <Toolbar>
-          <ToolbarRow>
-            <ToolbarSearchButton
-              value={searchQuery}
-              onChange={(v) => {
-                console.log("[MessageList:searchChange]", { q: v });
-                onSearchChange(v);
-              }}
-              size="large"
-            />
-          </ToolbarRow>
+          {!isCombined ? (
+            <ToolbarRow>
+              <ToolbarSearchButton
+                value={searchQuery}
+                onChange={(v) => {
+                  console.log("[MessageList:searchChange]", { q: v });
+                  onSearchChange(v);
+                }}
+                size="large"
+              />
+            </ToolbarRow>
+          ) : null}
           {syncStatus?.syncing ? (
             <ToolbarRow>
               <div className="flex items-center gap-1.5 px-1 py-0.5">
@@ -287,17 +311,17 @@ export function MessageList({
         <>
           {allMessages.map((message) => (
             <MessageRow
-              key={message.id}
+              key={`${message.accountId ?? accountId}:${message.id}`}
               message={message}
               selected={selectedMessageId === message.id}
               onSelect={() => {
                 console.log("[MessageList:selectMessage]", {
                   messageId: message.id,
                 });
-                onSelectMessage(message.id);
+                onSelectMessage(message.id, message.accountId ?? accountId);
               }}
               accountId={accountId}
-              labelsById={labelsById}
+              resolveLabel={resolveLabel}
             />
           ))}
           {hasNextPage ? (

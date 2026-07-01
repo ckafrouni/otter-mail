@@ -85,6 +85,7 @@ function getDb(): DatabaseSync {
 // ── Row mapping ───────────────────────────────────────────────────────────────
 
 interface MessageRow {
+  accountId: string;
   id: string;
   threadId: string;
   fromName: string;
@@ -116,6 +117,7 @@ function parseLabelIds(json: string): string[] {
 function rowToSummary(row: MessageRow): GmailMessageSummary {
   return {
     id: row.id,
+    accountId: row.accountId,
     threadId: row.threadId,
     fromName: row.fromName,
     fromEmail: row.fromEmail,
@@ -338,6 +340,99 @@ export function countMessagesForLabel(accountId: string, labelId: string): numbe
     )
     .get(accountId, labelId) as unknown as { n: number };
   return row?.n ?? 0;
+}
+
+// ── Combined (cross-account) reads ──────────────────────────────────────────
+
+/**
+ * Combined view backed by a system label id shared across every account
+ * (e.g. "INBOX", "STARRED"). Unions all accounts' messages carrying that label.
+ */
+export function getCombinedMessagesByLabelId(
+  labelId: string,
+  offset: number,
+  limit: number,
+): { messages: GmailMessageSummary[]; hasMore: boolean } {
+  const d = getDb();
+  const rows = d
+    .prepare(`
+      SELECT m.* FROM messages m
+        JOIN message_labels ml
+          ON ml.accountId = m.accountId AND ml.messageId = m.id
+       WHERE ml.labelId = ?
+       ORDER BY m.date DESC
+       LIMIT ? OFFSET ?
+    `)
+    .all(labelId, limit + 1, offset) as unknown as MessageRow[];
+
+  const hasMore = rows.length > limit;
+  return { messages: rows.slice(0, limit).map(rowToSummary), hasMore };
+}
+
+/**
+ * Custom-view query: unions messages across all accounts that carry a user
+ * label whose *name* is in `labelNames`. Labels match by name (not id) because
+ * the same tag has a different id in each account.
+ */
+export function getCombinedMessagesByLabelNames(
+  labelNames: string[],
+  offset: number,
+  limit: number,
+): { messages: GmailMessageSummary[]; hasMore: boolean } {
+  if (labelNames.length === 0) return { messages: [], hasMore: false };
+  const d = getDb();
+  const placeholders = labelNames.map(() => "?").join(", ");
+  const rows = d
+    .prepare(`
+      SELECT DISTINCT m.* FROM messages m
+        JOIN message_labels ml
+          ON ml.accountId = m.accountId AND ml.messageId = m.id
+        JOIN labels l
+          ON l.accountId = m.accountId AND l.id = ml.labelId
+       WHERE l.type = 'user' AND l.name IN (${placeholders})
+       ORDER BY m.date DESC
+       LIMIT ? OFFSET ?
+    `)
+    .all(...labelNames, limit + 1, offset) as unknown as MessageRow[];
+
+  const hasMore = rows.length > limit;
+  return { messages: rows.slice(0, limit).map(rowToSummary), hasMore };
+}
+
+export interface AggregatedLabel {
+  name: string;
+  unread: number;
+  color?: { backgroundColor: string; textColor: string };
+}
+
+/** Distinct user-label names across all accounts, for the custom-view picker. */
+export function listAllUserLabels(): AggregatedLabel[] {
+  const d = getDb();
+  const rows = d
+    .prepare(`
+      SELECT name,
+             SUM(COALESCE(unread, 0)) AS unread,
+             MAX(bgColor)   AS bgColor,
+             MAX(textColor) AS textColor
+        FROM labels
+       WHERE type = 'user'
+       GROUP BY name
+       ORDER BY name COLLATE NOCASE
+    `)
+    .all() as unknown as {
+    name: string;
+    unread: number | null;
+    bgColor: string | null;
+    textColor: string | null;
+  }[];
+  return rows.map((r) => ({
+    name: r.name,
+    unread: r.unread ?? 0,
+    color:
+      r.bgColor && r.textColor
+        ? { backgroundColor: r.bgColor, textColor: r.textColor }
+        : undefined,
+  }));
 }
 
 // ── Labels ──────────────────────────────────────────────────────────────────

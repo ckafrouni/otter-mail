@@ -16,6 +16,8 @@ export type GmailLabel = {
 
 export type GmailMessageSummary = {
   id: string;
+  /** Owning account — populated on reads so combined (cross-account) views can route. */
+  accountId?: string;
   threadId: string;
   fromName: string;
   fromEmail: string;
@@ -34,6 +36,20 @@ export type GmailMessageDetail = GmailMessageSummary & {
   bodyText: string | null;
   cc?: string;
   attachments: { id: string; filename: string; mimeType: string; size: number }[];
+};
+
+/** A distinct user-label name aggregated across all accounts (custom-view picker). */
+export type AggregatedLabel = {
+  name: string;
+  unread: number;
+  color?: { backgroundColor: string; textColor: string };
+};
+
+/** A user-defined combined view: shows messages carrying any of these label names. */
+export type CustomView = {
+  id: string;
+  name: string;
+  labelNames: string[];
 };
 
 /** Per-account local-sync progress, exposed to the renderer for status UI. */

@@ -21,6 +21,8 @@ export interface GmailLabel {
 
 export interface GmailMessageSummary {
   id: string;
+  /** Owning account — populated on reads so combined (cross-account) views can route. */
+  accountId?: string;
   threadId: string;
   fromName: string;
   fromEmail: string;

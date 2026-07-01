@@ -1,13 +1,20 @@
 import { useEffect, useRef } from "react";
 import {
   useQuery,
+  useQueries,
   useMutation,
   useInfiniteQuery,
   useQueryClient,
   type InfiniteData,
 } from "@tanstack/react-query";
 import { gmailApi, type ModifyMessageParams, type SendMessageParams } from "./api";
-import type { GmailAccount, GmailLabel, GmailMessageDetail, SyncStatus } from "./types";
+import type {
+  GmailAccount,
+  GmailLabel,
+  GmailMessageDetail,
+  AggregatedLabel,
+  SyncStatus,
+} from "./types";
 import type { ListMessagesResult } from "./api";
 
 const STALE_TIME = 30_000;
@@ -21,6 +28,9 @@ export const queryKeys = {
     ["gmail:messages", accountId, labelId, q] as const,
   message: (accountId: string, messageId: string) =>
     ["gmail:message", accountId, messageId] as const,
+  allUserLabels: () => ["gmail:allUserLabels"] as const,
+  combinedMessages: (kind: string, labelNames?: string[]) =>
+    ["gmail:combinedMessages", kind, labelNames] as const,
 };
 
 // ---- Credentials ----
@@ -107,6 +117,83 @@ export function useMessages(
     enabled: accountId != null,
     staleTime: STALE_TIME,
   });
+}
+
+// ---- Combined (cross-account) views ----
+
+export type CombinedQuery =
+  | { kind: "inbox" }
+  | { kind: "view"; viewId: string; labelNames: string[] };
+
+export function useCombinedMessages(query: CombinedQuery, enabled = true) {
+  const isView = query.kind === "view";
+  const labelNames = isView ? query.labelNames : undefined;
+  return useInfiniteQuery<
+    ListMessagesResult,
+    Error,
+    InfiniteData<ListMessagesResult>,
+    ReturnType<typeof queryKeys.combinedMessages>,
+    string | undefined
+  >({
+    queryKey: queryKeys.combinedMessages(
+      isView ? `view:${query.viewId}` : "inbox",
+      labelNames,
+    ),
+    queryFn: ({ pageParam }) => {
+      console.log("[hooks:useCombinedMessages] fetching", { query, pageToken: pageParam });
+      return gmailApi.listCombinedMessages({
+        labelIds: isView ? undefined : ["INBOX"],
+        labelNames,
+        pageToken: pageParam,
+        maxResults: 50,
+      });
+    },
+    initialPageParam: undefined,
+    getNextPageParam: (lastPage) => lastPage.nextPageToken,
+    enabled: enabled && (!isView || (labelNames?.length ?? 0) > 0),
+    staleTime: STALE_TIME,
+  });
+}
+
+export function useAllUserLabels(enabled = true) {
+  return useQuery<AggregatedLabel[]>({
+    queryKey: queryKeys.allUserLabels(),
+    queryFn: () => {
+      console.log("[hooks:useAllUserLabels] fetching aggregated labels");
+      return gmailApi.listAllUserLabels();
+    },
+    enabled,
+    staleTime: STALE_TIME,
+  });
+}
+
+/**
+ * Resolves a message's label id back to its GmailLabel across accounts.
+ * Fetches labels for each account and returns a lookup keyed by
+ * `${accountId}:${labelId}` (user-label ids differ per account).
+ */
+export function useLabelResolver(accountIds: string[]): (
+  accountId: string | undefined,
+  labelId: string,
+) => GmailLabel | undefined {
+  const results = useQueries({
+    queries: accountIds.map((id) => ({
+      queryKey: queryKeys.labels(id),
+      queryFn: () => gmailApi.listLabels(id),
+      staleTime: STALE_TIME,
+    })),
+  });
+
+  const map = new Map<string, GmailLabel>();
+  results.forEach((r, i) => {
+    const acc = accountIds[i];
+    for (const label of (r.data as GmailLabel[] | undefined) ?? []) {
+      map.set(`${acc}:${label.id}`, label);
+    }
+  });
+
+  return (accountId, labelId) =>
+    accountId ? map.get(`${accountId}:${labelId}`) : undefined;
 }
 
 // ---- Message Detail ----

@@ -35,6 +35,7 @@ import {
   SettingsIcon,
   PlusIcon,
   ChevronDownIcon,
+  LayersIcon,
 } from "lucide-react";
 import {
   useAccounts,
@@ -43,7 +44,13 @@ import {
   useRemoveAccount,
   useCreateLabel,
 } from "./hooks";
-import type { GmailLabel } from "./types";
+import type { GmailLabel, CustomView } from "./types";
+import { ViewEditorDialog } from "./view-editor-dialog";
+import {
+  COMBINED_ACCOUNT_ID,
+  COMBINED_INBOX_LABEL,
+  VIEW_LABEL_PREFIX,
+} from "./custom-views";
 
 const SYSTEM_LABEL_MAP: Record<string, { name: string; icon: React.ReactNode }> = {
   INBOX: { name: "Inbox", icon: <InboxIcon className="size-4" /> },
@@ -159,6 +166,9 @@ type AccountsSidebarProps = {
   selectedLabelId: string;
   onSelectLabel: (labelId: string) => void;
   onCompose: () => void;
+  views: CustomView[];
+  onSaveView: (view: { id?: string; name: string; labelNames: string[] }) => void;
+  onDeleteView: (id: string) => void;
 };
 
 function getInitials(name: string): string {
@@ -175,15 +185,22 @@ export function AccountsSidebar({
   selectedLabelId,
   onSelectLabel,
   onCompose,
+  views,
+  onSaveView,
+  onDeleteView,
 }: AccountsSidebarProps) {
+  const isCombined = selectedAccountId === COMBINED_ACCOUNT_ID;
+
   const accountsQuery = useAccounts();
-  const labelsQuery = useLabels(selectedAccountId);
+  const labelsQuery = useLabels(isCombined ? null : selectedAccountId);
   const addAccount = useAddAccount();
   const removeAccount = useRemoveAccount();
   const createLabel = useCreateLabel();
 
   const [createLabelOpen, setCreateLabelOpen] = useState(false);
   const [newLabelName, setNewLabelName] = useState("");
+  const [viewEditorOpen, setViewEditorOpen] = useState(false);
+  const [editingView, setEditingView] = useState<CustomView | null>(null);
 
   const accounts = accountsQuery.data ?? [];
   const labels: GmailLabel[] = labelsQuery.data ?? [];
@@ -258,29 +275,48 @@ export function AccountsSidebar({
               className="flex items-center gap-2 w-full rounded-control px-2 py-1.5 hover:bg-control-subtle transition-colors min-w-0"
               aria-label="Switch account"
             >
-              <Avatar size="small">
-                {selectedAccount?.picture ? (
-                  <AvatarImage
-                    src={selectedAccount.picture}
-                    alt={selectedAccount.name}
-                  />
-                ) : null}
-                <AvatarFallback>
-                  {selectedAccount ? getInitials(selectedAccount.name) : "?"}
-                </AvatarFallback>
-              </Avatar>
+              {isCombined ? (
+                <div className="size-6 shrink-0 rounded-full bg-control flex items-center justify-center">
+                  <LayersIcon className="size-3.5 text-secondary" />
+                </div>
+              ) : (
+                <Avatar size="small">
+                  {selectedAccount?.picture ? (
+                    <AvatarImage
+                      src={selectedAccount.picture}
+                      alt={selectedAccount.name}
+                    />
+                  ) : null}
+                  <AvatarFallback>
+                    {selectedAccount ? getInitials(selectedAccount.name) : "?"}
+                  </AvatarFallback>
+                </Avatar>
+              )}
               <div className="flex flex-col min-w-0 flex-1 text-left">
                 <Text variant="small-strong" truncate>
-                  {selectedAccount?.name ?? "No account"}
+                  {isCombined ? "Combined" : (selectedAccount?.name ?? "No account")}
                 </Text>
                 <Text variant="mini" color="secondary" truncate>
-                  {selectedAccount?.email ?? ""}
+                  {isCombined ? "All mailboxes" : (selectedAccount?.email ?? "")}
                 </Text>
               </div>
               <ChevronDownIcon className="size-3.5 shrink-0 text-tertiary" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
+            {accounts.length > 1 ? (
+              <>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    console.log("[AccountsSidebar:selectAccount]", { accountId: COMBINED_ACCOUNT_ID });
+                    onSelectAccount(COMBINED_ACCOUNT_ID);
+                  }}
+                >
+                  Combined (all mailboxes)
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            ) : null}
             {accounts.map((account) => (
               <DropdownMenuItem
                 key={account.id}
@@ -326,6 +362,82 @@ export function AccountsSidebar({
         </Button>
       </div>
 
+      {isCombined ? (
+        <SidebarList>
+          {/* Combined merged inbox */}
+          <SidebarListItem
+            selected={selectedLabelId === COMBINED_INBOX_LABEL}
+            onClick={() => {
+              console.log("[AccountsSidebar:selectLabel]", { labelId: COMBINED_INBOX_LABEL });
+              onSelectLabel(COMBINED_INBOX_LABEL);
+            }}
+            icon={<InboxIcon className="size-4" />}
+            title="Inbox"
+          />
+
+          {/* Custom views */}
+          <SidebarListGroup
+            title="Views"
+            collapsible
+            defaultOpen
+            actions={
+              <Button
+                iconOnly
+                variant="transparent"
+                size="small"
+                aria-label="New view"
+                onClick={() => {
+                  setEditingView(null);
+                  setViewEditorOpen(true);
+                }}
+              >
+                <PlusIcon className="size-3.5" />
+              </Button>
+            }
+          >
+            {views.length === 0 ? (
+              <div className="px-3 py-1.5">
+                <Text variant="mini" color="tertiary">
+                  Tap + to create a view from your labels.
+                </Text>
+              </div>
+            ) : (
+              views.map((view) => {
+                const key = `${VIEW_LABEL_PREFIX}${view.id}`;
+                return (
+                  <SidebarListItem
+                    key={view.id}
+                    selected={selectedLabelId === key}
+                    onClick={() => {
+                      console.log("[AccountsSidebar:selectLabel]", { labelId: key });
+                      onSelectLabel(key);
+                    }}
+                  >
+                    <LayersIcon className="size-4 shrink-0 text-tertiary" />
+                    <SidebarListItemContent>
+                      <SidebarListItemTitle>{view.name}</SidebarListItemTitle>
+                    </SidebarListItemContent>
+                    <SidebarListItemAccessory>
+                      <button
+                        type="button"
+                        aria-label={`Edit ${view.name}`}
+                        className="text-tertiary hover:text-primary transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingView(view);
+                          setViewEditorOpen(true);
+                        }}
+                      >
+                        <SettingsIcon className="size-3.5" />
+                      </button>
+                    </SidebarListItemAccessory>
+                  </SidebarListItem>
+                );
+              })
+            )}
+          </SidebarListGroup>
+        </SidebarList>
+      ) : (
       <SidebarList>
         {/* System labels */}
         {systemLabels.length > 0 ? (
@@ -396,6 +508,15 @@ export function AccountsSidebar({
           />
         ) : null}
       </SidebarList>
+      )}
+
+      <ViewEditorDialog
+        open={viewEditorOpen}
+        onOpenChange={setViewEditorOpen}
+        view={editingView}
+        onSave={onSaveView}
+        onDelete={onDeleteView}
+      />
 
       <Dialog
         open={createLabelOpen}
