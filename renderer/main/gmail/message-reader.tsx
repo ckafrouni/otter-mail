@@ -285,10 +285,9 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
           <div className="flex-1">
             {message.bodyHtml ? (
               <iframe
-                sandbox=""
+                sandbox="allow-same-origin"
                 srcDoc={message.bodyHtml}
                 className="w-full border-none rounded-card"
-                style={{ minHeight: 400 }}
                 title="Message body"
                 onLoad={(e) => {
                   const iframe = e.currentTarget;
