@@ -59,6 +59,19 @@ export function useLabels(accountId: string | null) {
   });
 }
 
+export function useCreateLabel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ accountId, name }: { accountId: string; name: string }) => {
+      console.log("[hooks:useCreateLabel] creating label", { accountId, name });
+      return gmailApi.createLabel(accountId, name);
+    },
+    onSuccess: (_data, { accountId }) => {
+      void qc.invalidateQueries({ queryKey: queryKeys.labels(accountId) });
+    },
+  });
+}
+
 // ---- Messages (paginated) ----
 export function useMessages(
   accountId: string | null,

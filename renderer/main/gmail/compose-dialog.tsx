@@ -27,6 +27,8 @@ export function ComposeDialog({
 }: ComposeDialogProps) {
   const [to, setTo] = useState(prefill?.to ?? "");
   const [cc, setCc] = useState("");
+  const [bcc, setBcc] = useState("");
+  const [showCcBcc, setShowCcBcc] = useState(false);
   const [subject, setSubject] = useState(prefill?.subject ?? "");
   const [body, setBody] = useState(prefill?.body ?? "");
 
@@ -38,6 +40,7 @@ export function ComposeDialog({
       accountId,
       to,
       cc: cc.trim() || undefined,
+      bcc: bcc.trim() || undefined,
       subject,
       body,
     });
@@ -45,6 +48,8 @@ export function ComposeDialog({
     onOpenChange(false);
     setTo(prefill?.to ?? "");
     setCc("");
+    setBcc("");
+    setShowCcBcc(false);
     setSubject(prefill?.subject ?? "");
     setBody(prefill?.body ?? "");
   };
@@ -64,21 +69,45 @@ export function ComposeDialog({
     >
       <div className="flex flex-col gap-3 p-1">
         <Field label="To" orientation="vertical">
-          <Input
-            type="email"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            placeholder="recipient@example.com"
-          />
+          <div className="flex items-center gap-2">
+            <Input
+              type="email"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              placeholder="recipient@example.com"
+              className="flex-1"
+            />
+            {!showCcBcc ? (
+              <button
+                type="button"
+                onClick={() => setShowCcBcc(true)}
+                className="shrink-0 text-mini text-tertiary hover:text-secondary transition-colors"
+              >
+                Cc/Bcc
+              </button>
+            ) : null}
+          </div>
         </Field>
-        <Field label="Cc" orientation="vertical">
-          <Input
-            type="email"
-            value={cc}
-            onChange={(e) => setCc(e.target.value)}
-            placeholder="cc@example.com"
-          />
-        </Field>
+        {showCcBcc ? (
+          <>
+            <Field label="Cc" orientation="vertical">
+              <Input
+                type="email"
+                value={cc}
+                onChange={(e) => setCc(e.target.value)}
+                placeholder="cc@example.com"
+              />
+            </Field>
+            <Field label="Bcc" orientation="vertical">
+              <Input
+                type="email"
+                value={bcc}
+                onChange={(e) => setBcc(e.target.value)}
+                placeholder="bcc@example.com"
+              />
+            </Field>
+          </>
+        ) : null}
         <Field label="Subject" orientation="vertical">
           <Input
             value={subject}

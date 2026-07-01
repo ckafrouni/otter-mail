@@ -110,6 +110,21 @@ export async function listLabels(accountId: string): Promise<GmailLabel[]> {
   }));
 }
 
+// ── createLabel ──────────────────────────────────────────────────────────────
+
+export async function createLabel(accountId: string, name: string): Promise<GmailLabel> {
+  const data = (await gmailFetch(accountId, "/labels", {
+    method: "POST",
+    body: JSON.stringify({
+      name,
+      labelListVisibility: "labelShow",
+      messageListVisibility: "show",
+    }),
+  })) as { id: string; name: string };
+
+  return { id: data.id, name: data.name, type: "user" };
+}
+
 // ── parseFrom ─────────────────────────────────────────────────────────────────
 
 function parseFrom(from: string): { fromName: string; fromEmail: string } {

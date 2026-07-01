@@ -66,6 +66,9 @@ export const gmailApi = {
   listLabels: (accountId: string): Promise<GmailLabel[]> =>
     ipc("gmail:listLabels", { accountId }),
 
+  createLabel: (accountId: string, name: string): Promise<GmailLabel> =>
+    ipc("gmail:createLabel", { accountId, name }),
+
   listMessages: (params: ListMessagesParams): Promise<ListMessagesResult> =>
     ipc("gmail:listMessages", params),
 

@@ -19,6 +19,7 @@ import {
 } from "../services/gmail-oauth.js";
 import {
   listLabels,
+  createLabel,
   listMessages,
   getMessage,
   modifyMessage,
@@ -129,6 +130,20 @@ export function registerGmailHandlers(): void {
       return await listLabels(accountId);
     } catch (err) {
       console.log("[gmail:listLabels] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:createLabel
+  ipcMain.handle("gmail:createLabel", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:createLabel]", { accountId: p?.accountId, name: p?.name });
+    try {
+      const accountId = assertString(p?.accountId, "accountId");
+      const name = assertString(p?.name, "name");
+      return await createLabel(accountId, name);
+    } catch (err) {
+      console.log("[gmail:createLabel] error", { error: String(err) });
       throw err;
     }
   });

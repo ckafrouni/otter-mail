@@ -1,20 +1,28 @@
+import { useState } from "react";
 import type React from "react";
 import {
   Sidebar,
   SidebarList,
   SidebarListItem,
+  SidebarListItemContent,
+  SidebarListItemTitle,
+  SidebarListItemAccessory,
   SidebarListGroup,
   SidebarFooter,
   Avatar,
   AvatarImage,
   AvatarFallback,
   Button,
+  Dialog,
+  Field,
+  Input,
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   Text,
+  toast,
 } from "@glaze/core/components";
 import {
   PencilIcon,
@@ -28,7 +36,13 @@ import {
   PlusIcon,
   ChevronDownIcon,
 } from "lucide-react";
-import { useAccounts, useLabels, useAddAccount, useRemoveAccount } from "./hooks";
+import {
+  useAccounts,
+  useLabels,
+  useAddAccount,
+  useRemoveAccount,
+  useCreateLabel,
+} from "./hooks";
 import type { GmailLabel } from "./types";
 
 const SYSTEM_LABEL_MAP: Record<string, { name: string; icon: React.ReactNode }> = {
@@ -78,16 +92,15 @@ function sortLabelTree(nodes: LabelTreeNode[]): void {
   for (const node of nodes) sortLabelTree(node.children);
 }
 
+// Gmail's own label icon is a solid filled tag — colored per label when Gmail
+// has a color set, otherwise a neutral solid tag (via the design system's
+// automatic solid rendering for semantic gray on icons).
 function labelIcon(label?: GmailLabel): React.ReactNode {
-  if (label?.color?.backgroundColor) {
-    return (
-      <span
-        className="block size-2.5 rounded-full shrink-0"
-        style={{ backgroundColor: label.color.backgroundColor }}
-      />
-    );
+  const color = label?.color?.backgroundColor;
+  if (color) {
+    return <TagIcon className="size-4 shrink-0 fill-current" style={{ color }} />;
   }
-  return <TagIcon className="size-4" />;
+  return <TagIcon className="size-4 shrink-0 text-tertiary" />;
 }
 
 function renderLabelTreeNode(
@@ -96,7 +109,7 @@ function renderLabelTreeNode(
   onSelectLabel: (labelId: string) => void,
 ): React.ReactNode {
   const { label, children } = node;
-  const accessory = label?.unread && label.unread > 0 ? label.unread : undefined;
+  const unreadCount = label?.unread && label.unread > 0 ? label.unread : undefined;
   const handleSelect = label
     ? () => {
         console.log("[AccountsSidebar:selectLabel]", { labelId: label.id });
@@ -110,10 +123,17 @@ function renderLabelTreeNode(
         key={node.key}
         selected={label ? selectedLabelId === label.id : false}
         onClick={handleSelect}
-        icon={labelIcon(label)}
-        title={node.segment}
-        accessory={accessory}
-      />
+      >
+        {labelIcon(label)}
+        <SidebarListItemContent>
+          <SidebarListItemTitle className={unreadCount ? "text-strong" : undefined}>
+            {node.segment}
+          </SidebarListItemTitle>
+        </SidebarListItemContent>
+        {unreadCount !== undefined ? (
+          <SidebarListItemAccessory>{unreadCount}</SidebarListItemAccessory>
+        ) : null}
+      </SidebarListItem>
     );
   }
 
@@ -126,7 +146,7 @@ function renderLabelTreeNode(
       onClick={handleSelect}
       icon={labelIcon(label)}
       title={node.segment}
-      accessory={accessory}
+      accessory={unreadCount}
     >
       {children.map((child) => renderLabelTreeNode(child, selectedLabelId, onSelectLabel))}
     </SidebarListItem>
@@ -160,6 +180,10 @@ export function AccountsSidebar({
   const labelsQuery = useLabels(selectedAccountId);
   const addAccount = useAddAccount();
   const removeAccount = useRemoveAccount();
+  const createLabel = useCreateLabel();
+
+  const [createLabelOpen, setCreateLabelOpen] = useState(false);
+  const [newLabelName, setNewLabelName] = useState("");
 
   const accounts = accountsQuery.data ?? [];
   const labels: GmailLabel[] = labelsQuery.data ?? [];
@@ -194,6 +218,20 @@ export function AccountsSidebar({
   const handleOpenSettings = () => {
     console.log("[AccountsSidebar:openSettings]");
     void window.glazeAPI.glaze.ipc.invoke("window:openSettings");
+  };
+
+  const handleCreateLabel = async () => {
+    const name = newLabelName.trim();
+    if (!name || !selectedAccountId) return;
+    console.log("[AccountsSidebar:createLabel]", { name });
+    try {
+      await createLabel.mutateAsync({ accountId: selectedAccountId, name });
+      toast.success(`Label "${name}" created`);
+      setCreateLabelOpen(false);
+      setNewLabelName("");
+    } catch {
+      toast.error("Failed to create label");
+    }
   };
 
   return (
@@ -328,8 +366,23 @@ export function AccountsSidebar({
         )}
 
         {/* User labels (rendered as a tree — Gmail nests labels via "/" in the name) */}
-        {userLabelTree.length > 0 ? (
-          <SidebarListGroup title="Labels">
+        {selectedAccountId ? (
+          <SidebarListGroup
+            title="Labels"
+            collapsible
+            defaultOpen
+            actions={
+              <Button
+                iconOnly
+                variant="transparent"
+                size="small"
+                aria-label="New label"
+                onClick={() => setCreateLabelOpen(true)}
+              >
+                <PlusIcon className="size-3.5" />
+              </Button>
+            }
+          >
             {userLabelTree.map((node) => renderLabelTreeNode(node, selectedLabelId, onSelectLabel))}
           </SidebarListGroup>
         ) : null}
@@ -343,6 +396,25 @@ export function AccountsSidebar({
           />
         ) : null}
       </SidebarList>
+
+      <Dialog
+        open={createLabelOpen}
+        onOpenChange={setCreateLabelOpen}
+        title="New Label"
+        confirmLabel="Create"
+        confirmVariant="accent"
+        confirmDisabled={!newLabelName.trim() || createLabel.isPending}
+        onConfirm={handleCreateLabel}
+      >
+        <Field label="Name" orientation="vertical">
+          <Input
+            value={newLabelName}
+            onChange={(e) => setNewLabelName(e.target.value)}
+            placeholder="e.g. 04 Follow-up"
+            autoFocus
+          />
+        </Field>
+      </Dialog>
     </Sidebar>
   );
 }

@@ -9,6 +9,10 @@ import {
   EmptyState,
   Text,
   toast,
+  CollapsibleRoot,
+  CollapsibleTrigger,
+  CollapsibleContent,
+  CollapsibleChevron,
 } from "@glaze/core/components";
 import {
   ArchiveIcon,
@@ -59,6 +63,7 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
   const getAttachment = useGetAttachment();
 
   const [composeOpen, setComposeOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [replyPrefill, setReplyPrefill] = useState<{
     to: string;
     subject: string;
@@ -68,6 +73,10 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
   const hasAutoMarked = useRef<string | null>(null);
 
   const message = messageQuery.data;
+
+  useEffect(() => {
+    setDetailsOpen(false);
+  }, [messageId]);
 
   // Auto-mark as read when message opens
   useEffect(() => {
@@ -267,24 +276,36 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
             <Text variant="large-strong" as="h1">
               {message.subject || "(no subject)"}
             </Text>
-            <div className="flex items-center gap-1">
-              <Text variant="small-strong">
-                {message.fromName || message.fromEmail}
-              </Text>
-              {message.fromName ? (
-                <Text variant="small" color="secondary">
-                  &lt;{message.fromEmail}&gt;
-                </Text>
-              ) : null}
-            </div>
-            <Text variant="small" color="secondary">
-              To: {message.to}
+            <Text variant="small-strong">
+              {message.fromName || message.fromEmail}
             </Text>
-            {message.cc ? (
-              <Text variant="small" color="secondary">
-                Cc: {message.cc}
-              </Text>
-            ) : null}
+
+            <CollapsibleRoot open={detailsOpen} onOpenChange={setDetailsOpen}>
+              <CollapsibleTrigger className="-ml-1 flex items-center gap-1 rounded-control px-1 py-0.5 hover:bg-control-subtle transition-colors">
+                <CollapsibleChevron />
+                <Text variant="small" color="secondary" truncate>
+                  {detailsOpen ? "Hide details" : `to ${message.to}`}
+                </Text>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="flex flex-col gap-0.5 pt-1 pl-1">
+                  {message.fromName ? (
+                    <Text variant="small" color="secondary">
+                      From: {message.fromName} &lt;{message.fromEmail}&gt;
+                    </Text>
+                  ) : null}
+                  <Text variant="small" color="secondary">
+                    To: {message.to}
+                  </Text>
+                  {message.cc ? (
+                    <Text variant="small" color="secondary">
+                      Cc: {message.cc}
+                    </Text>
+                  ) : null}
+                </div>
+              </CollapsibleContent>
+            </CollapsibleRoot>
+
             <Text variant="mini" color="tertiary">
               {formatFullDate(message.date)}
             </Text>
