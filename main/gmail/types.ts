@@ -16,6 +16,7 @@ export interface GmailLabel {
   type: "system" | "user";
   unread?: number;
   total?: number;
+  color?: { backgroundColor: string; textColor: string };
 }
 
 export interface GmailMessageSummary {

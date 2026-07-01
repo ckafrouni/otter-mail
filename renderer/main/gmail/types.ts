@@ -11,6 +11,7 @@ export type GmailLabel = {
   type: "system" | "user";
   unread?: number;
   total?: number;
+  color?: { backgroundColor: string; textColor: string };
 };
 
 export type GmailMessageSummary = {

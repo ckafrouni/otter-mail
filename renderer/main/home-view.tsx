@@ -138,7 +138,7 @@ export function HomeView() {
             />
           ) : undefined
         }
-        listSize={{ default: 320, min: 240 }}
+        listSize={{ default: 440, min: 300, max: 640 }}
         storageKey="gmail-main"
         className="h-full"
       >

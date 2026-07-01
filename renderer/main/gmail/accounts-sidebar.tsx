@@ -78,6 +78,18 @@ function sortLabelTree(nodes: LabelTreeNode[]): void {
   for (const node of nodes) sortLabelTree(node.children);
 }
 
+function labelIcon(label?: GmailLabel): React.ReactNode {
+  if (label?.color?.backgroundColor) {
+    return (
+      <span
+        className="block size-2.5 rounded-full shrink-0"
+        style={{ backgroundColor: label.color.backgroundColor }}
+      />
+    );
+  }
+  return <TagIcon className="size-4" />;
+}
+
 function renderLabelTreeNode(
   node: LabelTreeNode,
   selectedLabelId: string,
@@ -98,7 +110,7 @@ function renderLabelTreeNode(
         key={node.key}
         selected={label ? selectedLabelId === label.id : false}
         onClick={handleSelect}
-        icon={<TagIcon className="size-4" />}
+        icon={labelIcon(label)}
         title={node.segment}
         accessory={accessory}
       />
@@ -112,7 +124,7 @@ function renderLabelTreeNode(
       defaultOpen={false}
       selected={label ? selectedLabelId === label.id : false}
       onClick={handleSelect}
-      icon={<TagIcon className="size-4" />}
+      icon={labelIcon(label)}
       title={node.segment}
       accessory={accessory}
     >

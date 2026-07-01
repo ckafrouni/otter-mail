@@ -6,6 +6,7 @@ import {
   ToolbarTitle,
   ToolbarActions,
   Button,
+  Badge,
   EmptyState,
   Text,
   toast,
@@ -23,13 +24,33 @@ import {
   useModifyMessage,
   useTrashMessage,
   useGetAttachment,
+  useLabels,
 } from "./hooks";
 import { ComposeDialog } from "./compose-dialog";
+import type { GmailLabel } from "./types";
 
 type MessageReaderProps = {
   accountId: string;
   messageId: string | null;
 };
+
+function LabelChip({ label }: { label: GmailLabel }) {
+  const displayName = label.name.split("/").pop() ?? label.name;
+  if (label.color) {
+    return (
+      <span
+        className="inline-flex items-center rounded-pill px-2 py-0.5 text-mini font-medium leading-none"
+        style={{
+          backgroundColor: label.color.backgroundColor,
+          color: label.color.textColor,
+        }}
+      >
+        {displayName}
+      </span>
+    );
+  }
+  return <Badge color="secondary">{displayName}</Badge>;
+}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -50,6 +71,7 @@ function formatFullDate(timestamp: number): string {
 
 export function MessageReader({ accountId, messageId }: MessageReaderProps) {
   const messageQuery = useMessage(accountId, messageId);
+  const labelsQuery = useLabels(accountId);
   const modifyMessage = useModifyMessage();
   const trashMessage = useTrashMessage();
   const getAttachment = useGetAttachment();
@@ -134,6 +156,11 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
   }
 
   const isUnread = message.unread;
+
+  const labelsById = new Map((labelsQuery.data ?? []).map((l) => [l.id, l]));
+  const messageLabels = message.labelIds
+    .map((id) => labelsById.get(id))
+    .filter((l): l is GmailLabel => l != null && l.type === "user");
 
   const handleToggleRead = () => {
     console.log("[MessageReader:toggleRead]", { messageId, isUnread });
@@ -279,6 +306,13 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
             <Text variant="mini" color="tertiary">
               {formatFullDate(message.date)}
             </Text>
+            {messageLabels.length > 0 ? (
+              <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                {messageLabels.map((label) => (
+                  <LabelChip key={label.id} label={label} />
+                ))}
+              </div>
+            ) : null}
           </div>
 
           {/* Body */}

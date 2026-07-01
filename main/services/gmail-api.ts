@@ -73,12 +73,40 @@ export async function listLabels(accountId: string): Promise<GmailLabel[]> {
     }[];
   };
 
-  return (data.labels ?? []).map((label) => ({
+  const rawLabels = data.labels ?? [];
+
+  // labels.list omits color — only labels.get returns it, so fetch per user label.
+  const userLabelIds = rawLabels.filter((l) => l.type !== "system").map((l) => l.id);
+  const colorById = new Map<string, { backgroundColor: string; textColor: string }>();
+
+  const CONCURRENCY = 8;
+  for (let i = 0; i < userLabelIds.length; i += CONCURRENCY) {
+    const batch = userLabelIds.slice(i, i + CONCURRENCY);
+    const fetched = await Promise.all(
+      batch.map((id) =>
+        gmailFetch(accountId, `/labels/${id}`) as Promise<{
+          id: string;
+          color?: { backgroundColor?: string; textColor?: string };
+        }>,
+      ),
+    );
+    for (const label of fetched) {
+      if (label.color?.backgroundColor && label.color.textColor) {
+        colorById.set(label.id, {
+          backgroundColor: label.color.backgroundColor,
+          textColor: label.color.textColor,
+        });
+      }
+    }
+  }
+
+  return rawLabels.map((label) => ({
     id: label.id,
     name: label.name,
     type: label.type === "system" ? "system" : "user",
     unread: label.messagesUnread,
     total: label.messagesTotal,
+    color: colorById.get(label.id),
   }));
 }
 
