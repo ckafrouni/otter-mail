@@ -11,7 +11,7 @@ import {
 import { ArchiveIcon, StarIcon, StarOffIcon, Trash2Icon } from "lucide-react";
 import { useMessages, useModifyMessage, useTrashMessage, useLabels } from "./hooks";
 import { LabelChip } from "./label-chip";
-import type { GmailLabel, GmailMessageSummary } from "./types";
+import type { GmailLabel, GmailMessageSummary, SyncStatus } from "./types";
 
 type MessageListProps = {
   accountId: string;
@@ -20,6 +20,7 @@ type MessageListProps = {
   onSelectMessage: (messageId: string) => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
+  syncStatus: SyncStatus | null;
 };
 
 function formatRelativeDate(timestamp: number): string {
@@ -191,6 +192,14 @@ function MessageRow({
   );
 }
 
+function syncLabel(status: SyncStatus): string {
+  if (status.phase === "full" && status.total) {
+    return `Syncing ${status.synced.toLocaleString()} of ~${status.total.toLocaleString()}`;
+  }
+  if (status.phase === "incremental") return "Checking for new mail…";
+  return "Syncing…";
+}
+
 export function MessageList({
   accountId,
   labelId,
@@ -198,6 +207,7 @@ export function MessageList({
   onSelectMessage,
   searchQuery,
   onSearchChange,
+  syncStatus,
 }: MessageListProps) {
   const messagesQuery = useMessages(accountId, labelId, searchQuery);
   const labelsQuery = useLabels(accountId);
@@ -231,6 +241,16 @@ export function MessageList({
               size="large"
             />
           </ToolbarRow>
+          {syncStatus?.syncing ? (
+            <ToolbarRow>
+              <div className="flex items-center gap-1.5 px-1 py-0.5">
+                <span className="size-3 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+                <Text variant="mini" color="tertiary">
+                  {syncLabel(syncStatus)}
+                </Text>
+              </div>
+            </ToolbarRow>
+          ) : null}
         </Toolbar>
       }
       className="h-full"

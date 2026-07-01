@@ -45,3 +45,17 @@ export interface GmailMessageDetail extends GmailMessageSummary {
     size: number;
   }[];
 }
+
+/** Per-account local-sync progress, exposed to the renderer for status UI. */
+export interface SyncStatus {
+  accountId: string;
+  syncing: boolean;
+  phase: "idle" | "labels" | "full" | "incremental";
+  /** Messages written to the local store during the current/last run. */
+  synced: number;
+  /** Best-effort mailbox size estimate (from Gmail), or null if unknown. */
+  total: number | null;
+  lastSyncAt: number | null;
+  fullSyncDone: boolean;
+  error: string | null;
+}

@@ -35,3 +35,15 @@ export type GmailMessageDetail = GmailMessageSummary & {
   cc?: string;
   attachments: { id: string; filename: string; mimeType: string; size: number }[];
 };
+
+/** Per-account local-sync progress, exposed to the renderer for status UI. */
+export type SyncStatus = {
+  accountId: string;
+  syncing: boolean;
+  phase: "idle" | "labels" | "full" | "incremental";
+  synced: number;
+  total: number | null;
+  lastSyncAt: number | null;
+  fullSyncDone: boolean;
+  error: string | null;
+};

@@ -10,6 +10,7 @@ import { fileURLToPath } from "url";
 import { appHandlers } from "./app.js";
 import { getSettingsWindow, openSettingsWindow } from "../windows/settings-window.js";
 import { registerGmailHandlers } from "./gmail.js";
+import { syncAllAccounts } from "../services/mail-sync.js";
 
 import { ipcMain, logger } from "@glaze/core/backend";
 
@@ -43,6 +44,9 @@ export function registerHandlers(): void {
   registerGmailHandlers();
 
   logger.info("handlers", "✓ IPC handlers registered");
+
+  // Warm the local cache for every connected account on launch.
+  void syncAllAccounts();
 
   // TODO: Add more handlers here using ipcMain.handle()
   // Example:

@@ -4,7 +4,7 @@ import { AccountsSidebar } from "./gmail/accounts-sidebar";
 import { MessageList } from "./gmail/message-list";
 import { MessageReader } from "./gmail/message-reader";
 import { ComposeDialog } from "./gmail/compose-dialog";
-import { useCredentials, useAccounts, useAddAccount } from "./gmail/hooks";
+import { useCredentials, useAccounts, useAddAccount, useAccountSync } from "./gmail/hooks";
 
 export function HomeView() {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
@@ -25,6 +25,10 @@ export function HomeView() {
     selectedAccountId && accounts.some((a) => a.id === selectedAccountId)
       ? selectedAccountId
       : (accounts[0]?.id ?? null);
+
+  // Local-first: keep the on-disk cache synced with Gmail in the background
+  // and refresh views as it fills in.
+  const syncStatus = useAccountSync(effectiveAccountId);
 
   const handleSelectAccount = (accountId: string) => {
     console.log("[HomeView:selectAccount]", { accountId });
@@ -135,6 +139,7 @@ export function HomeView() {
               onSelectMessage={handleSelectMessage}
               searchQuery={searchQuery}
               onSearchChange={handleSearchChange}
+              syncStatus={syncStatus}
             />
           ) : undefined
         }

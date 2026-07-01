@@ -27,6 +27,10 @@ import {
   sendMessage,
   getAttachment,
 } from "../services/gmail-api.js";
+import * as mailStore from "../services/mail-store.js";
+import * as mailSync from "../services/mail-sync.js";
+
+const LOCAL_PAGE_SIZE = 50;
 
 // ── Type guards ───────────────────────────────────────────────────────────────
 
@@ -114,6 +118,7 @@ export function registerGmailHandlers(): void {
       const accountId = assertString(p?.accountId, "accountId");
       await removeAccountTokens(accountId);
       await storeRemoveAccount(accountId);
+      mailStore.removeAccountData(accountId);
       return { ok: true as const };
     } catch (err) {
       console.log("[gmail:removeAccount] error", { error: String(err) });
@@ -121,13 +126,19 @@ export function registerGmailHandlers(): void {
     }
   });
 
-  // gmail:listLabels
+  // gmail:listLabels — served from the local cache; sync refreshes in background
   ipcMain.handle("gmail:listLabels", async (_event, params: unknown) => {
     const p = params as Record<string, unknown>;
     console.log("[gmail:listLabels]", { accountId: p?.accountId });
     try {
       const accountId = assertString(p?.accountId, "accountId");
-      return await listLabels(accountId);
+      mailSync.syncAccount(accountId);
+      const local = mailStore.getLabels(accountId);
+      if (local.length > 0) return local;
+      // Cold cache: fetch once live so the sidebar isn't empty on first launch.
+      const labels = await listLabels(accountId);
+      mailStore.upsertLabels(accountId, labels);
+      return labels;
     } catch (err) {
       console.log("[gmail:listLabels] error", { error: String(err) });
       throw err;
@@ -160,12 +171,40 @@ export function registerGmailHandlers(): void {
     });
     try {
       const accountId = assertString(p?.accountId, "accountId");
-      return await listMessages(accountId, {
-        labelIds: asStringArray(p?.labelIds),
-        q: asString(p?.q),
-        pageToken: asString(p?.pageToken),
-        maxResults: asNumber(p?.maxResults),
-      });
+      const labelIds = asStringArray(p?.labelIds);
+      const q = asString(p?.q);
+      const pageToken = asString(p?.pageToken);
+      const maxResults = asNumber(p?.maxResults) ?? LOCAL_PAGE_SIZE;
+
+      // Search hits Gmail live (server-side full-text can't be replicated
+      // locally), but results are still cached for instant re-open.
+      if (q) {
+        const result = await listMessages(accountId, { labelIds, q, pageToken, maxResults });
+        mailStore.upsertMessages(accountId, result.messages);
+        return result;
+      }
+
+      const labelId = labelIds?.[0] ?? "INBOX";
+      const offset = pageToken ? Number.parseInt(pageToken, 10) || 0 : 0;
+
+      // Cold cache for this label: warm up with one live page so the user
+      // isn't staring at an empty list while the full sync runs.
+      if (offset === 0 && mailStore.countMessagesForLabel(accountId, labelId) === 0) {
+        try {
+          const live = await listMessages(accountId, { labelIds: [labelId], maxResults });
+          mailStore.upsertMessages(accountId, live.messages);
+        } catch (warmErr) {
+          console.log("[gmail:listMessages] warm-up failed", { error: String(warmErr) });
+        }
+      }
+
+      mailSync.syncAccount(accountId);
+
+      const page = mailStore.getMessagesPage(accountId, labelId, offset, maxResults);
+      return {
+        messages: page.messages,
+        nextPageToken: page.hasMore ? String(offset + maxResults) : undefined,
+      };
     } catch (err) {
       console.log("[gmail:listMessages] error", { error: String(err) });
       throw err;
@@ -179,7 +218,13 @@ export function registerGmailHandlers(): void {
     try {
       const accountId = assertString(p?.accountId, "accountId");
       const messageId = assertString(p?.messageId, "messageId");
-      return await getMessage(accountId, messageId);
+      // Return the cached body if we already fetched it; otherwise fetch full
+      // once and persist so re-opens are instant and work offline.
+      const cached = mailStore.getMessageDetail(accountId, messageId);
+      if (cached) return cached;
+      const detail = await getMessage(accountId, messageId);
+      mailStore.upsertMessageDetail(accountId, detail);
+      return detail;
     } catch (err) {
       console.log("[gmail:getMessage] error", { error: String(err) });
       throw err;
@@ -196,10 +241,11 @@ export function registerGmailHandlers(): void {
     try {
       const accountId = assertString(p?.accountId, "accountId");
       const messageId = assertString(p?.messageId, "messageId");
-      return await modifyMessage(accountId, messageId, {
-        addLabelIds: asStringArray(p?.addLabelIds),
-        removeLabelIds: asStringArray(p?.removeLabelIds),
-      });
+      const addLabelIds = asStringArray(p?.addLabelIds);
+      const removeLabelIds = asStringArray(p?.removeLabelIds);
+      const result = await modifyMessage(accountId, messageId, { addLabelIds, removeLabelIds });
+      mailStore.applyLabelChange(accountId, messageId, addLabelIds ?? [], removeLabelIds ?? []);
+      return result;
     } catch (err) {
       console.log("[gmail:modifyMessage] error", { error: String(err) });
       throw err;
@@ -213,7 +259,9 @@ export function registerGmailHandlers(): void {
     try {
       const accountId = assertString(p?.accountId, "accountId");
       const messageId = assertString(p?.messageId, "messageId");
-      return await trashMessage(accountId, messageId);
+      const result = await trashMessage(accountId, messageId);
+      mailStore.deleteMessage(accountId, messageId);
+      return result;
     } catch (err) {
       console.log("[gmail:trashMessage] error", { error: String(err) });
       throw err;
@@ -264,6 +312,32 @@ export function registerGmailHandlers(): void {
       return await getAttachment(accountId, messageId, attachmentId, filename, mimeType);
     } catch (err) {
       console.log("[gmail:getAttachment] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:syncAccount — kick off a background sync, return current status
+  ipcMain.handle("gmail:syncAccount", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:syncAccount]", { accountId: p?.accountId });
+    try {
+      const accountId = assertString(p?.accountId, "accountId");
+      mailSync.syncAccount(accountId);
+      return mailSync.getSyncStatus(accountId);
+    } catch (err) {
+      console.log("[gmail:syncAccount] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:getSyncStatus — poll background sync progress for an account
+  ipcMain.handle("gmail:getSyncStatus", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    try {
+      const accountId = assertString(p?.accountId, "accountId");
+      return mailSync.getSyncStatus(accountId);
+    } catch (err) {
+      console.log("[gmail:getSyncStatus] error", { error: String(err) });
       throw err;
     }
   });

@@ -180,6 +180,36 @@ function mapMessageSummary(msg: RawMessageMetadata): GmailMessageSummary {
   };
 }
 
+// ── fetchMetadataForIds ─────────────────────────────────────────────────────
+
+/**
+ * Fetch metadata-format summaries for a set of message ids, capped at 8
+ * concurrent requests. Shared by listMessages (live browse/search) and the
+ * background sync engine.
+ */
+export async function fetchMetadataForIds(
+  accountId: string,
+  ids: string[],
+): Promise<GmailMessageSummary[]> {
+  const CONCURRENCY = 8;
+  const results: GmailMessageSummary[] = [];
+
+  for (let i = 0; i < ids.length; i += CONCURRENCY) {
+    const batch = ids.slice(i, i + CONCURRENCY);
+    const fetched = await Promise.all(
+      batch.map((id) =>
+        gmailFetch(
+          accountId,
+          `/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date`,
+        ) as Promise<RawMessageMetadata>,
+      ),
+    );
+    results.push(...fetched.map(mapMessageSummary));
+  }
+
+  return results;
+}
+
 // ── listMessages ──────────────────────────────────────────────────────────────
 
 export async function listMessages(
@@ -210,25 +240,76 @@ export async function listMessages(
     return { messages: [], nextPageToken: list.nextPageToken };
   }
 
-  // Fetch metadata concurrently with a cap of 8 in-flight requests
-  const CONCURRENCY = 8;
-  const results: GmailMessageSummary[] = [];
-  const ids = list.messages.map((m) => m.id);
+  const messages = await fetchMetadataForIds(
+    accountId,
+    list.messages.map((m) => m.id),
+  );
+  return { messages, nextPageToken: list.nextPageToken };
+}
 
-  for (let i = 0; i < ids.length; i += CONCURRENCY) {
-    const batch = ids.slice(i, i + CONCURRENCY);
-    const fetched = await Promise.all(
-      batch.map((id) =>
-        gmailFetch(
-          accountId,
-          `/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date`,
-        ) as Promise<RawMessageMetadata>,
-      ),
-    );
-    results.push(...fetched.map(mapMessageSummary));
-  }
+// ── Sync primitives ───────────────────────────────────────────────────────────
 
-  return { messages: results, nextPageToken: list.nextPageToken };
+/** Mailbox profile — used to seed/track the incremental-sync history cursor. */
+export async function getProfile(
+  accountId: string,
+): Promise<{ historyId: string; messagesTotal: number }> {
+  const data = (await gmailFetch(accountId, "/profile")) as {
+    historyId?: string;
+    messagesTotal?: number;
+  };
+  return { historyId: data.historyId ?? "", messagesTotal: data.messagesTotal ?? 0 };
+}
+
+/** A single page of message ids (no metadata) for full-mailbox sync. */
+export async function listMessageIdsPage(
+  accountId: string,
+  params: { pageToken?: string; maxResults?: number },
+): Promise<{ ids: string[]; nextPageToken?: string; resultSizeEstimate: number }> {
+  const query = new URLSearchParams();
+  query.set("maxResults", String(params.maxResults ?? 500));
+  query.set("includeSpamTrash", "false");
+  if (params.pageToken) query.set("pageToken", params.pageToken);
+
+  const list = (await gmailFetch(accountId, `/messages?${query.toString()}`)) as {
+    messages?: { id: string }[];
+    nextPageToken?: string;
+    resultSizeEstimate?: number;
+  };
+
+  return {
+    ids: (list.messages ?? []).map((m) => m.id),
+    nextPageToken: list.nextPageToken,
+    resultSizeEstimate: list.resultSizeEstimate ?? 0,
+  };
+}
+
+export interface GmailHistoryPage {
+  historyId?: string;
+  nextPageToken?: string;
+  history?: {
+    messagesAdded?: { message: { id: string } }[];
+    messagesDeleted?: { message: { id: string } }[];
+    labelsAdded?: { message: { id: string }; labelIds: string[] }[];
+    labelsRemoved?: { message: { id: string }; labelIds: string[] }[];
+  }[];
+}
+
+/** One page of the history feed since `startHistoryId`. */
+export async function listHistory(
+  accountId: string,
+  startHistoryId: string,
+  pageToken?: string,
+): Promise<GmailHistoryPage> {
+  const query = new URLSearchParams();
+  query.set("startHistoryId", startHistoryId);
+  query.set("maxResults", "500");
+  if (pageToken) query.set("pageToken", pageToken);
+  return (await gmailFetch(accountId, `/history?${query.toString()}`)) as GmailHistoryPage;
+}
+
+/** Distinguish an expired-history-cursor (HTTP 404) from other failures. */
+export function isHistoryExpiredError(err: unknown): boolean {
+  return err instanceof Error && err.message.includes("Gmail API error: 404");
 }
 
 // ── getMessage ────────────────────────────────────────────────────────────────

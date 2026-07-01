@@ -3,6 +3,7 @@ import type {
   GmailLabel,
   GmailMessageSummary,
   GmailMessageDetail,
+  SyncStatus,
 } from "./types";
 
 const ipc = <T = unknown>(channel: string, params?: unknown): Promise<T> =>
@@ -86,4 +87,10 @@ export const gmailApi = {
 
   getAttachment: (params: GetAttachmentParams): Promise<GetAttachmentResult> =>
     ipc("gmail:getAttachment", params),
+
+  syncAccount: (accountId: string): Promise<SyncStatus> =>
+    ipc("gmail:syncAccount", { accountId }),
+
+  getSyncStatus: (accountId: string): Promise<SyncStatus> =>
+    ipc("gmail:getSyncStatus", { accountId }),
 };

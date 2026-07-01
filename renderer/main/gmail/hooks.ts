@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import {
   useQuery,
   useMutation,
@@ -6,7 +7,7 @@ import {
   type InfiniteData,
 } from "@tanstack/react-query";
 import { gmailApi, type ModifyMessageParams, type SendMessageParams } from "./api";
-import type { GmailAccount, GmailLabel, GmailMessageDetail } from "./types";
+import type { GmailAccount, GmailLabel, GmailMessageDetail, SyncStatus } from "./types";
 import type { ListMessagesResult } from "./api";
 
 const STALE_TIME = 30_000;
@@ -210,6 +211,52 @@ export function useSendMessage() {
       });
     },
   });
+}
+
+// ---- Local-first sync ----
+
+/**
+ * Drives background sync for the active account: starts a sync when the
+ * account changes, polls progress while syncing, and invalidates the message
+ * and label queries as the local store fills in so views refresh live.
+ * Returns the current sync status for display.
+ */
+export function useAccountSync(accountId: string | null): SyncStatus | null {
+  const qc = useQueryClient();
+
+  const statusQuery = useQuery<SyncStatus>({
+    queryKey: ["gmail:syncStatus", accountId],
+    queryFn: () => gmailApi.getSyncStatus(accountId!),
+    enabled: accountId != null,
+    refetchInterval: (query) => (query.state.data?.syncing ? 1500 : false),
+  });
+
+  // Start a sync whenever the active account changes.
+  useEffect(() => {
+    if (!accountId) return;
+    console.log("[hooks:useAccountSync] starting sync", { accountId });
+    void gmailApi.syncAccount(accountId).then(() => {
+      void qc.invalidateQueries({ queryKey: ["gmail:syncStatus", accountId] });
+    });
+  }, [accountId, qc]);
+
+  // Refresh views as sync progresses or finishes.
+  const prevRef = useRef<{ synced: number; syncing: boolean } | null>(null);
+  useEffect(() => {
+    const status = statusQuery.data;
+    if (!status || !accountId) return;
+    const prev = prevRef.current;
+    const progressed =
+      prev != null &&
+      (status.synced !== prev.synced || (prev.syncing && !status.syncing));
+    if (progressed) {
+      void qc.invalidateQueries({ queryKey: ["gmail:messages", accountId] });
+      void qc.invalidateQueries({ queryKey: queryKeys.labels(accountId) });
+    }
+    prevRef.current = { synced: status.synced, syncing: status.syncing };
+  }, [statusQuery.data, accountId, qc]);
+
+  return statusQuery.data ?? null;
 }
 
 export function useGetAttachment() {
