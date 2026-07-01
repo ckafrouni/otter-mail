@@ -196,6 +196,9 @@ function syncLabel(status: SyncStatus): string {
   if (status.phase === "full" && status.total) {
     return `Syncing ${status.synced.toLocaleString()} of ~${status.total.toLocaleString()}`;
   }
+  if (status.phase === "bodies" && status.total) {
+    return `Downloading messages ${status.synced.toLocaleString()} of ${status.total.toLocaleString()}`;
+  }
   if (status.phase === "incremental") return "Checking for new mail…";
   return "Syncing…";
 }

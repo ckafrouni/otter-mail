@@ -50,7 +50,7 @@ export interface GmailMessageDetail extends GmailMessageSummary {
 export interface SyncStatus {
   accountId: string;
   syncing: boolean;
-  phase: "idle" | "labels" | "full" | "incremental";
+  phase: "idle" | "labels" | "full" | "incremental" | "bodies";
   /** Messages written to the local store during the current/last run. */
   synced: number;
   /** Best-effort mailbox size estimate (from Gmail), or null if unknown. */

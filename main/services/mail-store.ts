@@ -319,6 +319,17 @@ export function getMessageDetail(accountId: string, messageId: string): GmailMes
   return rowToDetail(row);
 }
 
+/** Ids of messages whose full body hasn't been downloaded yet (newest first). */
+export function getUndownloadedMessageIds(accountId: string): string[] {
+  const d = getDb();
+  const rows = d
+    .prepare(
+      "SELECT id FROM messages WHERE accountId = ? AND detailFetched = 0 ORDER BY date DESC",
+    )
+    .all(accountId) as unknown as { id: string }[];
+  return rows.map((r) => r.id);
+}
+
 export function countMessagesForLabel(accountId: string, labelId: string): number {
   const d = getDb();
   const row = d

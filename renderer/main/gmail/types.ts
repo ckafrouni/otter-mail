@@ -40,7 +40,7 @@ export type GmailMessageDetail = GmailMessageSummary & {
 export type SyncStatus = {
   accountId: string;
   syncing: boolean;
-  phase: "idle" | "labels" | "full" | "incremental";
+  phase: "idle" | "labels" | "full" | "incremental" | "bodies";
   synced: number;
   total: number | null;
   lastSyncAt: number | null;

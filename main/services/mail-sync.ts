@@ -16,6 +16,7 @@ import {
   getProfile,
   listMessageIdsPage,
   fetchMetadataForIds,
+  getMessage,
   listHistory,
   isHistoryExpiredError,
 } from "./gmail-api.js";
@@ -84,6 +85,9 @@ async function runSync(accountId: string): Promise<void> {
       await fullSync(accountId);
     }
 
+    // Download full bodies so the whole mailbox is readable offline.
+    await backfillBodies(accountId);
+
     const now = Date.now();
     store.setSyncState(accountId, { lastSyncAt: now });
     update(accountId, {
@@ -131,6 +135,38 @@ async function fullSync(accountId: string): Promise<void> {
   } while (pageToken);
 
   store.setSyncState(accountId, { fullSyncDone: true, historyId: seedHistoryId });
+}
+
+/**
+ * Fetch and cache the full body of every message whose body isn't stored yet
+ * (newest first), so the entire mailbox can be read offline. Resumable: each
+ * run only touches messages still missing a body. Individual failures (e.g. a
+ * message deleted since metadata sync) are skipped and retried next run.
+ */
+async function backfillBodies(accountId: string): Promise<void> {
+  const ids = store.getUndownloadedMessageIds(accountId);
+  if (ids.length === 0) return;
+
+  update(accountId, { phase: "bodies", synced: 0, total: ids.length });
+
+  const CONCURRENCY = 8;
+  let done = 0;
+
+  for (let i = 0; i < ids.length; i += CONCURRENCY) {
+    const batch = ids.slice(i, i + CONCURRENCY);
+    await Promise.all(
+      batch.map(async (id) => {
+        try {
+          const detail = await getMessage(accountId, id);
+          store.upsertMessageDetail(accountId, detail);
+        } catch (err) {
+          logger.info("mail-sync", `body fetch skipped for ${id}: ${String(err)}`);
+        }
+      }),
+    );
+    done += batch.length;
+    update(accountId, { synced: done });
+  }
 }
 
 async function incrementalSync(accountId: string, startHistoryId: string): Promise<void> {
