@@ -6,7 +6,6 @@ import {
   ToolbarTitle,
   ToolbarActions,
   Button,
-  Badge,
   EmptyState,
   Text,
   toast,
@@ -27,30 +26,13 @@ import {
   useLabels,
 } from "./hooks";
 import { ComposeDialog } from "./compose-dialog";
+import { LabelChip } from "./label-chip";
 import type { GmailLabel } from "./types";
 
 type MessageReaderProps = {
   accountId: string;
   messageId: string | null;
 };
-
-function LabelChip({ label }: { label: GmailLabel }) {
-  const displayName = label.name.split("/").pop() ?? label.name;
-  if (label.color) {
-    return (
-      <span
-        className="inline-flex w-fit shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-pill text-small-strong px-1.5 py-0.5"
-        style={{
-          backgroundColor: label.color.backgroundColor,
-          color: label.color.textColor,
-        }}
-      >
-        {displayName}
-      </span>
-    );
-  }
-  return <Badge color="secondary">{displayName}</Badge>;
-}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

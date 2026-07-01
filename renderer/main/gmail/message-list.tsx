@@ -9,8 +9,9 @@ import {
   Text,
 } from "@glaze/core/components";
 import { StarIcon, StarOffIcon } from "lucide-react";
-import { useMessages, useModifyMessage } from "./hooks";
-import type { GmailMessageSummary } from "./types";
+import { useMessages, useModifyMessage, useLabels } from "./hooks";
+import { LabelChip } from "./label-chip";
+import type { GmailLabel, GmailMessageSummary } from "./types";
 
 type MessageListProps = {
   accountId: string;
@@ -43,10 +44,21 @@ type MessageRowProps = {
   selected: boolean;
   onSelect: () => void;
   accountId: string;
+  labelsById: Map<string, GmailLabel>;
 };
 
-function MessageRow({ message, selected, onSelect, accountId }: MessageRowProps) {
+function MessageRow({
+  message,
+  selected,
+  onSelect,
+  accountId,
+  labelsById,
+}: MessageRowProps) {
   const modifyMessage = useModifyMessage();
+
+  const messageLabels = message.labelIds
+    .map((id) => labelsById.get(id))
+    .filter((l): l is GmailLabel => l != null && l.type === "user");
 
   const handleStarToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -113,6 +125,13 @@ function MessageRow({ message, selected, onSelect, accountId }: MessageRowProps)
         <Text variant="mini" color="tertiary" truncate>
           {message.snippet}
         </Text>
+        {messageLabels.length > 0 ? (
+          <div className="flex items-center gap-1 flex-wrap pt-0.5">
+            {messageLabels.map((label) => (
+              <LabelChip key={label.id} label={label} />
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {/* Star toggle */}
@@ -141,6 +160,10 @@ export function MessageList({
   onSearchChange,
 }: MessageListProps) {
   const messagesQuery = useMessages(accountId, labelId, searchQuery);
+  const labelsQuery = useLabels(accountId);
+  const labelsById = new Map(
+    (labelsQuery.data ?? []).map((l) => [l.id, l]),
+  );
 
   const allMessages: GmailMessageSummary[] =
     messagesQuery.data?.pages.flatMap((p) => p.messages) ?? [];
@@ -211,6 +234,7 @@ export function MessageList({
                 onSelectMessage(message.id);
               }}
               accountId={accountId}
+              labelsById={labelsById}
             />
           ))}
           {hasNextPage ? (
