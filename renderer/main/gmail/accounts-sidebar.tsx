@@ -69,7 +69,13 @@ function buildLabelTree(labels: GmailLabel[]): LabelTreeNode[] {
     });
   }
 
+  sortLabelTree(root);
   return root;
+}
+
+function sortLabelTree(nodes: LabelTreeNode[]): void {
+  nodes.sort((a, b) => a.segment.localeCompare(b.segment));
+  for (const node of nodes) sortLabelTree(node.children);
 }
 
 function renderLabelTreeNode(
