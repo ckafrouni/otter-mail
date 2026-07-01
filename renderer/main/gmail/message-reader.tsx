@@ -88,10 +88,12 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
             <ToolbarTitle>Gmail</ToolbarTitle>
           </ToolbarContent>
         </Toolbar>
-        <EmptyState
-          title="Select a message"
-          description="Choose a message from the list to read it."
-        />
+        <div className="relative flex-1">
+          <EmptyState
+            title="Select a message"
+            description="Choose a message from the list to read it."
+          />
+        </div>
       </div>
     );
   }
@@ -121,10 +123,12 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
             <ToolbarTitle>Error</ToolbarTitle>
           </ToolbarContent>
         </Toolbar>
-        <EmptyState
-          title="Could not load message"
-          description="The message could not be retrieved. Try again."
-        />
+        <div className="relative flex-1">
+          <EmptyState
+            title="Could not load message"
+            description="The message could not be retrieved. Try again."
+          />
+        </div>
       </div>
     );
   }
