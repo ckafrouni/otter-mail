@@ -53,10 +53,10 @@ async function createMainWindow() {
   // In production: __dirname = build/main, package.json is at ../../package.json
   const packageJsonPath = path.join(__dirname, "..", "..", "package.json");
 
-  const minWindowWidth = 390;
-  const minWindowHeight = 456;
-  const windowWidth = 1000;
-  const windowHeight = 700;
+  const minWindowWidth = 760;
+  const minWindowHeight = 520;
+  const windowWidth = 1180;
+  const windowHeight = 780;
   let windowTitle = "Glaze App";
 
   try {

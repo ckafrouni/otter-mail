@@ -220,23 +220,23 @@ const glazeAPI = {
     // openPath: (path: string): Promise<string> =>
     //   ipcRenderer.invoke("shell:openPath", path),
     //
-    // openExternal: async (
-    //   url: string,
-    //   options?: { activate?: boolean; workingDirectory?: string; logUsage?: boolean },
-    // ): Promise<void> => {
-    //   const didOpen = await ipcRenderer.invoke("shell:openExternalWithResult", url, options);
-    //   if (!didOpen) {
-    //     throw new Error("Failed to open URL");
-    //   }
-    // },
-    //
-    // /** @deprecated Use openExternal() for Electron-compatible Promise<void> behavior. */
-    // openExternalWithResult: (
-    //   url: string,
-    //   options?: { activate?: boolean; workingDirectory?: string; logUsage?: boolean },
-    // ): Promise<boolean> =>
-    //   ipcRenderer.invoke("shell:openExternalWithResult", url, options),
-    //
+    openExternal: async (
+      url: string,
+      options?: { activate?: boolean; workingDirectory?: string; logUsage?: boolean },
+    ): Promise<void> => {
+      const didOpen = await ipcRenderer.invoke("shell:openExternalWithResult", url, options);
+      if (!didOpen) {
+        throw new Error("Failed to open URL");
+      }
+    },
+
+    /** @deprecated Use openExternal() for Electron-compatible Promise<void> behavior. */
+    openExternalWithResult: (
+      url: string,
+      options?: { activate?: boolean; workingDirectory?: string; logUsage?: boolean },
+    ): Promise<boolean> =>
+      ipcRenderer.invoke("shell:openExternalWithResult", url, options),
+
     // showItemInFolder(fullPath: string): void {
     //   void ipcRenderer.invoke("shell:showItemInFolder", fullPath).catch(() => {});
     // },

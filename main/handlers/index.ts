@@ -9,6 +9,7 @@ import { fileURLToPath } from "url";
 
 import { appHandlers } from "./app.js";
 import { getSettingsWindow, openSettingsWindow } from "../windows/settings-window.js";
+import { registerGmailHandlers } from "./gmail.js";
 
 import { ipcMain, logger } from "@glaze/core/backend";
 
@@ -37,6 +38,9 @@ export function registerHandlers(): void {
   ipcMain.handle("window:closeSettings", async (_event) => {
     getSettingsWindow()?.close();
   });
+
+  // Register Gmail handlers
+  registerGmailHandlers();
 
   logger.info("handlers", "✓ IPC handlers registered");
 

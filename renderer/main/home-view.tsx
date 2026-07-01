@@ -1,65 +1,170 @@
-// EXAMPLE VIEW - Replace this entire component
-//
-// This template uses IPC APIs with a secure preload pattern.
-//
-// === SECURITY MODEL ===
-// - Renderer code should NOT import ipcRenderer directly
-// - Use contextBridge in a preload script to expose specific APIs
-// - Channel names follow channel naming convention: "module:method" (e.g., "dialog:showOpenDialog")
-//
-// === PRELOAD SCRIPT (preload.ts) ===
-// ```
-// import { ipcRenderer, contextBridge } from '@glaze/core/preload';
-//
-// contextBridge.exposeInMainWorld('myAppAPI', {
-//   getInfo: () => ipcRenderer.invoke('app:getInfo'),
-//   saveFile: (name: string, data: string) => ipcRenderer.invoke('file:save', { name, data }),
-//   showOpenDialog: (options: any) => ipcRenderer.invoke('dialog:showOpenDialog', options),
-// });
-// ```
-//
-// === RENDERER CODE (your components) ===
-// ```
-// // Only use the exposed API - no direct ipcRenderer access
-// const info = await window.myAppAPI.getInfo();
-// await window.myAppAPI.saveFile('test.txt', 'hello');
-// const result = await window.myAppAPI.showOpenDialog({ properties: ['openFile'] });
-// ```
-//
-// === BACKEND HANDLERS (main/handlers/index.ts) ===
-// ```
-// import { ipcMain, dialog } from '@glaze/core/backend';
-//
-// // Custom handler
-// ipcMain.handle('app:getInfo', async () => {
-//   return { name: 'My App', version: '1.0.0' };
-// });
-//
-// // Built-in modules work directly through the Glaze APIs
-// // The native API handlers are already registered for:
-// //   dialog:showOpenDialog, dialog:showSaveDialog, dialog:showMessageBox
-// //   shell:openPath, shell:openExternal, shell:trashItem, shell:beep
-// //   screen:getPrimaryDisplay, screen:getAllDisplays, etc.
-// //   clipboard:readText, clipboard:writeText
-// //   nativeTheme:getInfo, nativeTheme:setThemeSource
-// //   Menu:setApplicationMenu, Menu:popup
-// ```
-
-import { Toolbar, ToolbarContent, ToolbarTitle } from "@glaze/core/components";
-
-declare const __APP_DISPLAY_NAME__: string | undefined;
+import { useState } from "react";
+import { SplitView, EmptyState, Button } from "@glaze/core/components";
+import { AccountsSidebar } from "./gmail/accounts-sidebar";
+import { MessageList } from "./gmail/message-list";
+import { MessageReader } from "./gmail/message-reader";
+import { ComposeDialog } from "./gmail/compose-dialog";
+import { useCredentials, useAccounts, useAddAccount } from "./gmail/hooks";
 
 export function HomeView() {
-  return (
-    <div className="h-full flex flex-col">
-      <Toolbar>
-        <ToolbarContent>
-          <ToolbarTitle>{/* Page title */}</ToolbarTitle>
-        </ToolbarContent>
-      </Toolbar>
-      <div className="h-full flex flex-col gap-2 w-full text-center absolute inset-0 justify-center items-center">
-        <h1 className="text-heading1 font-normal shimmer-text">{__APP_DISPLAY_NAME__ || "Glaze App"}</h1>
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const [selectedLabelId, setSelectedLabelId] = useState<string>("INBOX");
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [composeOpen, setComposeOpen] = useState(false);
+
+  const credentialsQuery = useCredentials();
+  const accountsQuery = useAccounts();
+  const addAccount = useAddAccount();
+
+  const accounts = accountsQuery.data ?? [];
+  const credentials = credentialsQuery.data;
+
+  // Resolve the effective account: use selected if still present, else first available
+  const effectiveAccountId =
+    selectedAccountId && accounts.some((a) => a.id === selectedAccountId)
+      ? selectedAccountId
+      : (accounts[0]?.id ?? null);
+
+  const handleSelectAccount = (accountId: string) => {
+    console.log("[HomeView:selectAccount]", { accountId });
+    setSelectedAccountId(accountId);
+    setSelectedMessageId(null);
+    setSearchQuery("");
+  };
+
+  const handleSelectLabel = (labelId: string) => {
+    console.log("[HomeView:selectLabel]", { labelId });
+    setSelectedLabelId(labelId);
+    setSelectedMessageId(null);
+    setSearchQuery("");
+  };
+
+  const handleSelectMessage = (messageId: string) => {
+    console.log("[HomeView:selectMessage]", { messageId });
+    setSelectedMessageId(messageId);
+  };
+
+  const handleSearchChange = (q: string) => {
+    setSearchQuery(q);
+    setSelectedMessageId(null);
+  };
+
+  const handleOpenSettings = () => {
+    console.log("[HomeView:openSettings]");
+    void window.glazeAPI.glaze.ipc.invoke("window:openSettings");
+  };
+
+  const handleAddAccount = async () => {
+    console.log("[HomeView:addAccount]");
+    try {
+      const account = await addAccount.mutateAsync();
+      setSelectedAccountId(account.id);
+    } catch {
+      // error surfaced by mutation
+    }
+  };
+
+  // (a) Loading credentials
+  if (credentialsQuery.isLoading) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="size-6 rounded-full border-2 border-accent border-t-transparent animate-spin" />
       </div>
-    </div>
+    );
+  }
+
+  // (a) No credentials configured
+  if (!credentials?.hasCredentials) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <EmptyState
+          title="Set up Gmail"
+          description="Configure your Google OAuth credentials in Settings to connect Gmail accounts."
+          actions={
+            <Button variant="accent" onClick={handleOpenSettings}>
+              Open Settings
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
+  // (b) Credentials set but no accounts connected
+  if (!accountsQuery.isLoading && accounts.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <EmptyState
+          title="Connect your Gmail account"
+          description="Sign in with Google to start reading your emails."
+          actions={
+            <Button
+              variant="accent"
+              onClick={() => void handleAddAccount()}
+              disabled={addAccount.isPending}
+            >
+              {addAccount.isPending ? "Connecting..." : "Add Gmail account"}
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
+  // (c) Normal three-pane layout via SplitView
+  return (
+    <>
+      <SplitView
+        sidebar={
+          <AccountsSidebar
+            selectedAccountId={effectiveAccountId}
+            onSelectAccount={handleSelectAccount}
+            selectedLabelId={selectedLabelId}
+            onSelectLabel={handleSelectLabel}
+            onCompose={() => setComposeOpen(true)}
+          />
+        }
+        sidebarSize={{ default: 220, min: 180, max: 300 }}
+        list={
+          effectiveAccountId ? (
+            <MessageList
+              accountId={effectiveAccountId}
+              labelId={selectedLabelId}
+              selectedMessageId={selectedMessageId}
+              onSelectMessage={handleSelectMessage}
+              searchQuery={searchQuery}
+              onSearchChange={handleSearchChange}
+            />
+          ) : undefined
+        }
+        listSize={{ default: 320, min: 240 }}
+        storageKey="gmail-main"
+        className="h-full"
+      >
+        {/* Primary pane */}
+        {effectiveAccountId ? (
+          <MessageReader
+            accountId={effectiveAccountId}
+            messageId={selectedMessageId}
+          />
+        ) : (
+          <div className="h-full flex items-center justify-center">
+            <EmptyState
+              title="No account selected"
+              description="Select an account from the sidebar."
+            />
+          </div>
+        )}
+      </SplitView>
+
+      {effectiveAccountId && composeOpen ? (
+        <ComposeDialog
+          accountId={effectiveAccountId}
+          open={composeOpen}
+          onOpenChange={setComposeOpen}
+        />
+      ) : null}
+    </>
   );
 }
