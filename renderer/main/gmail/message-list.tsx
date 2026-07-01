@@ -8,8 +8,8 @@ import {
   EmptyState,
   Text,
 } from "@glaze/core/components";
-import { StarIcon, StarOffIcon } from "lucide-react";
-import { useMessages, useModifyMessage, useLabels } from "./hooks";
+import { ArchiveIcon, StarIcon, StarOffIcon, Trash2Icon } from "lucide-react";
+import { useMessages, useModifyMessage, useTrashMessage, useLabels } from "./hooks";
 import { LabelChip } from "./label-chip";
 import type { GmailLabel, GmailMessageSummary } from "./types";
 
@@ -55,6 +55,7 @@ function MessageRow({
   labelsById,
 }: MessageRowProps) {
   const modifyMessage = useModifyMessage();
+  const trashMessage = useTrashMessage();
 
   const messageLabels = message.labelIds
     .map((id) => labelsById.get(id))
@@ -81,12 +82,28 @@ function MessageRow({
     }
   };
 
+  const handleArchive = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    console.log("[MessageList:archive]", { messageId: message.id });
+    void modifyMessage.mutateAsync({
+      accountId,
+      messageId: message.id,
+      removeLabelIds: ["INBOX"],
+    });
+  };
+
+  const handleTrash = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    console.log("[MessageList:trash]", { messageId: message.id });
+    void trashMessage.mutateAsync({ accountId, messageId: message.id });
+  };
+
   return (
     <button
       type="button"
       onClick={onSelect}
       className={[
-        "w-full text-left px-3 py-2.5 flex items-start gap-3 border-b border-separator",
+        "group w-full text-left px-3 py-2.5 flex items-start gap-3 border-b border-separator",
         "hover:bg-control-subtle transition-colors",
         selected ? "bg-control" : "",
       ].join(" ")}
@@ -134,11 +151,34 @@ function MessageRow({
         ) : null}
       </div>
 
+      {/* Hover-revealed quick actions */}
+      <div className="shrink-0 mt-0.5 flex items-center gap-1 max-w-0 opacity-0 overflow-hidden group-hover:max-w-[52px] group-hover:opacity-100 transition-all duration-150">
+        <button
+          type="button"
+          onClick={handleArchive}
+          className="text-tertiary hover:text-primary transition-colors"
+          aria-label="Archive"
+        >
+          <ArchiveIcon className="size-4" />
+        </button>
+        <button
+          type="button"
+          onClick={handleTrash}
+          className="text-tertiary hover:text-support-red transition-colors"
+          aria-label="Move to trash"
+        >
+          <Trash2Icon className="size-4" />
+        </button>
+      </div>
+
       {/* Star toggle */}
       <button
         type="button"
         onClick={handleStarToggle}
-        className="shrink-0 mt-0.5 text-tertiary hover:text-accent transition-colors"
+        className={[
+          "shrink-0 mt-0.5 text-tertiary hover:text-accent transition-colors",
+          message.starred ? "" : "opacity-0 group-hover:opacity-100",
+        ].join(" ")}
         aria-label={message.starred ? "Unstar" : "Star"}
       >
         {message.starred ? (

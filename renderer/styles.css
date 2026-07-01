@@ -8,3 +8,18 @@
 @source "./**/*.{ts,tsx}";
 @source not "./preload.ts";
 @source not "./dev/**/*";
+
+/* Linear-inspired theme: signature indigo/purple accent, deep near-black dark mode.
+   Override --accent directly (not just --theme-accent) so the brand purple stays
+   fixed instead of being overridden by the user's macOS system accent color. */
+:root {
+  --theme-accent: #5e6ad2;
+  --accent: #5e6ad2;
+}
+.dark {
+  --bg: #1a1b23;
+  --bg-secondary: #14151b;
+  --fg: #e9eaf5;
+  --theme-accent: #7b85f0;
+  --accent: #7b85f0;
+}
