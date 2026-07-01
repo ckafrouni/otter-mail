@@ -39,6 +39,82 @@ const SYSTEM_LABEL_MAP: Record<string, { name: string; icon: React.ReactNode }> 
   IMPORTANT: { name: "Important", icon: <BookmarkIcon className="size-4" /> },
 };
 
+type LabelTreeNode = {
+  key: string;
+  segment: string;
+  label?: GmailLabel;
+  children: LabelTreeNode[];
+};
+
+// Gmail nests user labels by "/" in the name (e.g. "99/personal" is a child of "99").
+// Build a tree from the flat list so the sidebar can render it with proper disclosure nesting.
+function buildLabelTree(labels: GmailLabel[]): LabelTreeNode[] {
+  const root: LabelTreeNode[] = [];
+  const nodesByPath = new Map<string, LabelTreeNode>();
+
+  for (const label of labels) {
+    const parts = label.name.split("/").filter(Boolean);
+    let siblings = root;
+    let path = "";
+    parts.forEach((part, i) => {
+      path = path ? `${path}/${part}` : part;
+      let node = nodesByPath.get(path);
+      if (!node) {
+        node = { key: path, segment: part, children: [] };
+        nodesByPath.set(path, node);
+        siblings.push(node);
+      }
+      if (i === parts.length - 1) node.label = label;
+      siblings = node.children;
+    });
+  }
+
+  return root;
+}
+
+function renderLabelTreeNode(
+  node: LabelTreeNode,
+  selectedLabelId: string,
+  onSelectLabel: (labelId: string) => void,
+): React.ReactNode {
+  const { label, children } = node;
+  const accessory = label?.unread && label.unread > 0 ? label.unread : undefined;
+  const handleSelect = label
+    ? () => {
+        console.log("[AccountsSidebar:selectLabel]", { labelId: label.id });
+        onSelectLabel(label.id);
+      }
+    : undefined;
+
+  if (children.length === 0) {
+    return (
+      <SidebarListItem
+        key={node.key}
+        selected={label ? selectedLabelId === label.id : false}
+        onClick={handleSelect}
+        icon={<TagIcon className="size-4" />}
+        title={node.segment}
+        accessory={accessory}
+      />
+    );
+  }
+
+  return (
+    <SidebarListItem
+      key={node.key}
+      collapsible
+      defaultOpen={false}
+      selected={label ? selectedLabelId === label.id : false}
+      onClick={handleSelect}
+      icon={<TagIcon className="size-4" />}
+      title={node.segment}
+      accessory={accessory}
+    >
+      {children.map((child) => renderLabelTreeNode(child, selectedLabelId, onSelectLabel))}
+    </SidebarListItem>
+  );
+}
+
 type AccountsSidebarProps = {
   selectedAccountId: string | null;
   onSelectAccount: (accountId: string) => void;
@@ -76,6 +152,7 @@ export function AccountsSidebar({
     (l) => l.type === "system" && l.id in SYSTEM_LABEL_MAP,
   );
   const userLabels = labels.filter((l) => l.type === "user");
+  const userLabelTree = buildLabelTree(userLabels);
 
   const handleAddAccount = async () => {
     console.log("[AccountsSidebar:addAccount]");
@@ -232,24 +309,10 @@ export function AccountsSidebar({
           </>
         )}
 
-        {/* User labels */}
-        {userLabels.length > 0 ? (
+        {/* User labels (rendered as a tree — Gmail nests labels via "/" in the name) */}
+        {userLabelTree.length > 0 ? (
           <SidebarListGroup title="Labels">
-            {userLabels.map((label) => (
-              <SidebarListItem
-                key={label.id}
-                selected={selectedLabelId === label.id}
-                onClick={() => {
-                  console.log("[AccountsSidebar:selectLabel]", { labelId: label.id });
-                  onSelectLabel(label.id);
-                }}
-                icon={<TagIcon className="size-4" />}
-                title={label.name}
-                accessory={
-                  label.unread && label.unread > 0 ? label.unread : undefined
-                }
-              />
-            ))}
+            {userLabelTree.map((node) => renderLabelTreeNode(node, selectedLabelId, onSelectLabel))}
           </SidebarListGroup>
         ) : null}
 
