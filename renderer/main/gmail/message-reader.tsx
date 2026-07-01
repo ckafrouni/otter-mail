@@ -39,7 +39,7 @@ function LabelChip({ label }: { label: GmailLabel }) {
   if (label.color) {
     return (
       <span
-        className="inline-flex items-center rounded-pill px-2 py-0.5 text-mini font-medium leading-none"
+        className="inline-flex w-fit shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-pill text-small-strong px-1.5 py-0.5"
         style={{
           backgroundColor: label.color.backgroundColor,
           color: label.color.textColor,
