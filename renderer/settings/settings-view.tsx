@@ -1,17 +1,18 @@
 import { useEffect, useState } from "react";
 import {
-  ChevronLeftIcon,
   ChevronRightIcon,
   InboxIcon,
   KeyRoundIcon,
   LayersIcon,
   PlusIcon,
   SendIcon,
-  SlidersHorizontalIcon,
+  SettingsIcon,
   UsersIcon,
 } from "lucide-react";
 import {
   Label,
+  List,
+  NavigationButtonGroup,
   RadioGroup,
   RadioGroupItem,
   ScrollArea,
@@ -31,9 +32,6 @@ import {
   ToolbarContent,
   ToolbarTitle,
   Field,
-  FieldContent,
-  FieldGroup,
-  FieldLabel,
   FieldSet,
   Input,
   Button,
@@ -61,12 +59,27 @@ const SYNC_INTERVAL_OPTIONS = [
   { value: 900, label: "Every 15 minutes" },
 ];
 
-const PANES: { id: SettingsPane; label: string; icon: typeof UsersIcon }[] = [
-  { id: "general", label: "General", icon: SlidersHorizontalIcon },
-  { id: "accounts", label: "Accounts", icon: UsersIcon },
-  { id: "views", label: "Views", icon: LayersIcon },
-  { id: "oauth", label: "Google OAuth", icon: KeyRoundIcon },
+// System Settings-style sidebar entries: white glyph on a colored tile.
+const PANES: { id: SettingsPane; label: string; color: string; icon: typeof UsersIcon }[] = [
+  { id: "general", label: "General", color: "#8E8E93", icon: SettingsIcon },
+  { id: "accounts", label: "Accounts", color: "#007AFF", icon: UsersIcon },
+  { id: "views", label: "Views", color: "#AF52DE", icon: LayersIcon },
+  { id: "oauth", label: "Google OAuth", color: "#34C759", icon: KeyRoundIcon },
 ];
+
+function PaneIconTile({ color, Icon }: { color: string; Icon: typeof UsersIcon }) {
+  return (
+    <span
+      className="flex size-5 shrink-0 items-center justify-center rounded-[5px]"
+      style={{ backgroundColor: color }}
+    >
+      <Icon className="size-3.5 text-white" />
+    </span>
+  );
+}
+
+/** One entry in the settings navigation history. */
+type Loc = { pane: SettingsPane; viewId: string | null };
 
 function AccountRow({ account }: { account: GmailAccount }) {
   const updateAccount = useUpdateAccount();
@@ -123,9 +136,9 @@ function AccountRow({ account }: { account: GmailAccount }) {
 }
 
 function viewIcon(view: MailView) {
-  if (view.kind === "inbox") return <InboxIcon className="size-4 shrink-0 text-secondary" />;
-  if (view.kind === "sent") return <SendIcon className="size-4 shrink-0 text-secondary" />;
-  return <LayersIcon className="size-4 shrink-0 text-secondary" />;
+  if (view.kind === "inbox") return <InboxIcon className="size-4 text-secondary" />;
+  if (view.kind === "sent") return <SendIcon className="size-4 text-secondary" />;
+  return <LayersIcon className="size-4 text-secondary" />;
 }
 
 function viewSummary(view: MailView): string {
@@ -137,21 +150,20 @@ function viewSummary(view: MailView): string {
   return `${labels} filter${labels === 1 ? "" : "s"} across ${accounts} account${accounts === 1 ? "" : "s"}`;
 }
 
-function ViewsPane({ target, onConsumeTarget }: { target: string | null; onConsumeTarget: () => void }) {
+function ViewsPane({
+  editingId,
+  onOpenView,
+  onDone,
+}: {
+  editingId: string | null;
+  onOpenView: (viewId: string) => void;
+  onDone: () => void;
+}) {
   const { views, saveView, deleteView, resetView } = useMailViews();
   const accountsQuery = useAccounts();
   const accounts = accountsQuery.data ?? [];
 
-  /** View id being edited, "new" for a fresh view, or null for the list. */
-  const [editing, setEditing] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!target) return;
-    setEditing(target);
-    onConsumeTarget();
-  }, [target, onConsumeTarget]);
-
-  if (editing) {
+  if (editingId) {
     if (!accountsQuery.data) {
       return (
         <Text variant="small" color="tertiary">
@@ -159,54 +171,39 @@ function ViewsPane({ target, onConsumeTarget }: { target: string | null; onConsu
         </Text>
       );
     }
-    const editingView = editing === "new" ? null : views.find((v) => v.id === editing) ?? null;
+    const editingView = editingId === "new" ? null : views.find((v) => v.id === editingId) ?? null;
     return (
-      <div className="flex flex-col gap-3">
-        <button
-          type="button"
-          onClick={() => setEditing(null)}
-          className="flex items-center gap-1 self-start text-secondary hover:text-primary cursor-pointer"
-        >
-          <ChevronLeftIcon className="size-4" />
-          <Text variant="small">All views</Text>
-        </button>
-        <ViewEditorForm
-          key={editing}
-          view={editingView}
-          accounts={accounts}
-          onSave={saveView}
-          onDelete={deleteView}
-          onReset={resetView}
-          onDone={() => setEditing(null)}
-        />
-      </div>
+      <ViewEditorForm
+        key={editingId}
+        view={editingView}
+        accounts={accounts}
+        onSave={saveView}
+        onDelete={deleteView}
+        onReset={resetView}
+        onDone={onDone}
+      />
     );
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-col rounded-control border border-separator divide-y divide-separator">
-        {views.map((view) => (
-          <button
-            key={view.id}
-            type="button"
-            onClick={() => setEditing(view.id)}
-            className="flex items-center gap-3 px-3 py-2.5 hover:bg-control-subtle cursor-pointer text-left first:rounded-t-control last:rounded-b-control"
-          >
-            {viewIcon(view)}
-            <div className="flex flex-col flex-1 min-w-0">
-              <Text variant="small-strong" truncate>
-                {view.name}
-              </Text>
-              <Text variant="mini" color="tertiary" truncate>
-                {viewSummary(view)}
-              </Text>
-            </div>
-            <ChevronRightIcon className="size-4 shrink-0 text-tertiary" />
-          </button>
-        ))}
+    <div className="flex flex-col gap-3">
+      <div className="rounded-control bg-control-subtle p-1">
+        <List.Root items={views} getItemKey={(v: MailView) => v.id}>
+          {views.map((view) => (
+            <List.Item key={view.id} item={view} onClick={() => onOpenView(view.id)}>
+              <List.ItemIcon>{viewIcon(view)}</List.ItemIcon>
+              <List.ItemContent>
+                <List.ItemTitle>{view.name}</List.ItemTitle>
+                <List.ItemDescription>{viewSummary(view)}</List.ItemDescription>
+              </List.ItemContent>
+              <List.ItemAccessory>
+                <ChevronRightIcon className="size-4 text-tertiary" />
+              </List.ItemAccessory>
+            </List.Item>
+          ))}
+        </List.Root>
       </div>
-      <Button variant="filled" size="small" className="self-start" onClick={() => setEditing("new")}>
+      <Button variant="filled" size="small" className="self-start" onClick={() => onOpenView("new")}>
         <PlusIcon className="size-4" />
         New view
       </Button>
@@ -215,8 +212,28 @@ function ViewsPane({ target, onConsumeTarget }: { target: string | null; onConsu
 }
 
 export function SettingsView() {
-  const [pane, setPane] = useState<SettingsPane>("general");
-  const [viewTarget, setViewTarget] = useState<string | null>(null);
+  // System Settings-style navigation: a history stack driving the back/forward
+  // buttons; sidebar clicks and drill-ins push entries.
+  const [nav, setNav] = useState<{ stack: Loc[]; index: number }>({
+    stack: [{ pane: "general", viewId: null }],
+    index: 0,
+  });
+  const loc = nav.stack[nav.index];
+
+  const navigate = (next: Loc) => {
+    setNav((n) => {
+      const current = n.stack[n.index];
+      if (current.pane === next.pane && current.viewId === next.viewId) return n;
+      const stack = [...n.stack.slice(0, n.index + 1), next];
+      return { stack, index: stack.length - 1 };
+    });
+  };
+  const goBack = () => setNav((n) => ({ ...n, index: Math.max(0, n.index - 1) }));
+  const goForward = () => setNav((n) => ({ ...n, index: Math.min(n.stack.length - 1, n.index + 1) }));
+
+  const { views } = useMailViews();
+  const accountsQuery = useAccounts();
+  const accounts = accountsQuery.data ?? [];
 
   const [themeInfo, setThemeInfo] = useState<NativeThemeInfo | null>(null);
 
@@ -235,8 +252,16 @@ export function SettingsView() {
       try {
         const target = await gmailApi.getSettingsTarget();
         if (!target) return;
-        setPane(target.pane);
-        if (target.pane === "views" && target.viewId) setViewTarget(target.viewId);
+        setNav((n) => {
+          const next: Loc = {
+            pane: target.pane,
+            viewId: target.pane === "views" ? (target.viewId ?? null) : null,
+          };
+          const current = n.stack[n.index];
+          if (current.pane === next.pane && current.viewId === next.viewId) return n;
+          const stack = [...n.stack.slice(0, n.index + 1), next];
+          return { stack, index: stack.length - 1 };
+        });
       } catch (error) {
         console.log("[SettingsView:getSettingsTarget] error", { error: String(error) });
       }
@@ -357,24 +382,54 @@ export function SettingsView() {
     }
   };
 
-  const accountsQuery = useAccounts();
-  const accounts = accountsQuery.data ?? [];
+  const firstAccount = accounts[0] ?? null;
+  const accountHeaderName = firstAccount ? getAccountDisplayName(firstAccount) : "No accounts";
+  const accountHeaderDetail =
+    accounts.length > 1 ? `${accounts.length} accounts` : (firstAccount?.email ?? "Connect one to start");
 
-  const activePane = PANES.find((p) => p.id === pane) ?? PANES[0];
+  const paneTitle =
+    loc.pane === "views" && loc.viewId
+      ? loc.viewId === "new"
+        ? "New View"
+        : (views.find((v) => v.id === loc.viewId)?.name ?? "Views")
+      : (PANES.find((p) => p.id === loc.pane)?.label ?? "Settings");
 
   return (
     <SplitView
       sidebar={
         <Sidebar>
+          {/* Account header, System Settings-style */}
+          <div className="px-2 pt-2 pb-1">
+            <button
+              type="button"
+              onClick={() => navigate({ pane: "accounts", viewId: null })}
+              className="flex w-full items-center gap-2.5 rounded-control px-2 py-1.5 hover:bg-control-subtle cursor-pointer text-left"
+            >
+              <Avatar size="small">
+                {firstAccount?.picture ? (
+                  <AvatarImage src={firstAccount.picture} alt={accountHeaderName} />
+                ) : null}
+                <AvatarFallback>{(accountHeaderName[0] ?? "?").toUpperCase()}</AvatarFallback>
+              </Avatar>
+              <div className="flex flex-col min-w-0">
+                <Text variant="small-strong" truncate>
+                  {accountHeaderName}
+                </Text>
+                <Text variant="mini" color="tertiary" truncate>
+                  {accountHeaderDetail}
+                </Text>
+              </div>
+            </button>
+          </div>
           <SidebarList>
             {PANES.map((p) => (
               <SidebarListItem
                 key={p.id}
-                selected={pane === p.id}
+                selected={loc.pane === p.id}
                 className="hover:bg-control-subtle"
-                onClick={() => setPane(p.id)}
+                onClick={() => navigate({ pane: p.id, viewId: null })}
               >
-                <p.icon className="size-4 shrink-0" />
+                <PaneIconTile color={p.color} Icon={p.icon} />
                 <SidebarListItemContent>
                   <SidebarListItemTitle>{p.label}</SidebarListItemTitle>
                 </SidebarListItemContent>
@@ -383,27 +438,30 @@ export function SettingsView() {
           </SidebarList>
         </Sidebar>
       }
-      sidebarSize={{ default: 190, min: 170, max: 240 }}
+      sidebarSize={{ default: 200, min: 180, max: 260 }}
     >
       <ScrollArea
         toolbar={
           <Toolbar>
             <ToolbarRow>
+              <NavigationButtonGroup
+                canGoBack={nav.index > 0}
+                canGoForward={nav.index < nav.stack.length - 1}
+                onGoBack={goBack}
+                onGoForward={goForward}
+              />
               <ToolbarContent>
-                <ToolbarTitle>{activePane.label}</ToolbarTitle>
+                <ToolbarTitle>{paneTitle}</ToolbarTitle>
               </ToolbarContent>
             </ToolbarRow>
           </Toolbar>
         }
       >
         <div className="px-6 pb-8 pt-2 max-w-2xl">
-          {pane === "general" ? (
-            <FieldSet>
-              <FieldGroup>
-                <Field orientation="horizontal">
-                  <FieldContent>
-                    <FieldLabel htmlFor="theme">Theme</FieldLabel>
-                  </FieldContent>
+          {loc.pane === "general" ? (
+            <div className="flex flex-col gap-5">
+              <FieldSet title="Appearance">
+                <Field label="Theme">
                   <RadioGroup
                     value={themeInfo?.themeSource ?? "system"}
                     onValueChange={handleThemeChange}
@@ -423,15 +481,14 @@ export function SettingsView() {
                     </Label>
                   </RadioGroup>
                 </Field>
-                <Field orientation="horizontal">
-                  <FieldContent>
-                    <FieldLabel htmlFor="syncInterval">Check for new mail</FieldLabel>
-                  </FieldContent>
+              </FieldSet>
+              <FieldSet title="Mail">
+                <Field label="Check for new mail" description="Sync runs in the background at this cadence.">
                   <Select
                     value={syncInterval != null ? String(syncInterval) : undefined}
                     onValueChange={(value) => void handleSyncIntervalChange(value)}
                   >
-                    <SelectTrigger id="syncInterval" className="w-44">
+                    <SelectTrigger id="syncInterval" size="small" variant="transparent" className="w-40">
                       <SelectValue placeholder="Loading…" />
                     </SelectTrigger>
                     <SelectContent>
@@ -443,11 +500,11 @@ export function SettingsView() {
                     </SelectContent>
                   </Select>
                 </Field>
-              </FieldGroup>
-            </FieldSet>
+              </FieldSet>
+            </div>
           ) : null}
 
-          {pane === "accounts" ? (
+          {loc.pane === "accounts" ? (
             <FieldSet title="Accounts">
               {accounts.length > 0 ? (
                 <div className="flex flex-col divide-y divide-separator">
@@ -461,51 +518,47 @@ export function SettingsView() {
             </FieldSet>
           ) : null}
 
-          {pane === "views" ? (
-            <ViewsPane target={viewTarget} onConsumeTarget={() => setViewTarget(null)} />
+          {loc.pane === "views" ? (
+            <ViewsPane
+              editingId={loc.viewId}
+              onOpenView={(viewId) => navigate({ pane: "views", viewId })}
+              onDone={() => navigate({ pane: "views", viewId: null })}
+            />
           ) : null}
 
-          {pane === "oauth" ? (
-            <FieldSet title="Google OAuth">
-              <FieldGroup>
-                <Field orientation="horizontal">
-                  <FieldContent>
-                    <FieldLabel htmlFor="clientId">Client ID</FieldLabel>
-                  </FieldContent>
-                  <Input
-                    id="clientId"
-                    type="text"
-                    value={clientId}
-                    onChange={(e) => setClientId(e.target.value)}
-                    placeholder="your-client-id.apps.googleusercontent.com"
-                  />
-                </Field>
-                <Field orientation="horizontal">
-                  <FieldContent>
-                    <FieldLabel htmlFor="clientSecret">Client Secret</FieldLabel>
-                  </FieldContent>
-                  <div className="flex flex-col gap-1 flex-1">
-                    <Input
-                      id="clientSecret"
-                      type="password"
-                      value={clientSecret}
-                      onChange={(e) => setClientSecret(e.target.value)}
-                      placeholder={hasCredentials ? "Saved — enter to update" : "Enter client secret"}
-                    />
-                  </div>
-                </Field>
-                <Field orientation="horizontal">
-                  <FieldContent />
-                  <Button
-                    variant="accent"
-                    size="small"
-                    onClick={() => void handleSaveCredentials()}
-                    disabled={isSavingCredentials || !clientId.trim() || !clientSecret.trim()}
-                  >
-                    {isSavingCredentials ? "Saving..." : "Save"}
-                  </Button>
-                </Field>
-              </FieldGroup>
+          {loc.pane === "oauth" ? (
+            <FieldSet
+              title="Google OAuth"
+              description="Your own Google Cloud OAuth client, used to connect Gmail accounts."
+            >
+              <Field label="Client ID">
+                <Input
+                  id="clientId"
+                  type="text"
+                  value={clientId}
+                  onChange={(e) => setClientId(e.target.value)}
+                  placeholder="your-client-id.apps.googleusercontent.com"
+                />
+              </Field>
+              <Field label="Client Secret">
+                <Input
+                  id="clientSecret"
+                  type="password"
+                  value={clientSecret}
+                  onChange={(e) => setClientSecret(e.target.value)}
+                  placeholder={hasCredentials ? "Saved — enter to update" : "Enter client secret"}
+                />
+              </Field>
+              <Field>
+                <Button
+                  variant="accent"
+                  size="small"
+                  onClick={() => void handleSaveCredentials()}
+                  disabled={isSavingCredentials || !clientId.trim() || !clientSecret.trim()}
+                >
+                  {isSavingCredentials ? "Saving..." : "Save"}
+                </Button>
+              </Field>
             </FieldSet>
           ) : null}
         </div>
