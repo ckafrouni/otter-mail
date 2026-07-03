@@ -206,33 +206,49 @@ export function HomeView() {
     saveLastLocation({ accountId: selectedAccountId, labelId: selectedLabelId });
   }, [initialized, selectedAccountId, selectedLabelId]);
 
-  // If the selected combined view disappears (deleted), fall back to Inbox.
-  useEffect(() => {
-    if (!isCombined) return;
-    if (!views.some((v) => v.id === selectedLabelId)) {
-      setSelectedLabelId(INBOX_VIEW_ID);
-    }
-  }, [isCombined, views, selectedLabelId]);
-
   const effectiveAccountId = isCombined
     ? COMBINED_ACCOUNT_ID
     : selectedAccountId && accounts.some((a) => a.id === selectedAccountId)
       ? selectedAccountId
       : firstRealAccountId;
 
+  // If the selected view disappears (deleted, or it has no rules for the
+  // active account), fall back to Inbox.
+  useEffect(() => {
+    if (isCombined) {
+      if (!views.some((v) => v.id === selectedLabelId)) {
+        setSelectedLabelId(INBOX_VIEW_ID);
+      }
+      return;
+    }
+    const view = views.find((v) => v.id === selectedLabelId);
+    if (!view) return; // plain label
+    if (!view.rules?.some((r) => r.accountId === effectiveAccountId)) {
+      setSelectedLabelId("INBOX");
+    }
+  }, [isCombined, views, selectedLabelId, effectiveAccountId]);
+
   // Local-first: keep the on-disk cache synced in the background. Combined mode
   // refreshes all accounts via its own list handler (sentinel isn't a real account).
   useAccountSync(isCombined ? null : effectiveAccountId);
 
-  // Resolve the selected combined view to concrete per-account rules.
+  // Resolve the selected view to concrete per-account rules.
   const combined = (() => {
-    if (!isCombined) return null;
-    const view = views.find((v) => v.id === selectedLabelId) ?? views[0];
-    return {
-      viewId: view?.id ?? INBOX_VIEW_ID,
-      name: view?.name ?? "Inbox",
-      rules: view ? resolveRules(view, accounts) : [],
-    };
+    if (isCombined) {
+      const view = views.find((v) => v.id === selectedLabelId) ?? views[0];
+      return {
+        viewId: view?.id ?? INBOX_VIEW_ID,
+        name: view?.name ?? "Inbox",
+        rules: view ? resolveRules(view, accounts) : [],
+      };
+    }
+    // Views are mailbox-agnostic building blocks: an account mailbox renders
+    // its slice of a view — the same rules, pruned to the active account.
+    const view = views.find((v) => v.id === selectedLabelId);
+    if (!view || !effectiveAccountId) return null;
+    const rules = resolveRules(view, accounts).filter((r) => r.accountId === effectiveAccountId);
+    if (rules.length === 0) return null;
+    return { viewId: `${effectiveAccountId}:${view.id}`, name: view.name, rules };
   })();
 
   const handleSelectAccount = (accountId: string) => {

@@ -245,7 +245,19 @@ export function AccountsSidebar({
 
   const accounts = accountsQuery.data ?? [];
   const labels: GmailLabel[] = labelsQuery.data ?? [];
-  const viewUnreadCounts = useViewUnreadCounts(views, accounts, isCombined);
+  // Account mode scopes counts (and rows) to the active account's rule slice.
+  const countScope = isCombined ? accounts : accounts.filter((a) => a.id === selectedAccountId);
+  const viewUnreadCounts = useViewUnreadCounts(views, countScope, true);
+  const accountViews = isCombined
+    ? []
+    : views.filter(
+        (v) =>
+          v.kind === "custom" &&
+          (v.rules ?? []).some(
+            (r) =>
+              r.accountId === selectedAccountId && (r.allOf.length > 0 || r.noneOf.length > 0),
+          ),
+      );
   const globalSync = useGlobalSyncStatus(accounts.map((a) => a.id));
   const { deleteView, resetView } = useMailViews();
 
@@ -502,6 +514,43 @@ export function AccountsSidebar({
             ))}
           </>
         )}
+
+        {/* Views with rules for this account render their account slice. */}
+        {accountViews.length > 0 ? (
+          <SidebarListGroup
+            title="Views"
+            collapsible
+            defaultOpen
+            actions={
+              <Button
+                iconOnly
+                variant="transparent"
+                size="small"
+                aria-label="New view"
+                onClick={() => {
+                  void gmailApi.openSettings({ pane: "views", viewId: "new" });
+                }}
+              >
+                <PlusIcon className="size-3.5" />
+              </Button>
+            }
+          >
+            {accountViews.map((view) => (
+              <CombinedViewRow
+                key={view.id}
+                view={view}
+                selected={selectedLabelId === view.id}
+                unreadCount={viewUnreadCounts[view.id] ?? 0}
+                onSelect={() => onSelectLabel(view.id)}
+                onDelete={() => void deleteView(view.id)}
+                onReset={() => void resetView(view.id)}
+                onEdit={() => {
+                  void gmailApi.openSettings({ pane: "views", viewId: view.id });
+                }}
+              />
+            ))}
+          </SidebarListGroup>
+        ) : null}
 
         {/* User labels (rendered as a tree — Gmail nests labels via "/" in the name) */}
         {selectedAccountId ? (

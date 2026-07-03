@@ -93,6 +93,14 @@ function resolveCombinedMeta(
   resolveLabel: ResolveLabel,
 ): CombinedMeta | null {
   if (!combined || !message.accountId) return null;
+  // Account-scoped view slices read like plain label browsing — naming the
+  // (only) account on every row would be noise.
+  if (
+    combined.rules.length > 0 &&
+    combined.rules.every((r) => r.accountId === combined.rules[0].accountId)
+  ) {
+    return null;
+  }
   const account = accounts.find((a) => a.id === message.accountId);
   if (!account) return null;
   const matched = combined.rules.find(
