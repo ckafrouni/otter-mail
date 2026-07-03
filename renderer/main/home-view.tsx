@@ -511,9 +511,7 @@ export function HomeView() {
           searchRef={searchRef}
           syncing={globalSync.syncing}
           syncLabel={globalSync.label}
-          accounts={accounts}
           selectedAccountId={effectiveAccountId}
-          onSelectAccount={handleSelectAccount}
           onOpenHelp={() => setHelpOpen(true)}
         />
         <div className="flex min-h-0 flex-1">

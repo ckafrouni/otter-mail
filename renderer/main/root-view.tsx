@@ -38,7 +38,10 @@ export function RootView() {
     <div className="h-full relative [&:not(:has([data-toolbar]))_.drag-region]:z-50">
       {/* Draggable top bar - fallback for when no toolbar is present */}
       <div className="drag-region fixed top-0 left-0 right-0 h-13" />
-      <div className="h-full">
+      {/* relative: paints above the fixed fallback strip, which otherwise
+          swallows clicks on the app's own top bar (the strip still wins via
+          z-50 when no [data-toolbar] is mounted). */}
+      <div className="relative h-full">
         <Outlet />
       </div>
 

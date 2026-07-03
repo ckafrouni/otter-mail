@@ -494,7 +494,8 @@ function ExpandedRow({
 }: {
   accountId: string;
   summary: GmailMessageSummary;
-  onCollapse: () => void;
+  /** Absent for single-message conversations, which always stay expanded. */
+  onCollapse?: () => void;
   onDownload: DownloadAttachment;
 }) {
   const detailQuery = useMessage(accountId, summary.id);
@@ -530,8 +531,9 @@ function ExpandedRow({
         <button
           type="button"
           onClick={onCollapse}
+          disabled={!onCollapse}
           className="flex w-full items-baseline gap-2 text-left"
-          aria-label="Collapse message"
+          aria-label={onCollapse ? "Collapse message" : undefined}
         >
           <span className="truncate text-[15px] font-bold leading-snug text-(--sk-strong)">
             {summary.fromName || summary.fromEmail}
@@ -1150,7 +1152,7 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
                   <ExpandedRow
                     accountId={accountId}
                     summary={m}
-                    onCollapse={() => toggleExpanded(m.id)}
+                    onCollapse={rows.length === 1 ? undefined : () => toggleExpanded(m.id)}
                     onDownload={handleDownloadAttachment}
                   />
                 ) : (

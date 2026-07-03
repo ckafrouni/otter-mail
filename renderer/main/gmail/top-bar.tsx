@@ -1,24 +1,7 @@
 import type { RefObject } from "react";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from "@glaze/core/components";
-import {
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  CircleHelpIcon,
-  LayersIcon,
-  SearchIcon,
-  XIcon,
-} from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, CircleHelpIcon, SearchIcon, XIcon } from "lucide-react";
 import { IconBtn, HintTooltip } from "./slack-ui";
 import { COMBINED_ACCOUNT_ID } from "./custom-views";
-import { getAccountColor, getAccountDisplayName } from "./account-style";
-import { gmailApi } from "./api";
-import type { GmailAccount } from "./types";
 
 type TopBarProps = {
   canGoBack: boolean;
@@ -30,9 +13,7 @@ type TopBarProps = {
   searchRef: RefObject<HTMLInputElement | null>;
   syncing: boolean;
   syncLabel: string;
-  accounts: GmailAccount[];
   selectedAccountId: string | null;
-  onSelectAccount: (accountId: string) => void;
   onOpenHelp: () => void;
 };
 
@@ -46,13 +27,10 @@ export function TopBar({
   searchRef,
   syncing,
   syncLabel,
-  accounts,
   selectedAccountId,
-  onSelectAccount,
   onOpenHelp,
 }: TopBarProps) {
   const isCombined = selectedAccountId === COMBINED_ACCOUNT_ID;
-  const selectedAccount = accounts.find((a) => a.id === selectedAccountId) ?? null;
 
   return (
     <div
@@ -109,57 +87,6 @@ export function TopBar({
         </IconBtn>
       </HintTooltip>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-label="Account menu"
-            className={[
-              "ml-1 flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-md text-[12px] font-bold ring-(--sk-outline-hover) hover:ring-2",
-              isCombined || !selectedAccount ? "bg-(--sk-ctl) text-(--sk-strong)" : "text-white",
-            ].join(" ")}
-            style={
-              isCombined || !selectedAccount
-                ? undefined
-                : { backgroundColor: getAccountColor(selectedAccount) }
-            }
-          >
-            {isCombined || !selectedAccount ? (
-              <LayersIcon className="size-4" />
-            ) : (
-              (getAccountDisplayName(selectedAccount)[0] ?? "?").toUpperCase()
-            )}
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {accounts.length > 1 ? (
-            <>
-              <DropdownMenuItem onSelect={() => onSelectAccount(COMBINED_ACCOUNT_ID)}>
-                Combined (all mailboxes)
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-            </>
-          ) : null}
-          {accounts.map((account) => (
-            <DropdownMenuItem key={account.id} onSelect={() => onSelectAccount(account.id)}>
-              <span className="flex min-w-0 items-center gap-2">
-                <span
-                  className="size-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: getAccountColor(account) }}
-                />
-                <span className="truncate">{account.email}</span>
-              </span>
-            </DropdownMenuItem>
-          ))}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => void gmailApi.openSettings({ pane: "accounts" })}>
-            Manage accounts…
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => void gmailApi.openSettings({ pane: "general" })}>
-            Settings…
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
     </div>
   );
 }
