@@ -1,14 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Button,
   Dialog,
   Field,
   Input,
   Text,
   EmptyState,
 } from "@glaze/core/components";
-import { SquareIcon, SquareCheckBigIcon, SquareMinusIcon } from "lucide-react";
-import { useAllAccountLabels } from "./hooks";
+import {
+  BanIcon,
+  ChevronDownIcon,
+  SearchIcon,
+  SquareIcon,
+  SquareCheckBigIcon,
+} from "lucide-react";
+import { useAllAccountLabels, useCombinedCounts } from "./hooks";
 import { defaultRulesFor } from "./custom-views";
+import { getAccountColor, getAccountDisplayName } from "./account-style";
 import { buildLabelTree, flattenLabelTree, type LabelTreeNode } from "./label-tree";
 import { SYSTEM_LABEL_NAMES, SYSTEM_LABEL_ORDER, labelDisplayName } from "./label-names";
 import type { GmailAccount, GmailLabel, MailView, ViewRule } from "./types";
@@ -71,46 +79,72 @@ function joinNames(names: string[], conjunction: "and" | "or"): string {
   return `${quoted.slice(0, -1).join(", ")} ${conjunction} ${quoted[quoted.length - 1]}`;
 }
 
-// Indent depth 16px per level, on top of the row's base 8px inset.
 function LabelRow({
   displayName,
   color,
   depth,
   mode,
-  onCycle,
+  onToggleRequire,
+  onToggleExclude,
 }: {
   displayName: string;
   color?: string;
   depth: number;
   mode: PickMode | undefined;
-  onCycle: () => void;
+  onToggleRequire: () => void;
+  onToggleExclude: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onCycle}
-      className="flex w-full items-center gap-2.5 rounded-control py-1.5 pr-2 hover:bg-control-subtle cursor-pointer text-left"
-      style={{ paddingLeft: `${8 + depth * 16}px` }}
+    <div
+      className={[
+        "group flex items-center rounded-control",
+        mode === "require"
+          ? "bg-accent/10"
+          : mode === "exclude"
+            ? "bg-support-red/10"
+            : "hover:bg-control-subtle",
+      ].join(" ")}
     >
-      {mode === "require" ? (
-        <SquareCheckBigIcon className="size-4 shrink-0 text-accent" />
-      ) : mode === "exclude" ? (
-        <SquareMinusIcon className="size-4 shrink-0 text-support-red" />
-      ) : (
-        <SquareIcon className="size-4 shrink-0 text-tertiary" />
-      )}
-      <span
-        className={["size-2.5 shrink-0 rounded-full", color ? "" : "bg-foreground-40"].join(" ")}
-        style={color ? { backgroundColor: color } : undefined}
-      />
-      <Text
-        variant="small"
-        truncate
-        className={["flex-1 min-w-0", mode === "exclude" ? "line-through" : ""].join(" ")}
+      <button
+        type="button"
+        onClick={onToggleRequire}
+        className="flex flex-1 min-w-0 items-center gap-2.5 py-1.5 pr-1 text-left cursor-pointer"
+        style={{ paddingLeft: `${8 + depth * 16}px` }}
       >
-        {displayName}
-      </Text>
-    </button>
+        {mode === "require" ? (
+          <SquareCheckBigIcon className="size-4 shrink-0 text-accent" />
+        ) : mode === "exclude" ? (
+          <BanIcon className="size-4 shrink-0 text-support-red" />
+        ) : (
+          <SquareIcon className="size-4 shrink-0 text-tertiary" />
+        )}
+        <span
+          className={["size-2.5 shrink-0 rounded-full", color ? "" : "bg-foreground-40"].join(" ")}
+          style={color ? { backgroundColor: color } : undefined}
+        />
+        <Text
+          variant="small"
+          truncate
+          className={["flex-1 min-w-0", mode === "exclude" ? "line-through" : ""].join(" ")}
+        >
+          {displayName}
+        </Text>
+      </button>
+      <button
+        type="button"
+        aria-label={mode === "exclude" ? `Stop excluding ${displayName}` : `Exclude ${displayName}`}
+        title={mode === "exclude" ? "Stop excluding" : "Exclude — hide emails with this label"}
+        onClick={onToggleExclude}
+        className={[
+          "shrink-0 px-2 py-1.5 cursor-pointer",
+          mode === "exclude"
+            ? "text-support-red"
+            : "text-tertiary opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-support-red",
+        ].join(" ")}
+      >
+        <BanIcon className="size-3.5" />
+      </button>
+    </div>
   );
 }
 
@@ -129,6 +163,8 @@ export function ViewEditorDialog({
 
   const [name, setName] = useState("");
   const [picks, setPicks] = useState<Picks>({});
+  const [filter, setFilter] = useState("");
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const isDefault = view?.kind === "inbox" || view?.kind === "sent";
 
@@ -138,21 +174,35 @@ export function ViewEditorDialog({
     setName(view?.name ?? "");
     const initialRules = view == null ? [] : view.rules ?? defaultRulesFor(view.kind, accounts);
     setPicks(rulesToPicks(initialRules));
+    setFilter("");
+    setCollapsed({});
     // Only re-init when the dialog (re)opens or the target view changes.
   }, [open, view, accounts]);
 
-  const cycle = (accountId: string, labelId: string) => {
+  const setMode = (accountId: string, labelId: string, next: PickMode | undefined) => {
     setPicks((prev) => {
       const entry = { ...(prev[accountId] ?? {}) };
-      const current = entry[labelId];
-      if (current === undefined) entry[labelId] = "require";
-      else if (current === "require") entry[labelId] = "exclude";
-      else delete entry[labelId];
+      if (next === undefined) delete entry[labelId];
+      else entry[labelId] = next;
       return { ...prev, [accountId]: entry };
     });
   };
 
+  const toggleRequire = (accountId: string, labelId: string) => {
+    const current = picks[accountId]?.[labelId];
+    setMode(accountId, labelId, current === "require" ? undefined : "require");
+  };
+
+  const toggleExclude = (accountId: string, labelId: string) => {
+    const current = picks[accountId]?.[labelId];
+    setMode(accountId, labelId, current === "exclude" ? undefined : "exclude");
+  };
+
   const rules = useMemo(() => picksToRules(picks), [picks]);
+  const pickCount = rules.reduce((n, r) => n + r.allOf.length + r.noneOf.length, 0);
+
+  // Live match count for the draft rules, straight from the local store.
+  const draftCounts = useCombinedCounts(rules, `draft:${view?.id ?? "new"}`, open);
 
   const handleSave = () => {
     const trimmed = name.trim();
@@ -160,6 +210,9 @@ export function ViewEditorDialog({
     onSave({ id: view?.id, name: trimmed, rules });
     onOpenChange(false);
   };
+
+  const query = filter.trim().toLowerCase();
+  const matches = (label: GmailLabel) => labelDisplayName(label).toLowerCase().includes(query);
 
   const sortedByAccount = useMemo(
     () =>
@@ -200,7 +253,7 @@ export function ViewEditorDialog({
       onOpenChange={onOpenChange}
       size="large"
       title={view ? `Edit ${view.name}` : "New View"}
-      description="Click a label once to require it, twice to exclude it. A message must carry every required label and none of the excluded ones; accounts combine as alternatives."
+      description="Pick the labels each account must have — and any it must not."
       confirmLabel={view ? "Save" : "Create"}
       confirmVariant="accent"
       confirmDisabled={!canSave}
@@ -234,12 +287,37 @@ export function ViewEditorDialog({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Action Required"
-            autoFocus
+            autoFocus={view == null}
           />
         </Field>
 
         <div className="flex flex-col gap-1.5">
-          <Text variant="small-strong">Labels</Text>
+          <div className="flex items-center justify-between gap-2">
+            <Text variant="small-strong">Labels</Text>
+            <div className="flex items-center gap-2">
+              <Text variant="mini" color="tertiary">
+                <SquareCheckBigIcon className="inline size-3 text-accent align-[-2px]" /> must have
+                {"   "}
+                <BanIcon className="inline size-3 text-support-red align-[-2px] ml-2" /> must not
+              </Text>
+              {pickCount > 0 ? (
+                <Button variant="transparent" size="small" onClick={() => setPicks({})}>
+                  Clear
+                </Button>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="relative">
+            <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-tertiary pointer-events-none" />
+            <Input
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Filter labels…"
+              className="pl-8"
+            />
+          </div>
+
           {anyLoading && sortedByAccount.every((a) => a.systemLabels.length === 0 && a.userRows.length === 0) ? (
             <Text variant="small" color="tertiary">
               Loading labels…
@@ -251,62 +329,116 @@ export function ViewEditorDialog({
               description="Connect an account to pick labels."
             />
           ) : (
-            <div className="max-h-72 overflow-y-auto rounded-control border border-separator">
-              <div className="flex flex-col gap-2 p-1.5">
-                {sortedByAccount.map((entry) => (
-                  <div key={entry.accountId} className="flex flex-col">
-                    <Text
-                      variant="mini"
-                      color="secondary"
-                      className="px-2 py-1 truncate"
-                    >
-                      {entry.account?.email ?? entry.accountId}
-                    </Text>
-                    {entry.systemLabels.map((label) => (
-                      <LabelRow
-                        key={label.id}
-                        displayName={labelDisplayName(label)}
-                        color={label.color?.backgroundColor}
-                        depth={0}
-                        mode={picks[entry.accountId]?.[label.id]}
-                        onCycle={() => cycle(entry.accountId, label.id)}
-                      />
-                    ))}
-                    {entry.userRows.map(({ node, depth }) =>
-                      node.label ? (
-                        <LabelRow
-                          key={node.key}
-                          displayName={node.segment}
-                          color={node.label.color?.backgroundColor}
-                          depth={depth}
-                          mode={picks[entry.accountId]?.[node.label.id]}
-                          onCycle={() => cycle(entry.accountId, node.label!.id)}
+            <div className="max-h-80 overflow-y-auto rounded-control border border-separator">
+              <div className="flex flex-col gap-1 p-1.5">
+                {sortedByAccount.map((entry) => {
+                  const accountPicks = picks[entry.accountId] ?? {};
+                  const activeCount = Object.keys(accountPicks).length;
+                  const isCollapsed = query.length === 0 && (collapsed[entry.accountId] ?? false);
+                  const visibleUserRows = query
+                    ? entry.userRows.filter(({ node }) => node.label && matches(node.label))
+                    : entry.userRows;
+                  const visibleSystem = query ? entry.systemLabels.filter(matches) : entry.systemLabels;
+                  if (query && visibleUserRows.length === 0 && visibleSystem.length === 0) return null;
+                  return (
+                    <div key={entry.accountId} className="flex flex-col">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCollapsed((prev) => ({ ...prev, [entry.accountId]: !isCollapsed }))
+                        }
+                        className="flex w-full items-center gap-2 rounded-control px-2 py-1.5 hover:bg-control-subtle cursor-pointer text-left"
+                      >
+                        <span
+                          className="size-2.5 shrink-0 rounded-full"
+                          style={{
+                            backgroundColor: entry.account ? getAccountColor(entry.account) : undefined,
+                          }}
                         />
-                      ) : (
-                        <Text
-                          key={node.key}
-                          variant="small"
-                          color="tertiary"
-                          truncate
-                          className="py-1.5 pr-2"
-                          style={{ paddingLeft: `${8 + depth * 16}px` }}
-                        >
-                          {node.segment}
+                        <Text variant="small-strong" truncate>
+                          {entry.account ? getAccountDisplayName(entry.account) : entry.accountId}
                         </Text>
-                      ),
-                    )}
-                  </div>
-                ))}
+                        <Text variant="mini" color="tertiary" truncate className="flex-1 min-w-0">
+                          {entry.account?.email ?? ""}
+                        </Text>
+                        {activeCount > 0 ? (
+                          <Text variant="mini" color="secondary" className="shrink-0">
+                            {activeCount} selected
+                          </Text>
+                        ) : null}
+                        <ChevronDownIcon
+                          className={[
+                            "size-3.5 shrink-0 text-tertiary transition-transform",
+                            isCollapsed ? "-rotate-90" : "",
+                          ].join(" ")}
+                        />
+                      </button>
+                      {!isCollapsed ? (
+                        <>
+                          {visibleUserRows.map(({ node, depth }) =>
+                            node.label ? (
+                              <LabelRow
+                                key={node.key}
+                                displayName={query ? labelDisplayName(node.label) : node.segment}
+                                color={node.label.color?.backgroundColor}
+                                depth={query ? 0 : depth}
+                                mode={accountPicks[node.label.id]}
+                                onToggleRequire={() => toggleRequire(entry.accountId, node.label!.id)}
+                                onToggleExclude={() => toggleExclude(entry.accountId, node.label!.id)}
+                              />
+                            ) : query ? null : (
+                              <Text
+                                key={node.key}
+                                variant="small"
+                                color="tertiary"
+                                truncate
+                                className="py-1.5 pr-2"
+                                style={{ paddingLeft: `${8 + depth * 16}px` }}
+                              >
+                                {node.segment}
+                              </Text>
+                            ),
+                          )}
+                          {visibleSystem.length > 0 ? (
+                            <Text variant="mini" color="tertiary" className="px-2 pt-2 pb-0.5">
+                              System
+                            </Text>
+                          ) : null}
+                          {visibleSystem.map((label) => (
+                            <LabelRow
+                              key={label.id}
+                              displayName={labelDisplayName(label)}
+                              color={label.color?.backgroundColor}
+                              depth={0}
+                              mode={accountPicks[label.id]}
+                              onToggleRequire={() => toggleRequire(entry.accountId, label.id)}
+                              onToggleExclude={() => toggleExclude(entry.accountId, label.id)}
+                            />
+                          ))}
+                        </>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
         </div>
 
-        <div className="flex flex-col gap-1">
-          <Text variant="small-strong">This view will show</Text>
+        <div className="flex flex-col gap-1 rounded-control bg-control-subtle px-3 py-2.5">
+          <div className="flex items-baseline justify-between gap-2">
+            <Text variant="small-strong">This view will show</Text>
+            {rules.length > 0 && draftCounts.data ? (
+              <Text variant="mini" color="secondary" className="shrink-0 tabular-nums">
+                {draftCounts.data.total.toLocaleString()} messages
+                {draftCounts.data.unread > 0 ? `, ${draftCounts.data.unread.toLocaleString()} unread` : ""}
+              </Text>
+            ) : null}
+          </div>
           {recap.length === 0 ? (
             <Text variant="small" color="tertiary">
-              Nothing yet — click labels above to build the view.
+              Nothing yet — click a label to require it, or its <BanIcon className="inline size-3 align-[-2px]" /> to
+              exclude it.
             </Text>
           ) : (
             recap.map((r, i) => (
