@@ -9,8 +9,6 @@ import {
   Sidebar,
   SidebarList,
   SidebarListItem,
-  SidebarListItemContent,
-  SidebarListItemTitle,
   SidebarListItemAccessory,
   SidebarListGroup,
   SidebarFooter,
@@ -109,28 +107,33 @@ function CombinedViewRow({
             console.log("[AccountsSidebar:selectView]", { viewId: view.id });
             onSelect();
           }}
-        >
-          {viewIcon(view)}
-          <SidebarListItemContent>
-            <SidebarListItemTitle className={unreadCount > 0 ? "text-strong" : undefined}>
-              {view.name}
-            </SidebarListItemTitle>
-          </SidebarListItemContent>
-          <SidebarListItemAccessory>
-            {unreadCount > 0 ? unreadCount : null}
-            <button
-              type="button"
-              aria-label={`Edit ${view.name}`}
-              className="text-tertiary hover:text-primary opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit();
-              }}
-            >
-              <SettingsIcon className="size-3.5" />
-            </button>
-          </SidebarListItemAccessory>
-        </SidebarListItem>
+          icon={
+            // Mirrors the chevron gutter the per-account sidebar reserves (it
+            // has collapsible label rows; Combined has none) so both modes
+            // share the same icon column and row rhythm.
+            <span className="flex items-center gap-2">
+              <span className="size-3.5 shrink-0 -ml-1.5 -mr-2" aria-hidden />
+              {viewIcon(view)}
+            </span>
+          }
+          title={unreadCount > 0 ? <span className="text-strong">{view.name}</span> : view.name}
+          accessory={
+            <SidebarListItemAccessory>
+              {unreadCount > 0 ? unreadCount : null}
+              <button
+                type="button"
+                aria-label={`Edit ${view.name}`}
+                className="text-tertiary hover:text-primary opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit();
+                }}
+              >
+                <SettingsIcon className="size-3.5" />
+              </button>
+            </SidebarListItemAccessory>
+          }
+        />
       </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem icon="pencil" onSelect={onEdit}>
