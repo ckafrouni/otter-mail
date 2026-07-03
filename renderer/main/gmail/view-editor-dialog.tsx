@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Badge,
   Button,
   Dialog,
   Field,
@@ -73,10 +74,36 @@ function userLabelRows(labels: GmailLabel[]): { node: LabelTreeNode; depth: numb
   return flattenLabelTree(buildLabelTree(labels.filter((l) => l.type === "user")));
 }
 
-function joinNames(names: string[], conjunction: "and" | "or"): string {
-  const quoted = names.map((n) => `“${n}”`);
-  if (quoted.length <= 1) return quoted[0] ?? "";
-  return `${quoted.slice(0, -1).join(", ")} ${conjunction} ${quoted[quoted.length - 1]}`;
+// Mirrors LabelChip's pill classes so recap chips match list chips in height,
+// but takes a resolved display name (LabelChip only accepts a raw GmailLabel).
+function RecapChip({
+  name,
+  color,
+  excluded,
+}: {
+  name: string;
+  color?: { backgroundColor: string; textColor: string };
+  excluded?: boolean;
+}) {
+  if (excluded) {
+    return (
+      <span className="inline-flex w-fit shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-pill text-small-strong px-1.5 py-0.5 bg-support-red/15 text-support-red">
+        <BanIcon className="size-3" />
+        {name}
+      </span>
+    );
+  }
+  if (color) {
+    return (
+      <span
+        className="inline-flex w-fit shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-pill text-small-strong px-1.5 py-0.5"
+        style={{ backgroundColor: color.backgroundColor, color: color.textColor }}
+      >
+        {name}
+      </span>
+    );
+  }
+  return <Badge color="secondary">{name}</Badge>;
 }
 
 function LabelRow({
@@ -173,9 +200,19 @@ export function ViewEditorDialog({
     if (!open) return;
     setName(view?.name ?? "");
     const initialRules = view == null ? [] : view.rules ?? defaultRulesFor(view.kind, accounts);
-    setPicks(rulesToPicks(initialRules));
+    const initialPicks = rulesToPicks(initialRules);
+    setPicks(initialPicks);
     setFilter("");
-    setCollapsed({});
+    // Accounts that already constrain the view start expanded, the rest
+    // collapsed; a blank view starts with every account expanded.
+    const hasAny = Object.values(initialPicks).some((e) => Object.keys(e).length > 0);
+    setCollapsed(
+      hasAny
+        ? Object.fromEntries(
+            accounts.map((a) => [a.id, Object.keys(initialPicks[a.id] ?? {}).length === 0]),
+          )
+        : {},
+    );
     // Only re-init when the dialog (re)opens or the target view changes.
   }, [open, view, accounts]);
 
@@ -225,25 +262,27 @@ export function ViewEditorDialog({
     [accountLabels, accounts],
   );
 
-  // Resolves a label id to its display name for the recap sentence.
-  const labelName = (accountId: string, labelId: string): string => {
+  // Resolves a label id to recap-chip display data (friendly name + Gmail color).
+  const chipFor = (
+    accountId: string,
+    labelId: string,
+  ): { name: string; color?: { backgroundColor: string; textColor: string } } => {
     const entry = accountLabels.find((a) => a.accountId === accountId);
     const label = entry?.labels.find((l) => l.id === labelId);
-    return label ? labelDisplayName(label) : (SYSTEM_LABEL_NAMES[labelId] ?? labelId);
+    if (!label) return { name: SYSTEM_LABEL_NAMES[labelId] ?? labelId };
+    const display = labelDisplayName(label);
+    return {
+      name: label.type === "user" ? (display.split("/").pop() ?? display) : display,
+      color: label.color ?? undefined,
+    };
   };
 
-  const recap = rules.map((rule) => {
-    const email = accounts.find((a) => a.id === rule.accountId)?.email ?? rule.accountId;
-    const has =
-      rule.allOf.length > 0
-        ? `emails that have ${joinNames(rule.allOf.map((id) => labelName(rule.accountId, id)), "and")}`
-        : "all emails";
-    const hasNot =
-      rule.noneOf.length > 0
-        ? ` and don't have ${joinNames(rule.noneOf.map((id) => labelName(rule.accountId, id)), "or")}`
-        : "";
-    return { accountId: rule.accountId, email, sentence: `${has}${hasNot}` };
-  });
+  const recap = rules.map((rule) => ({
+    accountId: rule.accountId,
+    email: accounts.find((a) => a.id === rule.accountId)?.email ?? rule.accountId,
+    allOf: rule.allOf.map((id) => ({ id, ...chipFor(rule.accountId, id) })),
+    noneOf: rule.noneOf.map((id) => ({ id, ...chipFor(rule.accountId, id) })),
+  }));
 
   const canSave = name.trim().length > 0 && rules.length > 0;
 
@@ -329,8 +368,8 @@ export function ViewEditorDialog({
               description="Connect an account to pick labels."
             />
           ) : (
-            <div className="max-h-80 overflow-y-auto rounded-control border border-separator">
-              <div className="flex flex-col gap-1 p-1.5">
+            <div className="max-h-80 overflow-y-auto">
+              <div className="flex flex-col gap-2">
                 {sortedByAccount.map((entry) => {
                   const accountPicks = picks[entry.accountId] ?? {};
                   const activeCount = Object.keys(accountPicks).length;
@@ -341,13 +380,16 @@ export function ViewEditorDialog({
                   const visibleSystem = query ? entry.systemLabels.filter(matches) : entry.systemLabels;
                   if (query && visibleUserRows.length === 0 && visibleSystem.length === 0) return null;
                   return (
-                    <div key={entry.accountId} className="flex flex-col">
+                    <div
+                      key={entry.accountId}
+                      className="flex flex-col rounded-control border border-separator overflow-hidden"
+                    >
                       <button
                         type="button"
                         onClick={() =>
                           setCollapsed((prev) => ({ ...prev, [entry.accountId]: !isCollapsed }))
                         }
-                        className="flex w-full items-center gap-2 rounded-control px-2 py-1.5 hover:bg-control-subtle cursor-pointer text-left"
+                        className="flex w-full items-center gap-2 px-2.5 py-2 hover:bg-control-subtle cursor-pointer text-left"
                       >
                         <span
                           className="size-2.5 shrink-0 rounded-full"
@@ -374,7 +416,7 @@ export function ViewEditorDialog({
                         />
                       </button>
                       {!isCollapsed ? (
-                        <>
+                        <div className="flex flex-col px-1.5 pb-1.5">
                           {visibleUserRows.map(({ node, depth }) =>
                             node.label ? (
                               <LabelRow
@@ -415,7 +457,7 @@ export function ViewEditorDialog({
                               onToggleExclude={() => toggleExclude(entry.accountId, label.id)}
                             />
                           ))}
-                        </>
+                        </div>
                       ) : null}
                     </div>
                   );
@@ -441,11 +483,19 @@ export function ViewEditorDialog({
               exclude it.
             </Text>
           ) : (
-            recap.map((r, i) => (
-              <Text key={r.accountId} variant="small" color="secondary">
-                {i === 0 ? "From " : "plus from "}
-                <span className="font-medium">{r.email}</span>: {r.sentence}
-              </Text>
+            recap.map((r) => (
+              <div key={r.accountId} className="flex items-center gap-1.5 flex-wrap py-0.5">
+                <Text variant="mini" color="tertiary" className="shrink-0">
+                  {r.email}
+                </Text>
+                {r.allOf.length === 0 ? <Badge color="secondary">All mail</Badge> : null}
+                {r.allOf.map((c) => (
+                  <RecapChip key={c.id} name={c.name} color={c.color} />
+                ))}
+                {r.noneOf.map((c) => (
+                  <RecapChip key={c.id} name={c.name} excluded />
+                ))}
+              </div>
             ))
           )}
         </div>
