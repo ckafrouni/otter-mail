@@ -758,7 +758,7 @@ export function registerGmailHandlers(): void {
     console.log("[gmail:syncAccount]", { accountId: p?.accountId });
     try {
       const accountId = assertString(p?.accountId, "accountId");
-      mailSync.syncAccount(accountId);
+      mailSync.syncAccount(accountId, { force: true });
       return mailSync.getSyncStatus(accountId);
     } catch (err) {
       console.log("[gmail:syncAccount] error", { error: String(err) });

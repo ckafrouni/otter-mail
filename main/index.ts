@@ -167,7 +167,7 @@ async function setupApplicationMenu() {
           accelerator: "Shift+Command+N",
           click: () => {
             logger.info("main", "Menu: Synchronize All Mailboxes");
-            void syncAllAccounts();
+            void syncAllAccounts({ force: true });
           },
         },
       ],

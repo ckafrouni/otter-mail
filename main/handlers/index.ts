@@ -65,7 +65,7 @@ export function registerHandlers(): void {
   logger.info("handlers", "✓ IPC handlers registered");
 
   // Warm the local cache for every connected account on launch.
-  void syncAllAccounts();
+  void syncAllAccounts({ force: true });
 
   void getSettings().then((settings) => configureAutoSync(settings.syncIntervalSeconds));
 

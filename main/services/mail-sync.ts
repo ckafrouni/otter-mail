@@ -54,20 +54,33 @@ export function getSyncStatus(accountId: string): SyncStatus {
   return { ...ensureStatus(accountId) };
 }
 
-/** Kick off a background sync for one account (no-op if one is already running). */
-export function syncAccount(accountId: string): void {
+const lastFinishedAt = new Map<string, number>();
+// Read-path triggers (list handlers refetching) must not restart a sync right
+// after one finished: completion invalidates the renderer's queries, whose
+// refetch hits those handlers again — without a cooldown that loops forever.
+const READ_TRIGGER_COOLDOWN_MS = 20_000;
+
+/** Kick off a background sync for one account (no-op if one is already running).
+    Non-forced calls (read-path triggers) are skipped during the post-sync cooldown. */
+export function syncAccount(accountId: string, opts?: { force?: boolean }): void {
   if (running.has(accountId)) return;
+  if (!opts?.force && Date.now() - (lastFinishedAt.get(accountId) ?? 0) < READ_TRIGGER_COOLDOWN_MS) {
+    return;
+  }
   running.add(accountId);
   // Wake the renderer's idle status polls so even short syncs show up.
   ipcMain.broadcast("gmail:sync-started");
-  void runSync(accountId).finally(() => running.delete(accountId));
+  void runSync(accountId).finally(() => {
+    running.delete(accountId);
+    lastFinishedAt.set(accountId, Date.now());
+  });
 }
 
-/** Sync every connected account — used on app launch. */
-export async function syncAllAccounts(): Promise<void> {
+/** Sync every connected account — launch, menu, and the auto timer force it. */
+export async function syncAllAccounts(opts?: { force?: boolean }): Promise<void> {
   try {
     const accounts = await listAccounts();
-    for (const account of accounts) syncAccount(account.id);
+    for (const account of accounts) syncAccount(account.id, opts);
   } catch (err) {
     logger.error("mail-sync", `syncAllAccounts failed: ${String(err)}`);
   }
@@ -82,7 +95,7 @@ export function configureAutoSync(intervalSeconds: number): void {
     autoSyncTimer = null;
   }
   if (intervalSeconds > 0) {
-    autoSyncTimer = setInterval(() => void syncAllAccounts(), intervalSeconds * 1000);
+    autoSyncTimer = setInterval(() => void syncAllAccounts({ force: true }), intervalSeconds * 1000);
   }
   logger.info("mail-sync", `auto-sync ${intervalSeconds > 0 ? `every ${intervalSeconds}s` : "disabled"}`);
 }
