@@ -96,7 +96,12 @@ export type UpdateAccountParams = {
   color?: string;
 };
 
-export type SyncSettings = { syncIntervalSeconds: number };
+export type NotificationsMode = "off" | "inbox" | "all";
+
+export type SyncSettings = {
+  syncIntervalSeconds: number;
+  notificationsMode: NotificationsMode;
+};
 
 export type SaveViewParams = { id?: string; name: string; rules: ViewRule[] };
 
@@ -180,7 +185,7 @@ export const gmailApi = {
 
   getSyncSettings: (): Promise<SyncSettings> => ipc("gmail:getSyncSettings"),
 
-  setSyncSettings: (params: SyncSettings): Promise<SyncSettings> =>
+  setSyncSettings: (params: Partial<SyncSettings>): Promise<SyncSettings> =>
     ipc("gmail:setSyncSettings", params),
 
   listViews: (): Promise<MailView[]> => ipc("gmail:listViews"),

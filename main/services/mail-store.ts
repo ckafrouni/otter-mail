@@ -551,6 +551,21 @@ export function getUndownloadedMessageIds(accountId: string): string[] {
   return rows.map((r) => r.id);
 }
 
+/** Total unread INBOX messages across every account — drives the dock badge. */
+export function countInboxUnreadAll(): number {
+  const d = getDb();
+  const row = d
+    .prepare(`
+      SELECT COUNT(*) AS n
+        FROM messages m
+        JOIN message_labels ml
+          ON ml.accountId = m.accountId AND ml.messageId = m.id AND ml.labelId = 'INBOX'
+       WHERE m.unread = 1
+    `)
+    .get() as unknown as { n: number } | undefined;
+  return row?.n ?? 0;
+}
+
 export function countMessagesForLabel(accountId: string, labelId: string): number {
   const d = getDb();
   const row = d

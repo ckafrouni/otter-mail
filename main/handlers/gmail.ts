@@ -36,7 +36,8 @@ import {
 } from "../services/gmail-api.js";
 import * as mailStore from "../services/mail-store.js";
 import * as mailSync from "../services/mail-sync.js";
-import { getSettings, updateSettings } from "../services/settings-store.js";
+import { updateDockBadge } from "../services/notifier.js";
+import { getSettings, updateSettings, type AppSettings } from "../services/settings-store.js";
 import * as viewsStore from "../services/views-store.js";
 import type { ComposeAttachment, MailView, ViewRule } from "../gmail/types.js";
 
@@ -163,6 +164,7 @@ export function registerGmailHandlers(): void {
       await removeAccountTokens(accountId);
       await storeRemoveAccount(accountId);
       mailStore.removeAccountData(accountId);
+      updateDockBadge();
       return { ok: true as const };
     } catch (err) {
       console.log("[gmail:removeAccount] error", { error: String(err) });
@@ -448,6 +450,7 @@ export function registerGmailHandlers(): void {
       const removeLabelIds = asStringArray(p?.removeLabelIds);
       const result = await modifyMessage(accountId, messageId, { addLabelIds, removeLabelIds });
       mailStore.applyLabelChange(accountId, messageId, addLabelIds ?? [], removeLabelIds ?? []);
+      updateDockBadge();
       return result;
     } catch (err) {
       console.log("[gmail:modifyMessage] error", { error: String(err) });
@@ -464,6 +467,7 @@ export function registerGmailHandlers(): void {
       const messageId = assertString(p?.messageId, "messageId");
       const result = await trashMessage(accountId, messageId);
       mailStore.deleteMessage(accountId, messageId);
+      updateDockBadge();
       return result;
     } catch (err) {
       console.log("[gmail:trashMessage] error", { error: String(err) });
@@ -496,6 +500,7 @@ export function registerGmailHandlers(): void {
       const removeLabelIds = asStringArray(p?.removeLabelIds);
       const result = await modifyThread(accountId, threadId, { addLabelIds, removeLabelIds });
       mailStore.applyLabelChangeToThread(accountId, threadId, addLabelIds ?? [], removeLabelIds ?? []);
+      updateDockBadge();
       return result;
     } catch (err) {
       console.log("[gmail:modifyThread] error", { error: String(err) });
@@ -512,6 +517,7 @@ export function registerGmailHandlers(): void {
       const threadId = assertString(p?.threadId, "threadId");
       const result = await trashThread(accountId, threadId);
       mailStore.deleteThread(accountId, threadId);
+      updateDockBadge();
       return result;
     } catch (err) {
       console.log("[gmail:trashThread] error", { error: String(err) });
@@ -695,18 +701,34 @@ export function registerGmailHandlers(): void {
     }
   });
 
-  // gmail:setSyncSettings — persist the interval and restart the timer
+  // gmail:setSyncSettings — persist any provided settings; restarts the sync
+  // timer when the interval changed.
   ipcMain.handle("gmail:setSyncSettings", async (_event, params: unknown) => {
     const p = params as Record<string, unknown>;
-    console.log("[gmail:setSyncSettings]", { syncIntervalSeconds: p?.syncIntervalSeconds });
+    console.log("[gmail:setSyncSettings]", {
+      syncIntervalSeconds: p?.syncIntervalSeconds,
+      notificationsMode: p?.notificationsMode,
+    });
     try {
-      const raw = p?.syncIntervalSeconds;
-      if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) {
-        throw new Error('Invalid parameter: "syncIntervalSeconds" must be a non-negative number.');
+      const patch: Partial<AppSettings> = {};
+      if (p?.syncIntervalSeconds !== undefined) {
+        const raw = p.syncIntervalSeconds;
+        if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) {
+          throw new Error('Invalid parameter: "syncIntervalSeconds" must be a non-negative number.');
+        }
+        patch.syncIntervalSeconds = Math.min(Math.round(raw), 24 * 60 * 60);
       }
-      const syncIntervalSeconds = Math.min(Math.round(raw), 24 * 60 * 60);
-      const settings = await updateSettings({ syncIntervalSeconds });
-      mailSync.configureAutoSync(settings.syncIntervalSeconds);
+      if (p?.notificationsMode !== undefined) {
+        const mode = p.notificationsMode;
+        if (mode !== "off" && mode !== "inbox" && mode !== "all") {
+          throw new Error('Invalid parameter: "notificationsMode" must be "off", "inbox", or "all".');
+        }
+        patch.notificationsMode = mode;
+      }
+      const settings = await updateSettings(patch);
+      if (patch.syncIntervalSeconds !== undefined) {
+        mailSync.configureAutoSync(settings.syncIntervalSeconds);
+      }
       return settings;
     } catch (err) {
       console.log("[gmail:setSyncSettings] error", { error: String(err) });

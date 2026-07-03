@@ -41,12 +41,18 @@ import {
   toast,
 } from "@glaze/core/components";
 import type { NativeThemeInfo } from "@glaze/core/ipc";
-import { gmailApi, type SettingsPane } from "../main/gmail/api";
+import { gmailApi, type NotificationsMode, type SettingsPane } from "../main/gmail/api";
 import { useAccounts, useAddAccount, useRemoveAccount, useUpdateAccount } from "../main/gmail/hooks";
 import { useMailViews } from "../main/gmail/custom-views";
 import { ViewEditorForm } from "../main/gmail/view-editor-form";
 import { ACCOUNT_COLOR_PALETTE, getAccountColor, getAccountDisplayName } from "../main/gmail/account-style";
 import type { GmailAccount, MailView } from "../main/gmail/types";
+
+const NOTIFICATIONS_OPTIONS: { value: NotificationsMode; label: string }[] = [
+  { value: "off", label: "Off" },
+  { value: "inbox", label: "Inbox only" },
+  { value: "all", label: "All new mail" },
+];
 
 /** Auto-sync cadence choices in seconds; 0 = manual only. */
 const SYNC_INTERVAL_OPTIONS = [
@@ -274,6 +280,7 @@ export function SettingsView() {
   const [isSavingCredentials, setIsSavingCredentials] = useState(false);
 
   const [syncInterval, setSyncInterval] = useState<number | null>(null);
+  const [notificationsMode, setNotificationsMode] = useState<NotificationsMode | null>(null);
 
   // Navigate to the pane (and view) other windows deep-link to, on mount and
   // whenever the backend signals a new target while this window is open.
@@ -357,6 +364,7 @@ export function SettingsView() {
     try {
       const settings = await gmailApi.getSyncSettings();
       setSyncInterval(settings.syncIntervalSeconds);
+      setNotificationsMode(settings.notificationsMode);
     } catch (error) {
       toast.error(`Failed to load sync settings: ${error}`);
     }
@@ -376,6 +384,18 @@ export function SettingsView() {
       await gmailApi.setSyncSettings({ syncIntervalSeconds: seconds });
     } catch (error) {
       toast.error(`Failed to save sync setting: ${error}`);
+      void loadSyncSettings();
+    }
+  };
+
+  const handleNotificationsModeChange = async (value: string) => {
+    const mode = value as NotificationsMode;
+    setNotificationsMode(mode);
+    console.log("[SettingsView:setNotificationsMode]", { mode });
+    try {
+      await gmailApi.setSyncSettings({ notificationsMode: mode });
+    } catch (error) {
+      toast.error(`Failed to save notifications setting: ${error}`);
       void loadSyncSettings();
     }
   };
@@ -524,6 +544,23 @@ export function SettingsView() {
                     <SelectContent>
                       {SYNC_INTERVAL_OPTIONS.map((option) => (
                         <SelectItem key={option.value} value={String(option.value)}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Notifications" description="Notify about new mail found by background sync.">
+                  <Select
+                    value={notificationsMode ?? undefined}
+                    onValueChange={(value) => void handleNotificationsModeChange(value)}
+                  >
+                    <SelectTrigger id="notificationsMode" size="small" variant="transparent" className="w-40">
+                      <SelectValue placeholder="Loading…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {NOTIFICATIONS_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
                           {option.label}
                         </SelectItem>
                       ))}

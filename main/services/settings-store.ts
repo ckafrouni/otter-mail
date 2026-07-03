@@ -9,13 +9,18 @@ import fs from "fs/promises";
 import path from "path";
 import { app } from "@glaze/core/backend";
 
+export type NotificationsMode = "off" | "inbox" | "all";
+
 export type AppSettings = {
   /** Periodic pull-sync interval in seconds; 0 disables the timer. */
   syncIntervalSeconds: number;
+  /** New-mail notifications: off, inbox-only, or every new message. */
+  notificationsMode: NotificationsMode;
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
   syncIntervalSeconds: 30,
+  notificationsMode: "inbox",
 };
 
 async function getSettingsPath(): Promise<string> {

@@ -22,7 +22,8 @@ import {
 } from "./gmail-api.js";
 import { listAccounts } from "./account-store.js";
 import * as store from "./mail-store.js";
-import type { SyncStatus } from "../gmail/types.js";
+import { notifyNewMail, updateDockBadge } from "./notifier.js";
+import type { GmailMessageSummary, SyncStatus } from "../gmail/types.js";
 
 const statuses = new Map<string, SyncStatus>();
 const running = new Set<string>();
@@ -94,7 +95,8 @@ async function runSync(accountId: string): Promise<void> {
     store.upsertLabels(accountId, labels);
 
     if (state.fullSyncDone && state.historyId) {
-      await incrementalSync(accountId, state.historyId);
+      const added = await incrementalSync(accountId, state.historyId);
+      await notifyNewMail(accountId, added, state.lastSyncAt);
     } else {
       await fullSync(accountId);
     }
@@ -114,6 +116,8 @@ async function runSync(accountId: string): Promise<void> {
     logger.error("mail-sync", `sync failed for ${accountId}: ${String(err)}`);
     update(accountId, { syncing: false, phase: "idle", error: String(err) });
   }
+
+  updateDockBadge();
 }
 
 async function fullSync(accountId: string): Promise<void> {
@@ -183,7 +187,11 @@ async function backfillBodies(accountId: string): Promise<void> {
   }
 }
 
-async function incrementalSync(accountId: string, startHistoryId: string): Promise<void> {
+/** Returns the summaries of messages newly added by the history feed. */
+async function incrementalSync(
+  accountId: string,
+  startHistoryId: string,
+): Promise<GmailMessageSummary[]> {
   update(accountId, { phase: "incremental", synced: 0 });
 
   const addedIds = new Set<string>();
@@ -218,17 +226,19 @@ async function incrementalSync(accountId: string, startHistoryId: string): Promi
     if (isHistoryExpiredError(err)) {
       logger.info("mail-sync", `history expired for ${accountId}; running full sync`);
       await fullSync(accountId);
-      return;
+      return [];
     }
     throw err;
   }
 
+  let added: GmailMessageSummary[] = [];
   const ids = [...addedIds];
   if (ids.length > 0) {
-    const summaries = await fetchMetadataForIds(accountId, ids);
-    store.upsertMessages(accountId, summaries);
-    update(accountId, { synced: summaries.length });
+    added = await fetchMetadataForIds(accountId, ids);
+    store.upsertMessages(accountId, added);
+    update(accountId, { synced: added.length });
   }
 
   store.setSyncState(accountId, { historyId: latestHistoryId });
+  return added;
 }
