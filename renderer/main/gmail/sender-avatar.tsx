@@ -1,3 +1,6 @@
+import { useQuery } from "@tanstack/react-query";
+import { gmailApi } from "./api";
+
 /** Deterministic hue per sender so people keep a stable identity color. */
 function hueFor(seed: string): number {
   let h = 0;
@@ -5,25 +8,62 @@ function hueFor(seed: string): number {
   return ((h % 360) + 360) % 360;
 }
 
+/**
+ * Real sender photo when one exists (backend cascade: People API contact
+ * photo → Gravatar → sender-domain logo, cached in the mail store), otherwise
+ * the colored-initial tile.
+ */
 export function SenderAvatar({
   name,
   email,
+  accountId,
   size = "md",
   className,
 }: {
   name?: string;
   email: string;
+  /** Account whose contacts may know this sender; omit to skip photo lookup. */
+  accountId?: string;
   size?: "sm" | "md";
   className?: string;
 }) {
+  const normalizedEmail = email.trim().toLowerCase();
+  const photoQuery = useQuery({
+    queryKey: ["gmail:senderAvatar", normalizedEmail],
+    queryFn: () => gmailApi.getSenderAvatar(accountId!, normalizedEmail),
+    enabled: !!accountId && normalizedEmail.includes("@"),
+    staleTime: Infinity,
+    gcTime: 60 * 60 * 1000,
+    retry: false,
+  });
+  const photo = photoQuery.data?.dataUrl ?? null;
+
+  const sizeClasses = size === "sm" ? "size-6 text-[11px] rounded-md" : "size-9 text-[15px]";
+
+  if (photo) {
+    return (
+      <img
+        src={photo}
+        alt=""
+        draggable={false}
+        className={[
+          "shrink-0 rounded-lg select-none object-cover bg-white",
+          sizeClasses,
+          className ?? "",
+        ].join(" ")}
+        aria-hidden
+      />
+    );
+  }
+
   const source = (name ?? "").trim() || email;
   const initial = (source[0] ?? "?").toUpperCase();
-  const hue = hueFor(email.trim().toLowerCase());
+  const hue = hueFor(normalizedEmail);
   return (
     <span
       className={[
         "shrink-0 rounded-lg flex items-center justify-center font-bold select-none",
-        size === "sm" ? "size-6 text-[11px] rounded-md" : "size-9 text-[15px]",
+        sizeClasses,
         className ?? "",
       ].join(" ")}
       style={{ backgroundColor: `hsl(${hue} 48% 52%)`, color: "#fff" }}

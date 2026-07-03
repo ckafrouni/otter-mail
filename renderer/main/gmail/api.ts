@@ -220,6 +220,9 @@ export const gmailApi = {
   getSyncStatus: (accountId: string): Promise<SyncStatus> =>
     ipc("gmail:getSyncStatus", { accountId }),
 
+  getSenderAvatar: (accountId: string, email: string): Promise<{ dataUrl: string | null }> =>
+    ipc("gmail:getSenderAvatar", { accountId, email }),
+
   getSyncSettings: (): Promise<SyncSettings> => ipc("gmail:getSyncSettings"),
 
   setSyncSettings: (params: Partial<SyncSettings>): Promise<SyncSettings> =>

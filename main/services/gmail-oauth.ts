@@ -22,6 +22,11 @@ const SCOPES = [
   "openid",
   "email",
   "profile",
+  // People API, for sender avatars. Tokens issued before these scopes were
+  // added simply 403 on People calls (the avatar cascade skips to Gravatar);
+  // re-adding the account upgrades its consent in place.
+  "https://www.googleapis.com/auth/contacts.readonly",
+  "https://www.googleapis.com/auth/contacts.other.readonly",
 ];
 
 function buildServiceOptions(providerId: string, clientId: string, clientSecret: string): OAuthServiceOptions {

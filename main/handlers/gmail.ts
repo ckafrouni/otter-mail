@@ -42,6 +42,7 @@ import {
 } from "../services/gmail-api.js";
 import * as mailStore from "../services/mail-store.js";
 import * as mailSync from "../services/mail-sync.js";
+import { getSenderAvatar } from "../services/avatar-store.js";
 import { updateDockBadge } from "../services/notifier.js";
 import { getSettings, updateSettings, type AppSettings } from "../services/settings-store.js";
 import * as viewsStore from "../services/views-store.js";
@@ -832,6 +833,20 @@ export function registerGmailHandlers(): void {
       return mailSync.getSyncStatus(accountId);
     } catch (err) {
       console.log("[gmail:syncAccount] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:getSenderAvatar — cached sender photo (People API / Gravatar / domain logo)
+  ipcMain.handle("gmail:getSenderAvatar", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    try {
+      const accountId = assertString(p?.accountId, "accountId");
+      const email = assertString(p?.email, "email");
+      const dataUrl = await getSenderAvatar(accountId, email);
+      return { dataUrl };
+    } catch (err) {
+      console.log("[gmail:getSenderAvatar] error", { error: String(err) });
       throw err;
     }
   });
