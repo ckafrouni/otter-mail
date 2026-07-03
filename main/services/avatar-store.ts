@@ -3,7 +3,9 @@
  * side channels, best first:
  *   1. Google People API (contacts + "other contacts") — real profile photos
  *   2. Gravatar
- *   3. The sender domain's logo (skipped for free-mail domains)
+ *   3. The sender domain's favicon/logo (Google s2, then DuckDuckGo icons;
+ *      tried for the exact domain and its registrable root, skipped for
+ *      free-mail domains)
  * Results — including misses — are cached in the mail store's kv table so each
  * sender costs at most one network cascade per TTL window.
  */
@@ -52,8 +54,9 @@ type CacheEntry = { dataUrl: string | null; fetchedAt: number };
 
 const inFlight = new Map<string, Promise<string | null>>();
 
+// v2: bumped when the source cascade changes so stale misses re-resolve.
 function cacheKey(email: string): string {
-  return `avatar:${email}`;
+  return `avatar2:${email}`;
 }
 
 type FetchInit = { headers?: Record<string, string> };
@@ -123,10 +126,43 @@ async function fromGravatar(email: string): Promise<string | null> {
   return fetchImageAsDataUrl(`https://www.gravatar.com/avatar/${hash}?s=128&d=404`);
 }
 
+/** Width of a PNG from its IHDR chunk (0 when not parseable). */
+function pngWidth(dataUrl: string): number {
+  const base64 = dataUrl.split(",")[1] ?? "";
+  const bytes = Buffer.from(base64, "base64");
+  if (bytes.length < 24 || bytes.readUInt32BE(0) !== 0x89504e47) return 0;
+  return bytes.readUInt32BE(16);
+}
+
+/** "notify.cloudflare.com" → "cloudflare.com" (naive eTLD+1). */
+function registrableDomain(domain: string): string {
+  const parts = domain.split(".");
+  if (parts.length <= 2) return domain;
+  const secondLevel = new Set(["co", "com", "org", "net", "ac", "gov", "edu"]);
+  const take = secondLevel.has(parts[parts.length - 2]) ? 3 : 2;
+  return parts.slice(-take).join(".");
+}
+
+async function domainLogoFor(domain: string): Promise<string | null> {
+  // Google's favicon service answers for nearly every domain but substitutes a
+  // 16×16 globe for misses — only a ≥32px answer is a real hit.
+  const s2 = await fetchImageAsDataUrl(
+    `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`,
+  );
+  if (s2 && pngWidth(s2) >= 32) return s2;
+  // DuckDuckGo 404s cleanly on misses and often carries icons s2 lacks.
+  return fetchImageAsDataUrl(`https://icons.duckduckgo.com/ip3/${encodeURIComponent(domain)}.ico`);
+}
+
 async function fromDomainLogo(email: string): Promise<string | null> {
   const domain = email.split("@")[1];
   if (!domain || FREEMAIL_DOMAINS.has(domain)) return null;
-  return fetchImageAsDataUrl(`https://logo.clearbit.com/${encodeURIComponent(domain)}?size=128`);
+  const exact = await domainLogoFor(domain);
+  if (exact) return exact;
+  // Corporate mail often comes from subdomains (notify.cloudflare.com).
+  const root = registrableDomain(domain);
+  if (root !== domain && !FREEMAIL_DOMAINS.has(root)) return domainLogoFor(root);
+  return null;
 }
 
 async function resolveAvatar(accountId: string, email: string): Promise<string | null> {
