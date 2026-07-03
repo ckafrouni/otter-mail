@@ -34,7 +34,14 @@ import {
   useSyncAccountLabels,
 } from "./hooks";
 import { LabelChip } from "./label-chip";
+import { LabelOverlay, type LabelOverlayMode } from "./label-overlay";
 import { renderLabelMenuNodes } from "./label-picker-menu";
+import {
+  INBOX_VIEW_ID,
+  STARRED_VIEW_ID,
+  SENT_VIEW_ID,
+  DRAFTS_VIEW_ID,
+} from "./custom-views";
 import { buildLabelTree } from "./label-tree";
 import { isTypingTarget } from "./keyboard";
 import { SenderAvatar } from "./sender-avatar";
@@ -488,8 +495,67 @@ export function MessageList({
   const listModifyMessage = useModifyMessage();
   const listModifyThread = useModifyThread();
   const listTrashThread = useTrashThread();
-  const shortcutState = useRef({ visibleMessages, selectedMessageId, accountId });
-  shortcutState.current = { visibleMessages, selectedMessageId, accountId };
+
+  const selectedRow = visibleMessages.find((m) => m.id === selectedMessageId) ?? null;
+  const selectedOwner = selectedRow ? (selectedRow.accountId ?? accountId) : null;
+
+  // The single label the current view IS (Gmail's v "move" needs a label to
+  // leave). Built-in combined views map to their system label; rule-based
+  // custom views and search results have no single label, so v is unavailable.
+  const COMBINED_VIEW_LABELS: Record<string, string> = {
+    [INBOX_VIEW_ID]: "INBOX",
+    [STARRED_VIEW_ID]: "STARRED",
+    [SENT_VIEW_ID]: "SENT",
+    [DRAFTS_VIEW_ID]: "DRAFT",
+  };
+  const moveContextLabelId = searching
+    ? null
+    : isCombined
+      ? (COMBINED_VIEW_LABELS[combined.viewId] ?? null)
+      : labelId;
+
+  const [labelOverlay, setLabelOverlay] = useState<LabelOverlayMode | null>(null);
+
+  const advanceFrom = (rowId: string) => {
+    const idx = visibleMessages.findIndex((m) => m.id === rowId);
+    const next = visibleMessages[idx + 1] ?? visibleMessages[idx - 1];
+    if (next) onSelectMessage(next.id, next.accountId ?? accountId);
+  };
+
+  const handleOverlayPick = (pickedId: string, wasApplied: boolean) => {
+    const row = selectedRow;
+    if (!row || !labelOverlay) return;
+    const owner = row.accountId ?? accountId;
+    const rowThreadId = row.threadId || row.id;
+    if (labelOverlay === "label") {
+      console.log("[MessageList:labelAs]", { rowThreadId, pickedId, wasApplied });
+      void listModifyThread.mutateAsync({
+        accountId: owner,
+        threadId: rowThreadId,
+        addLabelIds: wasApplied ? undefined : [pickedId],
+        removeLabelIds: wasApplied ? [pickedId] : undefined,
+      });
+      return;
+    }
+    // Move: apply the picked label and leave the current one. SENT/DRAFT are
+    // immutable in Gmail, so moving out of those views only applies the label.
+    const removable =
+      moveContextLabelId &&
+      moveContextLabelId !== pickedId &&
+      moveContextLabelId !== "SENT" &&
+      moveContextLabelId !== "DRAFT";
+    console.log("[MessageList:moveTo]", { rowThreadId, pickedId, from: moveContextLabelId });
+    if (removable) advanceFrom(row.id);
+    void listModifyThread.mutateAsync({
+      accountId: owner,
+      threadId: rowThreadId,
+      addLabelIds: pickedId === moveContextLabelId ? undefined : [pickedId],
+      removeLabelIds: removable ? [moveContextLabelId] : undefined,
+    });
+  };
+
+  const shortcutState = useRef({ visibleMessages, selectedMessageId, accountId, moveContextLabelId });
+  shortcutState.current = { visibleMessages, selectedMessageId, accountId, moveContextLabelId };
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e)) return;
@@ -591,6 +657,18 @@ export function MessageList({
           });
           break;
         }
+        case "l": {
+          if (!selectedRow) return;
+          e.preventDefault();
+          setLabelOverlay("label");
+          break;
+        }
+        case "v": {
+          if (!selectedRow || !shortcutState.current.moveContextLabelId) return;
+          e.preventDefault();
+          setLabelOverlay("move");
+          break;
+        }
       }
     };
     window.addEventListener("keydown", down);
@@ -605,6 +683,7 @@ export function MessageList({
   const isLoading = messagesQuery.isLoading;
 
   return (
+    <>
     <ScrollArea
       toolbar={
         <Toolbar>
@@ -713,5 +792,17 @@ export function MessageList({
         </>
       )}
     </ScrollArea>
+      <LabelOverlay
+        open={labelOverlay != null}
+        onOpenChange={(o) => {
+          if (!o) setLabelOverlay(null);
+        }}
+        mode={labelOverlay ?? "label"}
+        accountId={selectedOwner}
+        appliedLabelIds={selectedRow?.labelIds ?? []}
+        currentLabelId={moveContextLabelId}
+        onPick={handleOverlayPick}
+      />
+    </>
   );
 }

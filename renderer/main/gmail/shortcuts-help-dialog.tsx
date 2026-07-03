@@ -22,6 +22,8 @@ const SECTIONS: { title: string; rows: [string, string][] }[] = [
       ["#", "Move to trash"],
       ["!", "Move to junk"],
       ["s", "Toggle flag"],
+      ["l", "Label conversation"],
+      ["v", "Move conversation"],
       ["⇧U", "Mark as unread"],
       ["⇧I", "Mark as read"],
       ["r", "Reply"],
