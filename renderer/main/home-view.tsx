@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SplitView, EmptyState, Button } from "@glaze/core/components";
 import { AccountsSidebar } from "./gmail/accounts-sidebar";
 import { MessageList } from "./gmail/message-list";
 import { MessageReader } from "./gmail/message-reader";
 import { ComposeDialog } from "./gmail/compose-dialog";
 import { CommandPalette } from "./gmail/command-palette";
+import { ShortcutsHelpDialog } from "./gmail/shortcuts-help-dialog";
+import { isTypingTarget } from "./gmail/keyboard";
 import { useCredentials, useAccounts, useAddAccount, useAccountSync } from "./gmail/hooks";
 import type { GmailMessageSummary } from "./gmail/types";
 import {
@@ -14,6 +16,7 @@ import {
   saveLastLocation,
   COMBINED_ACCOUNT_ID,
   INBOX_VIEW_ID,
+  SENT_VIEW_ID,
 } from "./gmail/custom-views";
 
 export function HomeView() {
@@ -25,6 +28,7 @@ export function HomeView() {
   const [searchQuery, setSearchQuery] = useState("");
   const [composeOpen, setComposeOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
   const credentialsQuery = useCredentials();
@@ -44,6 +48,53 @@ export function HomeView() {
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         setPaletteOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", down);
+    return () => window.removeEventListener("keydown", down);
+  }, []);
+
+  // Gmail-style global shortcuts: c compose, u back to list, ? help, and
+  // "g then i/t/s/d" go-to combos. Handlers read the latest state via a ref so
+  // the listener mounts once.
+  const shortcutCtx = useRef({ isCombined: false });
+  shortcutCtx.current = { isCombined };
+  const pendingG = useRef(0);
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e)) return;
+      const { isCombined: combined } = shortcutCtx.current;
+
+      if (e.key === "g") {
+        pendingG.current = Date.now();
+        return;
+      }
+      if (Date.now() - pendingG.current < 1500) {
+        pendingG.current = 0;
+        const go = (labelId: string) => {
+          e.preventDefault();
+          setSelectedLabelId(labelId);
+          setSelectedMessageId(null);
+          setReaderAccountId(null);
+          setSearchQuery("");
+        };
+        if (e.key === "i") return go(combined ? INBOX_VIEW_ID : "INBOX");
+        if (e.key === "t") return go(combined ? SENT_VIEW_ID : "SENT");
+        if (e.key === "s" && !combined) return go("STARRED");
+        if (e.key === "d" && !combined) return go("DRAFT");
+        return;
+      }
+
+      if (e.key === "c") {
+        e.preventDefault();
+        setComposeOpen(true);
+      } else if (e.key === "u") {
+        e.preventDefault();
+        setSelectedMessageId(null);
+        setReaderAccountId(null);
+      } else if (e.key === "?") {
+        e.preventDefault();
+        setHelpOpen(true);
       }
     };
     window.addEventListener("keydown", down);
@@ -294,6 +345,8 @@ export function HomeView() {
           onOpenChange={setComposeOpen}
         />
       ) : null}
+
+      <ShortcutsHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
 
       {accounts.length > 0 ? (
         <CommandPalette

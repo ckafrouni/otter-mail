@@ -52,6 +52,7 @@ import { LabelChip } from "./label-chip";
 import { SenderAvatar } from "./sender-avatar";
 import { LabelPickerMenu } from "./label-picker-menu";
 import { parseAddressEntry, splitAddressList } from "./address";
+import { isTypingTarget } from "./keyboard";
 import type {
   ComposeAttachment,
   GmailLabel,
@@ -579,16 +580,40 @@ export function MessageReader({
     </Button>
   );
   const searchRef = useRef<ToolbarSearchButtonRef>(null);
+  // Reply/reply-all/forward handlers exist only when a message is open; the
+  // render below refreshes this ref so the once-mounted listener stays current.
+  const readerActions = useRef<{ reply?: () => void; replyAll?: () => void; forward?: () => void }>(
+    {},
+  );
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.key === "f" && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         searchRef.current?.focus();
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e)) return;
+      if (e.key === "/") {
+        e.preventDefault();
+        searchRef.current?.focus();
+      } else if (e.key === "r") {
+        e.preventDefault();
+        readerActions.current.reply?.();
+      } else if (e.key === "a") {
+        e.preventDefault();
+        readerActions.current.replyAll?.();
+      } else if (e.key === "f") {
+        e.preventDefault();
+        readerActions.current.forward?.();
       }
     };
     window.addEventListener("keydown", down);
     return () => window.removeEventListener("keydown", down);
   }, []);
+  // Cleared every render; the message-open path below re-populates it, so the
+  // shortcuts are inert when no message is on screen.
+  readerActions.current = {};
+
   const searchField = (
     <ToolbarSearchButton ref={searchRef} value={searchQuery} onChange={onSearchChange} size="large" />
   );
@@ -876,6 +901,12 @@ export function MessageReader({
         toast.error("Could not download attachment");
       }
     })();
+  };
+
+  readerActions.current = {
+    reply: handleReply,
+    replyAll: handleReplyAll,
+    forward: handleForward,
   };
 
   const isFlagged = message.labelIds.includes("STARRED");

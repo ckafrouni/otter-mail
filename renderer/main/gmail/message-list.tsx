@@ -1,5 +1,5 @@
 import type React from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -36,6 +36,7 @@ import {
 import { LabelChip } from "./label-chip";
 import { renderLabelMenuNodes } from "./label-picker-menu";
 import { buildLabelTree } from "./label-tree";
+import { isTypingTarget } from "./keyboard";
 import { SenderAvatar } from "./sender-avatar";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
 import { SYSTEM_LABEL_NAMES, labelDisplayName } from "./label-names";
@@ -466,6 +467,115 @@ export function MessageList({
     : allMessages;
   const hasNextPage = messagesQuery.hasNextPage;
   const isFetchingNextPage = messagesQuery.isFetchingNextPage;
+
+  // Gmail-style list shortcuts: j/k move the selection, e/#/! archive/trash/
+  // junk the selected thread (advancing to the next row), s toggles the flag,
+  // Shift+U/Shift+I set unread/read. Latest state is read through a ref so the
+  // window listener mounts once.
+  const listModifyMessage = useModifyMessage();
+  const listModifyThread = useModifyThread();
+  const listTrashThread = useTrashThread();
+  const shortcutState = useRef({ visibleMessages, selectedMessageId, accountId });
+  shortcutState.current = { visibleMessages, selectedMessageId, accountId };
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e)) return;
+      const { visibleMessages: rows, selectedMessageId: selId, accountId: fallbackAccount } =
+        shortcutState.current;
+      if (rows.length === 0) return;
+      const idx = rows.findIndex((m) => m.id === selId);
+      const selectedRow = idx >= 0 ? rows[idx] : undefined;
+      const select = (m: GmailMessageSummary) => onSelectMessage(m.id, m.accountId ?? fallbackAccount);
+      const advance = () => {
+        const next = rows[idx + 1] ?? rows[idx - 1];
+        if (next) select(next);
+      };
+      const owner = selectedRow ? (selectedRow.accountId ?? fallbackAccount) : "";
+      const selThreadId = selectedRow ? selectedRow.threadId || selectedRow.id : "";
+
+      switch (e.key) {
+        case "j": {
+          const next = idx === -1 ? rows[0] : rows[idx + 1];
+          if (next) {
+            e.preventDefault();
+            select(next);
+          }
+          break;
+        }
+        case "k": {
+          const prev = idx > 0 ? rows[idx - 1] : undefined;
+          if (prev) {
+            e.preventDefault();
+            select(prev);
+          }
+          break;
+        }
+        case "e": {
+          if (!selectedRow) return;
+          e.preventDefault();
+          advance();
+          void listModifyThread.mutateAsync({
+            accountId: owner,
+            threadId: selThreadId,
+            removeLabelIds: ["INBOX"],
+          });
+          break;
+        }
+        case "#": {
+          if (!selectedRow) return;
+          e.preventDefault();
+          advance();
+          void listTrashThread.mutateAsync({ accountId: owner, threadId: selThreadId });
+          break;
+        }
+        case "!": {
+          if (!selectedRow) return;
+          e.preventDefault();
+          advance();
+          void listModifyThread.mutateAsync({
+            accountId: owner,
+            threadId: selThreadId,
+            addLabelIds: ["SPAM"],
+            removeLabelIds: ["INBOX"],
+          });
+          break;
+        }
+        case "s": {
+          if (!selectedRow) return;
+          e.preventDefault();
+          void listModifyMessage.mutateAsync({
+            accountId: owner,
+            messageId: selectedRow.id,
+            addLabelIds: selectedRow.starred ? undefined : ["STARRED"],
+            removeLabelIds: selectedRow.starred ? ["STARRED"] : undefined,
+          });
+          break;
+        }
+        case "U": {
+          if (!selectedRow) return;
+          e.preventDefault();
+          void listModifyMessage.mutateAsync({
+            accountId: owner,
+            messageId: selectedRow.id,
+            addLabelIds: ["UNREAD"],
+          });
+          break;
+        }
+        case "I": {
+          if (!selectedRow) return;
+          e.preventDefault();
+          void listModifyThread.mutateAsync({
+            accountId: owner,
+            threadId: selThreadId,
+            removeLabelIds: ["UNREAD"],
+          });
+          break;
+        }
+      }
+    };
+    window.addEventListener("keydown", down);
+    return () => window.removeEventListener("keydown", down);
+  }, []);
 
   const handleLoadMore = () => {
     console.log("[MessageList:loadMore]");
