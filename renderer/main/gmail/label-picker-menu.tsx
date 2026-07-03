@@ -5,10 +5,11 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuCheckboxItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
 } from "@glaze/core/components";
 import { useLabels, useModifyMessage } from "./hooks";
-import { buildLabelTree, flattenLabelTree } from "./label-tree";
-import type { GmailLabel } from "./types";
+import { buildLabelTree, type LabelTreeNode } from "./label-tree";
 
 type LabelPickerMenuProps = {
   /** Owning account of the message (per-row account in Combined mode). */
@@ -20,8 +21,9 @@ type LabelPickerMenuProps = {
 };
 
 /**
- * Native menu of the account's user labels with checked membership;
- * toggling a label adds/removes it on the message optimistically.
+ * Native menu of the account's user labels with checked membership; nested
+ * labels become submenus (first item = the parent itself, so it stays
+ * selectable), siblings alphabetical at every depth via buildLabelTree.
  */
 export function LabelPickerMenu({
   accountId,
@@ -32,13 +34,7 @@ export function LabelPickerMenu({
   const labelsQuery = useLabels(accountId);
   const modifyMessage = useModifyMessage();
 
-  // Sidebar tree order (siblings alphabetical at every depth), full path names.
-  const userLabels = flattenLabelTree(
-    buildLabelTree((labelsQuery.data ?? []).filter((l) => l.type === "user")),
-  )
-    .map(({ node }) => node.label)
-    .filter((l): l is GmailLabel => l != null);
-
+  const tree = buildLabelTree((labelsQuery.data ?? []).filter((l) => l.type === "user"));
   const applied = new Set(labelIds);
 
   const handleToggle = (labelId: string, checked: boolean) => {
@@ -51,22 +47,47 @@ export function LabelPickerMenu({
     });
   };
 
+  const renderNode = (node: LabelTreeNode): React.ReactNode => {
+    if (node.children.length === 0) {
+      if (!node.label) return null;
+      const id = node.label.id;
+      return (
+        <DropdownMenuCheckboxItem
+          key={node.key}
+          checked={applied.has(id)}
+          onCheckedChange={(checked) => handleToggle(id, checked)}
+        >
+          {node.segment}
+        </DropdownMenuCheckboxItem>
+      );
+    }
+    const selfId = node.label?.id;
+    return (
+      <DropdownMenuSub key={node.key} label={node.segment}>
+        {selfId ? (
+          <>
+            <DropdownMenuCheckboxItem
+              checked={applied.has(selfId)}
+              onCheckedChange={(checked) => handleToggle(selfId, checked)}
+            >
+              {node.segment}
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
+        {node.children.map(renderNode)}
+      </DropdownMenuSub>
+    );
+  };
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {userLabels.length === 0 ? (
+        {tree.length === 0 ? (
           <DropdownMenuItem disabled>No labels</DropdownMenuItem>
         ) : (
-          userLabels.map((label) => (
-            <DropdownMenuCheckboxItem
-              key={label.id}
-              checked={applied.has(label.id)}
-              onCheckedChange={(checked) => handleToggle(label.id, checked)}
-            >
-              {label.name}
-            </DropdownMenuCheckboxItem>
-          ))
+          tree.map(renderNode)
         )}
       </DropdownMenuContent>
     </DropdownMenu>

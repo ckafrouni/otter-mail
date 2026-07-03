@@ -5,6 +5,7 @@ import {
   ToolbarTitle,
   ToolbarActions,
   ToolbarSearchButton,
+  type ToolbarSearchButtonRef,
   Button,
   EmptyState,
   Text,
@@ -539,8 +540,19 @@ export function MessageReader({
       <SquarePenIcon className="size-4.5" />
     </Button>
   );
+  const searchRef = useRef<ToolbarSearchButtonRef>(null);
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === "f" && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", down);
+    return () => window.removeEventListener("keydown", down);
+  }, []);
   const searchField = (
-    <ToolbarSearchButton value={searchQuery} onChange={onSearchChange} size="large" />
+    <ToolbarSearchButton ref={searchRef} value={searchQuery} onChange={onSearchChange} size="large" />
   );
   const messageQuery = useMessage(accountId, messageId);
   const labelsQuery = useLabels(accountId);
