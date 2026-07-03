@@ -970,9 +970,14 @@ export function useGlobalSyncStatus(accountIds: string[]): { syncing: boolean; l
         query.state.data?.syncing ? 1500 : 10_000,
     })),
   });
+  // Routine incremental checks stay silent (they'd blink every auto-sync
+  // tick); only long-running work — full syncs and body downloads — shows.
   const active = results
     .map((r) => r.data as SyncStatus | undefined)
-    .filter((s): s is SyncStatus => s?.syncing === true);
+    .filter(
+      (s): s is SyncStatus =>
+        s?.syncing === true && (s.phase === "full" || s.phase === "bodies"),
+    );
   if (active.length === 0) return { syncing: false, label: "" };
   return {
     syncing: true,
