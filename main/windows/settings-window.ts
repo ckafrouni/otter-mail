@@ -3,6 +3,26 @@ import { getPreloadPath, getWindowUrl } from "./window-paths.js";
 
 let settingsWindow: BrowserWindow | null = null;
 
+export type SettingsTarget = {
+  pane: "general" | "accounts" | "views" | "oauth";
+  /** For the views pane: a view id to edit, or "new" to create one. */
+  viewId?: string | null;
+};
+
+// Where the settings window should navigate on (re)open. The renderer pulls
+// this via window:getSettingsTarget on mount and on settings:navigate.
+let pendingTarget: SettingsTarget | null = null;
+
+export function setSettingsTarget(target: SettingsTarget): void {
+  pendingTarget = target;
+}
+
+export function takeSettingsTarget(): SettingsTarget | null {
+  const target = pendingTarget;
+  pendingTarget = null;
+  return target;
+}
+
 export async function openSettingsWindow(): Promise<void> {
   // If window exists and is not destroyed, just show it
   if (settingsWindow && !settingsWindow.isDestroyed()) {
@@ -15,10 +35,10 @@ export async function openSettingsWindow(): Promise<void> {
 
   settingsWindow = new BrowserWindow({
     windowKey: "settings",
-    width: 640,
-    height: 560,
-    minWidth: 560,
-    minHeight: 440,
+    width: 820,
+    height: 600,
+    minWidth: 700,
+    minHeight: 480,
     title: "Settings",
     show: false,
     center: true,

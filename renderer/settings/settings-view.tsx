@@ -1,5 +1,15 @@
-import { useState, useEffect } from "react";
-import { SlidersHorizontalIcon, UsersIcon, KeyRoundIcon } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  InboxIcon,
+  KeyRoundIcon,
+  LayersIcon,
+  PlusIcon,
+  SendIcon,
+  SlidersHorizontalIcon,
+  UsersIcon,
+} from "lucide-react";
 import {
   Label,
   RadioGroup,
@@ -10,14 +20,16 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Sidebar,
+  SidebarList,
+  SidebarListItem,
+  SidebarListItemContent,
+  SidebarListItemTitle,
+  SplitView,
   Toolbar,
   ToolbarRow,
   ToolbarContent,
   ToolbarTitle,
-  TabsRoot,
-  Tabs,
-  TabsTrigger,
-  TabsContent,
   Field,
   FieldContent,
   FieldGroup,
@@ -32,10 +44,12 @@ import {
   toast,
 } from "@glaze/core/components";
 import type { NativeThemeInfo } from "@glaze/core/ipc";
-import { gmailApi } from "../main/gmail/api";
+import { gmailApi, type SettingsPane } from "../main/gmail/api";
 import { useAccounts, useUpdateAccount } from "../main/gmail/hooks";
+import { useMailViews } from "../main/gmail/custom-views";
+import { ViewEditorForm } from "../main/gmail/view-editor-form";
 import { ACCOUNT_COLOR_PALETTE, getAccountColor, getAccountDisplayName } from "../main/gmail/account-style";
-import type { GmailAccount } from "../main/gmail/types";
+import type { GmailAccount, MailView } from "../main/gmail/types";
 
 /** Auto-sync cadence choices in seconds; 0 = manual only. */
 const SYNC_INTERVAL_OPTIONS = [
@@ -45,6 +59,13 @@ const SYNC_INTERVAL_OPTIONS = [
   { value: 60, label: "Every minute" },
   { value: 300, label: "Every 5 minutes" },
   { value: 900, label: "Every 15 minutes" },
+];
+
+const PANES: { id: SettingsPane; label: string; icon: typeof UsersIcon }[] = [
+  { id: "general", label: "General", icon: SlidersHorizontalIcon },
+  { id: "accounts", label: "Accounts", icon: UsersIcon },
+  { id: "views", label: "Views", icon: LayersIcon },
+  { id: "oauth", label: "Google OAuth", icon: KeyRoundIcon },
 ];
 
 function AccountRow({ account }: { account: GmailAccount }) {
@@ -76,40 +97,128 @@ function AccountRow({ account }: { account: GmailAccount }) {
           onChange={(e) => setName(e.target.value)}
           onBlur={commitName}
           onKeyDown={(e) => {
-            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
           }}
         />
         <Text variant="mini" color="tertiary" truncate>
           {account.email}
         </Text>
-      </div>
-      <div className="flex items-center gap-1.5 shrink-0 pt-1.5">
-        {ACCOUNT_COLOR_PALETTE.map((swatch) => (
-          <button
-            key={swatch}
-            type="button"
-            aria-label={`Set account color to ${swatch}`}
-            onClick={() => {
-              console.log("[SettingsView:setAccountColor]", { accountId: account.id, color: swatch });
-              void updateAccount.mutateAsync({ accountId: account.id, color: swatch });
-            }}
-            className="size-5 rounded-full flex items-center justify-center shrink-0"
-            style={{ backgroundColor: swatch }}
-          >
-            {color === swatch ? <span className="size-1.5 rounded-full bg-white" /> : null}
-          </button>
-        ))}
+        <div className="flex items-center gap-1.5 pt-0.5">
+          {ACCOUNT_COLOR_PALETTE.map((swatch) => (
+            <button
+              key={swatch}
+              type="button"
+              aria-label={`Set color ${swatch}`}
+              className="size-4 rounded-full flex items-center justify-center"
+              style={{ backgroundColor: swatch }}
+              onClick={() => void updateAccount.mutateAsync({ accountId: account.id, color: swatch })}
+            >
+              {color === swatch ? <span className="size-1.5 rounded-full bg-white" /> : null}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
-export function SettingsView() {
-  const [themeInfo, setThemeInfo] = useState<NativeThemeInfo | null>(null);
-  const [_isLoading, setIsLoading] = useState(true);
-  const [tab, setTab] = useState("general");
+function viewIcon(view: MailView) {
+  if (view.kind === "inbox") return <InboxIcon className="size-4 shrink-0 text-secondary" />;
+  if (view.kind === "sent") return <SendIcon className="size-4 shrink-0 text-secondary" />;
+  return <LayersIcon className="size-4 shrink-0 text-secondary" />;
+}
+
+function viewSummary(view: MailView): string {
+  if (view.rules === null) {
+    return view.kind === "inbox" ? "Default — every account's Inbox" : "Default — every account's Sent";
+  }
+  const labels = view.rules.reduce((n, r) => n + r.allOf.length + r.noneOf.length, 0);
+  const accounts = view.rules.length;
+  return `${labels} filter${labels === 1 ? "" : "s"} across ${accounts} account${accounts === 1 ? "" : "s"}`;
+}
+
+function ViewsPane({ target, onConsumeTarget }: { target: string | null; onConsumeTarget: () => void }) {
+  const { views, saveView, deleteView, resetView } = useMailViews();
   const accountsQuery = useAccounts();
   const accounts = accountsQuery.data ?? [];
+
+  /** View id being edited, "new" for a fresh view, or null for the list. */
+  const [editing, setEditing] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!target) return;
+    setEditing(target);
+    onConsumeTarget();
+  }, [target, onConsumeTarget]);
+
+  if (editing) {
+    if (!accountsQuery.data) {
+      return (
+        <Text variant="small" color="tertiary">
+          Loading accounts…
+        </Text>
+      );
+    }
+    const editingView = editing === "new" ? null : views.find((v) => v.id === editing) ?? null;
+    return (
+      <div className="flex flex-col gap-3">
+        <button
+          type="button"
+          onClick={() => setEditing(null)}
+          className="flex items-center gap-1 self-start text-secondary hover:text-primary cursor-pointer"
+        >
+          <ChevronLeftIcon className="size-4" />
+          <Text variant="small">All views</Text>
+        </button>
+        <ViewEditorForm
+          key={editing}
+          view={editingView}
+          accounts={accounts}
+          onSave={saveView}
+          onDelete={deleteView}
+          onReset={resetView}
+          onDone={() => setEditing(null)}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-col rounded-control border border-separator divide-y divide-separator">
+        {views.map((view) => (
+          <button
+            key={view.id}
+            type="button"
+            onClick={() => setEditing(view.id)}
+            className="flex items-center gap-3 px-3 py-2.5 hover:bg-control-subtle cursor-pointer text-left first:rounded-t-control last:rounded-b-control"
+          >
+            {viewIcon(view)}
+            <div className="flex flex-col flex-1 min-w-0">
+              <Text variant="small-strong" truncate>
+                {view.name}
+              </Text>
+              <Text variant="mini" color="tertiary" truncate>
+                {viewSummary(view)}
+              </Text>
+            </div>
+            <ChevronRightIcon className="size-4 shrink-0 text-tertiary" />
+          </button>
+        ))}
+      </div>
+      <Button variant="filled" size="small" className="self-start" onClick={() => setEditing("new")}>
+        <PlusIcon className="size-4" />
+        New view
+      </Button>
+    </div>
+  );
+}
+
+export function SettingsView() {
+  const [pane, setPane] = useState<SettingsPane>("general");
+  const [viewTarget, setViewTarget] = useState<string | null>(null);
+
+  const [themeInfo, setThemeInfo] = useState<NativeThemeInfo | null>(null);
 
   // Google OAuth state
   const [clientId, setClientId] = useState("");
@@ -118,6 +227,26 @@ export function SettingsView() {
   const [isSavingCredentials, setIsSavingCredentials] = useState(false);
 
   const [syncInterval, setSyncInterval] = useState<number | null>(null);
+
+  // Navigate to the pane (and view) other windows deep-link to, on mount and
+  // whenever the backend signals a new target while this window is open.
+  useEffect(() => {
+    const pull = async () => {
+      try {
+        const target = await gmailApi.getSettingsTarget();
+        if (!target) return;
+        setPane(target.pane);
+        if (target.pane === "views" && target.viewId) setViewTarget(target.viewId);
+      } catch (error) {
+        console.log("[SettingsView:getSettingsTarget] error", { error: String(error) });
+      }
+    };
+    void pull();
+    const unsubscribe = window.glazeAPI.glaze.ipc.onNotification("settings:navigate", () => {
+      void pull();
+    });
+    return unsubscribe;
+  }, []);
 
   // Close settings window on Escape, unless an interactive element is focused or a popover is open
   useEffect(() => {
@@ -153,8 +282,6 @@ export function SettingsView() {
       setThemeInfo(info);
     } catch (error) {
       toast.error(`Failed to get theme info: ${error}`);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -230,41 +357,47 @@ export function SettingsView() {
     }
   };
 
+  const accountsQuery = useAccounts();
+  const accounts = accountsQuery.data ?? [];
+
+  const activePane = PANES.find((p) => p.id === pane) ?? PANES[0];
+
   return (
-    <TabsRoot value={tab} onValueChange={setTab}>
+    <SplitView
+      sidebar={
+        <Sidebar>
+          <SidebarList>
+            {PANES.map((p) => (
+              <SidebarListItem
+                key={p.id}
+                selected={pane === p.id}
+                className="hover:bg-control-subtle"
+                onClick={() => setPane(p.id)}
+              >
+                <p.icon className="size-4 shrink-0" />
+                <SidebarListItemContent>
+                  <SidebarListItemTitle>{p.label}</SidebarListItemTitle>
+                </SidebarListItemContent>
+              </SidebarListItem>
+            ))}
+          </SidebarList>
+        </Sidebar>
+      }
+      sidebarSize={{ default: 190, min: 170, max: 240 }}
+    >
       <ScrollArea
         toolbar={
           <Toolbar>
-            <ToolbarContent>
-              <ToolbarTitle>Settings</ToolbarTitle>
-            </ToolbarContent>
-            <ToolbarRow className="justify-center pb-1">
-              <Tabs variant="glass" size="large">
-                <TabsTrigger value="general">
-                  <span className="flex flex-col items-center gap-1 px-1">
-                    <SlidersHorizontalIcon className="size-4" />
-                    <Text variant="mini">General</Text>
-                  </span>
-                </TabsTrigger>
-                <TabsTrigger value="accounts">
-                  <span className="flex flex-col items-center gap-1 px-1">
-                    <UsersIcon className="size-4" />
-                    <Text variant="mini">Accounts</Text>
-                  </span>
-                </TabsTrigger>
-                <TabsTrigger value="oauth">
-                  <span className="flex flex-col items-center gap-1 px-1">
-                    <KeyRoundIcon className="size-4" />
-                    <Text variant="mini">Google OAuth</Text>
-                  </span>
-                </TabsTrigger>
-              </Tabs>
+            <ToolbarRow>
+              <ToolbarContent>
+                <ToolbarTitle>{activePane.label}</ToolbarTitle>
+              </ToolbarContent>
             </ToolbarRow>
           </Toolbar>
         }
       >
-        <div className="px-6 pb-8">
-          <TabsContent value="general" className="pt-4">
+        <div className="px-6 pb-8 pt-2 max-w-2xl">
+          {pane === "general" ? (
             <FieldSet>
               <FieldGroup>
                 <Field orientation="horizontal">
@@ -312,9 +445,9 @@ export function SettingsView() {
                 </Field>
               </FieldGroup>
             </FieldSet>
-          </TabsContent>
+          ) : null}
 
-          <TabsContent value="accounts" className="pt-4">
+          {pane === "accounts" ? (
             <FieldSet title="Accounts">
               {accounts.length > 0 ? (
                 <div className="flex flex-col divide-y divide-separator">
@@ -326,9 +459,13 @@ export function SettingsView() {
                 <Text color="secondary">Connect an account from the sidebar to manage it here.</Text>
               )}
             </FieldSet>
-          </TabsContent>
+          ) : null}
 
-          <TabsContent value="oauth" className="pt-4">
+          {pane === "views" ? (
+            <ViewsPane target={viewTarget} onConsumeTarget={() => setViewTarget(null)} />
+          ) : null}
+
+          {pane === "oauth" ? (
             <FieldSet title="Google OAuth">
               <FieldGroup>
                 <Field orientation="horizontal">
@@ -370,9 +507,9 @@ export function SettingsView() {
                 </Field>
               </FieldGroup>
             </FieldSet>
-          </TabsContent>
+          ) : null}
         </div>
       </ScrollArea>
-    </TabsRoot>
+    </SplitView>
   );
 }

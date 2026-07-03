@@ -8,7 +8,12 @@ import * as path from "path";
 import { fileURLToPath } from "url";
 
 import { appHandlers } from "./app.js";
-import { getSettingsWindow, openSettingsWindow } from "../windows/settings-window.js";
+import {
+  getSettingsWindow,
+  openSettingsWindow,
+  setSettingsTarget,
+  takeSettingsTarget,
+} from "../windows/settings-window.js";
 import { registerGmailHandlers } from "./gmail.js";
 import { configureAutoSync, syncAllAccounts } from "../services/mail-sync.js";
 import { getSettings } from "../services/settings-store.js";
@@ -32,10 +37,23 @@ export function registerHandlers(): void {
     return path.join(__dirname, "..", "..");
   });
 
-  // Settings window handlers
-  ipcMain.handle("window:openSettings", async (_event) => {
+  // Settings window handlers. Accepts an optional navigation target so any
+  // window can deep-link into a pane (e.g. edit a view from the main sidebar).
+  ipcMain.handle("window:openSettings", async (_event, params: unknown) => {
+    const p = params as { pane?: unknown; viewId?: unknown } | undefined;
+    const pane =
+      p?.pane === "general" || p?.pane === "accounts" || p?.pane === "views" || p?.pane === "oauth"
+        ? p.pane
+        : null;
+    if (pane) {
+      setSettingsTarget({ pane, viewId: typeof p?.viewId === "string" ? p.viewId : null });
+    }
+    const existed = getSettingsWindow() != null;
     await openSettingsWindow();
+    if (existed && pane) ipcMain.broadcast("settings:navigate");
   });
+
+  ipcMain.handle("window:getSettingsTarget", async () => takeSettingsTarget());
 
   ipcMain.handle("window:closeSettings", async (_event) => {
     getSettingsWindow()?.close();

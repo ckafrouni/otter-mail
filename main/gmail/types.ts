@@ -76,3 +76,13 @@ export interface ViewRule {
   allOf: string[];
   noneOf: string[];
 }
+
+export type ViewKind = "inbox" | "sent" | "custom";
+
+/** A Combined-mailbox view. null rules = the dynamic built-in default. */
+export interface MailView {
+  id: string;
+  name: string;
+  kind: ViewKind;
+  rules: ViewRule[] | null;
+}

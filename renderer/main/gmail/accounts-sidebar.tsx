@@ -45,8 +45,8 @@ import {
   useCreateLabel,
   useViewUnreadCounts,
 } from "./hooks";
-import type { GmailLabel, MailView, ViewRule } from "./types";
-import { ViewEditorDialog } from "./view-editor-dialog";
+import type { GmailLabel, MailView } from "./types";
+import { gmailApi } from "./api";
 import { COMBINED_ACCOUNT_ID } from "./custom-views";
 import { buildLabelTree, type LabelTreeNode } from "./label-tree";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
@@ -181,9 +181,6 @@ type AccountsSidebarProps = {
   onSelectLabel: (labelId: string) => void;
   onCompose: () => void;
   views: MailView[];
-  onSaveView: (input: { id?: string; name: string; rules: ViewRule[] }) => void;
-  onDeleteView: (id: string) => void;
-  onResetView: (id: string) => void;
 };
 
 function getInitials(name: string): string {
@@ -201,9 +198,6 @@ export function AccountsSidebar({
   onSelectLabel,
   onCompose,
   views,
-  onSaveView,
-  onDeleteView,
-  onResetView,
 }: AccountsSidebarProps) {
   const isCombined = selectedAccountId === COMBINED_ACCOUNT_ID;
 
@@ -215,8 +209,6 @@ export function AccountsSidebar({
 
   const [createLabelOpen, setCreateLabelOpen] = useState(false);
   const [newLabelName, setNewLabelName] = useState("");
-  const [viewEditorOpen, setViewEditorOpen] = useState(false);
-  const [editingView, setEditingView] = useState<MailView | null>(null);
 
   const accounts = accountsQuery.data ?? [];
   const labels: GmailLabel[] = labelsQuery.data ?? [];
@@ -398,8 +390,7 @@ export function AccountsSidebar({
                 unreadCount={viewUnreadCounts[view.id] ?? 0}
                 onSelect={() => onSelectLabel(view.id)}
                 onEdit={() => {
-                  setEditingView(view);
-                  setViewEditorOpen(true);
+                  void gmailApi.openSettings({ pane: "views", viewId: view.id });
                 }}
               />
             ))}
@@ -416,8 +407,7 @@ export function AccountsSidebar({
                 size="small"
                 aria-label="New view"
                 onClick={() => {
-                  setEditingView(null);
-                  setViewEditorOpen(true);
+                  void gmailApi.openSettings({ pane: "views", viewId: "new" });
                 }}
               >
                 <PlusIcon className="size-3.5" />
@@ -441,8 +431,7 @@ export function AccountsSidebar({
                     unreadCount={viewUnreadCounts[view.id] ?? 0}
                     onSelect={() => onSelectLabel(view.id)}
                     onEdit={() => {
-                      setEditingView(view);
-                      setViewEditorOpen(true);
+                      void gmailApi.openSettings({ pane: "views", viewId: view.id });
                     }}
                   />
                 ))
@@ -524,16 +513,6 @@ export function AccountsSidebar({
         ) : null}
       </SidebarList>
       )}
-
-      <ViewEditorDialog
-        open={viewEditorOpen}
-        onOpenChange={setViewEditorOpen}
-        view={editingView}
-        accounts={accounts}
-        onSave={onSaveView}
-        onDelete={onDeleteView}
-        onReset={onResetView}
-      />
 
       <Dialog
         open={createLabelOpen}

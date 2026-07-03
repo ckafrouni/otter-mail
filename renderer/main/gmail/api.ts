@@ -3,6 +3,7 @@ import type {
   GmailLabel,
   GmailMessageSummary,
   GmailMessageDetail,
+  MailView,
   SyncStatus,
   ViewRule,
 } from "./types";
@@ -68,6 +69,11 @@ export type UpdateAccountParams = {
 
 export type SyncSettings = { syncIntervalSeconds: number };
 
+export type SaveViewParams = { id?: string; name: string; rules: ViewRule[] };
+
+export type SettingsPane = "general" | "accounts" | "views" | "oauth";
+export type SettingsTarget = { pane: SettingsPane; viewId?: string | null };
+
 export const gmailApi = {
   getCredentials: (): Promise<CredentialsResult> => ipc("gmail:getCredentials"),
 
@@ -125,4 +131,18 @@ export const gmailApi = {
 
   setSyncSettings: (params: SyncSettings): Promise<SyncSettings> =>
     ipc("gmail:setSyncSettings", params),
+
+  listViews: (): Promise<MailView[]> => ipc("gmail:listViews"),
+
+  saveView: (params: SaveViewParams): Promise<MailView> => ipc("gmail:saveView", params),
+
+  deleteView: (viewId: string): Promise<{ ok: boolean }> => ipc("gmail:deleteView", { viewId }),
+
+  resetView: (viewId: string): Promise<{ ok: boolean }> => ipc("gmail:resetView", { viewId }),
+
+  importViews: (views: MailView[]): Promise<MailView[]> => ipc("gmail:importViews", { views }),
+
+  openSettings: (target?: SettingsTarget): Promise<void> => ipc("window:openSettings", target),
+
+  getSettingsTarget: (): Promise<SettingsTarget | null> => ipc("window:getSettingsTarget"),
 };

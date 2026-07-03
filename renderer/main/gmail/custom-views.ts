@@ -1,18 +1,16 @@
 /**
  * custom-views.ts
  *
- * Combined-mailbox views + last-location persistence. Views are pure UI config,
- * so they live in localStorage. Two built-in views ("Inbox", "Sent") are always
- * present; when their `selections` are null they track every account's
- * INBOX/SENT dynamically and can be reset back to that. Custom views hold an
- * explicit per-account label selection.
+ * Combined-mailbox view hooks. Views live in the backend (userData/views.json,
+ * via gmail:*View IPC) so the main and settings windows share one source of
+ * truth; mutations broadcast gmail:views-changed to refresh every window.
+ * Last-location persistence stays in localStorage (per-window UI state).
  */
 
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback, useEffect } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { gmailApi, type SaveViewParams } from "./api";
 import type { GmailAccount, MailView, ViewKind, ViewRule } from "./types";
-
-const VIEWS_KEY = "gmail:combined-views";
-const LAST_LOCATION_KEY = "gmail:last-location";
 
 /** Sentinel account id for the cross-account "Combined" mailbox. */
 export const COMBINED_ACCOUNT_ID = "__combined__";
@@ -50,13 +48,16 @@ export function resolveRules(view: MailView, accounts: GmailAccount[]): ViewRule
   return raw.filter((r) => accountIds.has(r.accountId));
 }
 
+// ── Legacy localStorage store (pre-backend) ─────────────────────────────────
+
+const LEGACY_VIEWS_KEY = "gmail:combined-views";
+
 type StoredView = MailView & {
-  /** Legacy pre-rules shape: flat OR'd (account, label) picks. */
+  /** Pre-rules shape: flat OR'd (account, label) picks. */
   selections?: { accountId: string; labelId: string }[] | null;
 };
 
-/** Migrates a legacy `selections` view: each account's picked labels become one allOf rule. */
-function migrateView(v: StoredView): MailView {
+function migrateLegacyView(v: StoredView): MailView {
   if (v.rules !== undefined && v.rules !== null && Array.isArray(v.rules)) {
     return { id: v.id, name: v.name, kind: v.kind, rules: v.rules };
   }
@@ -75,106 +76,95 @@ function migrateView(v: StoredView): MailView {
   };
 }
 
-function isValidView(v: unknown): v is StoredView {
-  const view = v as StoredView;
-  return (
-    !!view &&
-    typeof view.id === "string" &&
-    typeof view.name === "string" &&
-    (view.kind === "inbox" || view.kind === "sent" || view.kind === "custom") &&
-    (view.rules === null ||
-      Array.isArray(view.rules) ||
-      view.selections === null ||
-      Array.isArray(view.selections))
-  );
-}
-
-/** Ensures the two built-in views exist and lead the list (Inbox, then Sent). */
-function withDefaults(views: MailView[]): MailView[] {
-  const inbox = views.find((v) => v.id === INBOX_VIEW_ID) ?? DEFAULT_VIEWS[0];
-  const sent = views.find((v) => v.id === SENT_VIEW_ID) ?? DEFAULT_VIEWS[1];
-  const custom = views.filter((v) => v.id !== INBOX_VIEW_ID && v.id !== SENT_VIEW_ID);
-  return [inbox, sent, ...custom];
-}
-
-function loadViews(): MailView[] {
+function readLegacyViews(): MailView[] | null {
   try {
-    const raw = localStorage.getItem(VIEWS_KEY);
-    if (!raw) return withDefaults([]);
+    const raw = localStorage.getItem(LEGACY_VIEWS_KEY);
+    if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return withDefaults([]);
-    return withDefaults(parsed.filter(isValidView).map(migrateView));
+    if (!Array.isArray(parsed)) return null;
+    return parsed
+      .filter((v): v is StoredView => {
+        const view = v as StoredView;
+        return (
+          !!view &&
+          typeof view.id === "string" &&
+          typeof view.name === "string" &&
+          (view.kind === "inbox" || view.kind === "sent" || view.kind === "custom")
+        );
+      })
+      .map(migrateLegacyView);
   } catch {
-    return withDefaults([]);
+    return null;
   }
 }
 
-const listeners = new Set<() => void>();
-let cache: MailView[] = loadViews();
-
-function emit(next: MailView[]): void {
-  cache = withDefaults(next);
-  try {
-    localStorage.setItem(VIEWS_KEY, JSON.stringify(cache));
-  } catch {
-    // ignore quota / serialization errors
+async function fetchViews(): Promise<MailView[]> {
+  const legacy = readLegacyViews();
+  if (legacy) {
+    try {
+      await gmailApi.importViews(legacy);
+      localStorage.removeItem(LEGACY_VIEWS_KEY);
+    } catch {
+      // keep the legacy key so the next launch retries the import
+    }
   }
-  for (const fn of listeners) fn();
+  return gmailApi.listViews();
 }
 
-function subscribe(fn: () => void): () => void {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
-}
+// ── View hooks ───────────────────────────────────────────────────────────────
 
-function genId(): string {
-  return `v_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-export type SaveViewInput = {
-  id?: string;
-  name: string;
-  rules: ViewRule[];
-};
+const VIEWS_QUERY_KEY = ["gmail:views"] as const;
 
 export function useMailViews() {
-  const views = useSyncExternalStore(subscribe, () => cache);
+  const qc = useQueryClient();
 
-  const saveView = useCallback((input: SaveViewInput) => {
-    const existing = input.id ? cache.find((v) => v.id === input.id) : undefined;
-    if (existing) {
-      emit(
-        cache.map((v) =>
-          v.id === existing.id ? { ...v, name: input.name, rules: input.rules } : v,
-        ),
-      );
-      return existing.id;
-    }
-    const id = genId();
-    emit([...cache, { id, name: input.name, kind: "custom", rules: input.rules }]);
-    return id;
-  }, []);
+  // View edits happen in the Settings window, which has its own QueryClient —
+  // listen for the backend broadcast so every window refreshes.
+  useEffect(() => {
+    const unsubscribe = window.glazeAPI.glaze.ipc.onNotification("gmail:views-changed", () => {
+      void qc.invalidateQueries({ queryKey: VIEWS_QUERY_KEY });
+    });
+    return unsubscribe;
+  }, [qc]);
 
-  const deleteView = useCallback((id: string) => {
-    // Built-in views can't be deleted (reset instead).
-    if (id === INBOX_VIEW_ID || id === SENT_VIEW_ID) return;
-    emit(cache.filter((v) => v.id !== id));
-  }, []);
+  const query = useQuery<MailView[]>({
+    queryKey: VIEWS_QUERY_KEY,
+    queryFn: fetchViews,
+    staleTime: 30_000,
+    placeholderData: DEFAULT_VIEWS,
+  });
 
-  const resetView = useCallback((id: string) => {
-    emit(
-      cache.map((v) =>
-        v.id === id && (v.kind === "inbox" || v.kind === "sent")
-          ? { ...v, name: v.kind === "inbox" ? "Inbox" : "Sent", rules: null }
-          : v,
-      ),
-    );
-  }, []);
+  const invalidate = useCallback(
+    () => void qc.invalidateQueries({ queryKey: VIEWS_QUERY_KEY }),
+    [qc],
+  );
 
-  return { views, saveView, deleteView, resetView };
+  const saveMutation = useMutation({
+    mutationFn: (input: SaveViewParams) => gmailApi.saveView(input),
+    onSuccess: invalidate,
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => gmailApi.deleteView(id),
+    onSuccess: invalidate,
+  });
+  const resetMutation = useMutation({
+    mutationFn: (id: string) => gmailApi.resetView(id),
+    onSuccess: invalidate,
+  });
+
+  const saveView = useCallback(
+    (input: SaveViewParams) => saveMutation.mutateAsync(input),
+    [saveMutation],
+  );
+  const deleteView = useCallback((id: string) => deleteMutation.mutateAsync(id), [deleteMutation]);
+  const resetView = useCallback((id: string) => resetMutation.mutateAsync(id), [resetMutation]);
+
+  return { views: query.data ?? DEFAULT_VIEWS, saveView, deleteView, resetView };
 }
 
 // ── Last location (restore where the user left off) ─────────────────────────
+
+const LAST_LOCATION_KEY = "gmail:last-location";
 
 export type LastLocation = { accountId: string; labelId: string };
 

@@ -27,7 +27,7 @@ export function HomeView() {
   const credentialsQuery = useCredentials();
   const accountsQuery = useAccounts();
   const addAccount = useAddAccount();
-  const { views, saveView, deleteView, resetView } = useMailViews();
+  const { views } = useMailViews();
 
   const accounts = accountsQuery.data ?? [];
   const credentials = credentialsQuery.data;
@@ -210,9 +210,6 @@ export function HomeView() {
             onSelectLabel={handleSelectLabel}
             onCompose={() => setComposeOpen(true)}
             views={views}
-            onSaveView={saveView}
-            onDeleteView={deleteView}
-            onResetView={resetView}
           />
         }
         sidebarSize={{ default: 220, min: 180, max: 300 }}

@@ -31,7 +31,8 @@ import {
 import * as mailStore from "../services/mail-store.js";
 import * as mailSync from "../services/mail-sync.js";
 import { getSettings, updateSettings } from "../services/settings-store.js";
-import type { ViewRule } from "../gmail/types.js";
+import * as viewsStore from "../services/views-store.js";
+import type { MailView, ViewRule } from "../gmail/types.js";
 
 const LOCAL_PAGE_SIZE = 50;
 
@@ -280,6 +281,90 @@ export function registerGmailHandlers(): void {
       return mailStore.countCombinedByRules(parseRules(p?.rules));
     } catch (err) {
       console.log("[gmail:countCombinedMessages] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:listViews / saveView / deleteView / resetView — Combined-view store
+  // (userData/views.json); mutations broadcast gmail:views-changed so every
+  // window's view queries refresh.
+  ipcMain.handle("gmail:listViews", async () => {
+    try {
+      return await viewsStore.listViews();
+    } catch (err) {
+      console.log("[gmail:listViews] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  ipcMain.handle("gmail:saveView", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:saveView]", { id: p?.id, name: p?.name });
+    try {
+      const name = assertString(p?.name, "name");
+      const id = typeof p?.id === "string" ? p.id : undefined;
+      const view = await viewsStore.saveView({ id, name, rules: parseRules(p?.rules) });
+      ipcMain.broadcast("gmail:views-changed");
+      return view;
+    } catch (err) {
+      console.log("[gmail:saveView] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  ipcMain.handle("gmail:deleteView", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:deleteView]", { viewId: p?.viewId });
+    try {
+      await viewsStore.deleteView(assertString(p?.viewId, "viewId"));
+      ipcMain.broadcast("gmail:views-changed");
+      return { ok: true };
+    } catch (err) {
+      console.log("[gmail:deleteView] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  ipcMain.handle("gmail:resetView", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:resetView]", { viewId: p?.viewId });
+    try {
+      await viewsStore.resetView(assertString(p?.viewId, "viewId"));
+      ipcMain.broadcast("gmail:views-changed");
+      return { ok: true };
+    } catch (err) {
+      console.log("[gmail:resetView] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:importViews — one-time migration of the renderer's legacy
+  // localStorage view store; no-op once views.json exists.
+  ipcMain.handle("gmail:importViews", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    try {
+      const raw = Array.isArray(p?.views) ? p.views : [];
+      const views = raw
+        .map((v) => v as Record<string, unknown>)
+        .filter(
+          (v) =>
+            typeof v?.id === "string" &&
+            typeof v?.name === "string" &&
+            (v.kind === "inbox" || v.kind === "sent" || v.kind === "custom"),
+        )
+        .map(
+          (v): MailView => ({
+            id: v.id as string,
+            name: v.name as string,
+            kind: v.kind as MailView["kind"],
+            rules: v.rules === null ? null : parseRules(v.rules),
+          }),
+        );
+      await viewsStore.importViews(views);
+      ipcMain.broadcast("gmail:views-changed");
+      return await viewsStore.listViews();
+    } catch (err) {
+      console.log("[gmail:importViews] error", { error: String(err) });
       throw err;
     }
   });
