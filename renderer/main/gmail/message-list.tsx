@@ -240,6 +240,13 @@ function MessageRow({
     void trashThread.mutateAsync({ accountId: ownerAccountId, threadId });
   };
 
+  // Keyboard selection (j/k) can land on a row outside the viewport — keep the
+  // selected row visible. "nearest" makes this a no-op for click selection.
+  const rowRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (selected) rowRef.current?.scrollIntoView({ block: "nearest" });
+  }, [selected]);
+
   const unread = message.threadUnread ?? message.unread;
   // Selected rows sit on a solid accent block (Apple Mail-style); every text/icon
   // color below is force-overridden to white via inline style so it stays legible
@@ -253,6 +260,7 @@ function MessageRow({
       <ContextMenu>
         <ContextMenuTrigger asChild>
       <button
+        ref={rowRef}
         type="button"
         onClick={onSelect}
         className={[
