@@ -347,7 +347,7 @@ function MessageRow({
           {/* Fixed-height single-line chip strip so every row measures the same. */}
           <div className="mt-0.5 flex h-5 items-center gap-1 overflow-hidden">
             {messageLabels.map((label) => (
-              <LabelChip key={label.id} label={label} />
+              <LabelChip key={label.id} label={label} selected={selected} />
             ))}
           </div>
         </div>
