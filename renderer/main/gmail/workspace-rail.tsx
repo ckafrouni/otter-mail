@@ -36,9 +36,8 @@ function RailTile({
         onClick={onClick}
         className={[
           "flex size-9 shrink-0 items-center justify-center rounded-lg text-[15px] font-bold text-white",
-          "transition-all hover:scale-[1.06]",
           selected
-            ? "ring-2 ring-white/90 ring-offset-2 ring-offset-(--sk-frame)"
+            ? "ring-2 ring-(--sk-strong) ring-offset-2 ring-offset-(--sk-frame)"
             : "opacity-80 hover:opacity-100",
         ].join(" ")}
         style={style}
@@ -88,7 +87,7 @@ export function WorkspaceRail({
           type="button"
           aria-label="Add Gmail account"
           onClick={onAddAccount}
-          className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/10 text-white/70 transition-colors hover:bg-white/20 hover:text-white"
+          className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-(--sk-ctl) text-(--sk-muted) hover:bg-(--sk-ctl-hover) hover:text-(--sk-strong)"
         >
           <PlusIcon className="size-4.5" />
         </button>
@@ -101,7 +100,7 @@ export function WorkspaceRail({
           type="button"
           aria-label="Open Settings"
           onClick={() => void gmailApi.openSettings({ pane: "general" })}
-          className="flex size-9 shrink-0 items-center justify-center rounded-lg text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+          className="flex size-9 shrink-0 items-center justify-center rounded-lg text-(--sk-muted) hover:bg-(--sk-hover) hover:text-(--sk-strong)"
         >
           <SettingsIcon className="size-5" />
         </button>

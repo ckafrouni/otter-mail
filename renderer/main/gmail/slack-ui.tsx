@@ -12,11 +12,11 @@ export const IconBtn = forwardRef<
       type="button"
       aria-label={label}
       className={[
-        "flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors",
+        "flex size-8 shrink-0 items-center justify-center rounded-lg",
         "disabled:opacity-35 disabled:pointer-events-none",
         active
           ? "bg-(--sk-selblue) text-white"
-          : "text-(--sk-muted) hover:bg-(--sk-hover) hover:text-white",
+          : "text-(--sk-muted) hover:bg-(--sk-hover) hover:text-(--sk-strong)",
         className ?? "",
       ].join(" ")}
       {...props}
@@ -48,7 +48,7 @@ export function HintTooltip({
   );
 }
 
-/** Slack-style unread count pill (light on dark rows, inverted on selection). */
+/** Slack-style unread count pill, contrast-inverted against the current theme. */
 export function UnreadPill({ count, selected }: { count: number; selected?: boolean }) {
   if (count <= 0) return null;
   return (
@@ -56,7 +56,9 @@ export function UnreadPill({ count, selected }: { count: number; selected?: bool
       className={[
         "ml-auto flex h-[18px] min-w-[20px] shrink-0 items-center justify-center rounded-full px-1.5",
         "text-[11px] font-bold tabular-nums",
-        selected ? "bg-(--sk-selected-fg)/80 text-white" : "bg-white/85 text-[#1d1c1d]",
+        selected
+          ? "bg-(--sk-selected-fg)/85 text-(--sk-selected)"
+          : "bg-(--sk-badge-bg) text-(--sk-badge-fg)",
       ].join(" ")}
     >
       {count > 999 ? "999+" : count}

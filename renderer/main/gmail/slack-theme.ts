@@ -1,10 +1,10 @@
 import type { Theme } from "@glaze/core/components";
 
 /**
- * Slack-dark seed theme for the main window. Injected once at startup
- * (root-view.tsx) so every SDK surface (dialogs, menus, toasts, inputs)
- * derives from the same palette as the custom chrome. The Settings window
- * never injects it and stays native.
+ * Slack seed themes for the main window. root-view.tsx injects the one
+ * matching the system appearance (and re-injects on change) so every SDK
+ * surface (dialogs, menus, toasts, inputs) derives from the same palette as
+ * the custom chrome. The Settings window never injects them and stays native.
  */
 export const SLACK_DARK_THEME: Theme = {
   id: "slack-dark",
@@ -23,4 +23,23 @@ export const SLACK_DARK_THEME: Theme = {
   blue: "#36c5f0",
   purple: "#a485ff",
   magenta: "#e01e5a",
+};
+
+export const SLACK_LIGHT_THEME: Theme = {
+  id: "slack-light",
+  name: "Slack Light",
+  appearance: "light",
+  background: "#ffffff",
+  backgroundSecondary: "#f4f1f4",
+  foreground: "#1d1c1d",
+  accent: "#1264a3",
+  selection: "#1264a3",
+  loader: "#1d1c1d",
+  red: "#e01e5a",
+  orange: "#cc6d2d",
+  yellow: "#d9a400",
+  green: "#007a5a",
+  blue: "#1264a3",
+  purple: "#7c5cbf",
+  magenta: "#c21e6e",
 };

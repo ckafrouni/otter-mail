@@ -21,27 +21,58 @@
   --accent: #0a84ff;
 }
 
-/* Slack-inspired skin for the main window. Consumed via bg-(--sk-*) etc. */
+/* Slack-inspired skin for the main window, consumed via bg-(--sk-*) etc.
+   Light values live on :root; .dark (synced by the injected theme, which
+   follows the system appearance) overrides them. */
 :root {
-  --sk-frame: #131317; /* window frame: top bar + workspace rail */
-  --sk-card: #1b1d21; /* content card the three panes live on */
-  --sk-panel: #222529; /* raised inputs (reply box) */
-  --sk-border: #2c2e33; /* hairlines between panes */
+  --sk-frame: #f4f1f4; /* window frame: top bar + workspace rail */
+  --sk-card: #ffffff; /* content card the three panes live on */
+  --sk-panel: #ffffff; /* raised inputs (reply box) */
+  --sk-border: #e0dde0; /* hairlines between panes */
+  --sk-hover: rgb(0 0 0 / 5%); /* row hover wash */
+  --sk-ctl: rgb(0 0 0 / 7%); /* control fills (pills, chips, skeletons) */
+  --sk-ctl-hover: rgb(0 0 0 / 12%);
+  --sk-outline: rgb(0 0 0 / 18%); /* input borders */
+  --sk-outline-hover: rgb(0 0 0 / 35%);
+  --sk-strong: #1d1c1d; /* titles, unread, primary emphasis */
+  --sk-text: #3b3a3b;
+  --sk-muted: #69696c;
+  --sk-faint: #939295;
+  --sk-blue: #1264a3; /* unread dot, links */
+  --sk-selblue: #1164a3; /* list-row selection (white text on it in both modes) */
+  --sk-green: #007a5a; /* send */
+  --sk-selected: #1d1c1d; /* sidebar selected row (inverted pill) */
+  --sk-selected-fg: #ffffff;
+  --sk-badge-bg: #1d1c1d; /* unread count pill */
+  --sk-badge-fg: #ffffff;
+}
+.dark {
+  --sk-frame: #131317;
+  --sk-card: #1b1d21;
+  --sk-panel: #222529;
+  --sk-border: #2c2e33;
   --sk-hover: rgb(255 255 255 / 6%);
+  --sk-ctl: rgb(255 255 255 / 10%);
+  --sk-ctl-hover: rgb(255 255 255 / 15%);
+  --sk-outline: rgb(255 255 255 / 18%);
+  --sk-outline-hover: rgb(255 255 255 / 40%);
+  --sk-strong: #ffffff;
   --sk-text: #d1d2d3;
   --sk-muted: #9a9b9e;
   --sk-faint: #77797d;
-  --sk-blue: #1d9bd1; /* links, focus */
-  --sk-selblue: #1164a3; /* list-row selection */
-  --sk-green: #007a5a; /* send */
-  --sk-selected: #f5f5f5; /* sidebar selected row (Slack's white pill) */
+  --sk-blue: #1d9bd1;
+  --sk-selblue: #1164a3;
+  --sk-green: #007a5a;
+  --sk-selected: #f5f5f5;
   --sk-selected-fg: #1d1c1d;
+  --sk-badge-bg: rgb(255 255 255 / 85%);
+  --sk-badge-fg: #1d1c1d;
 }
 
-/* Overlay scrollbars for the custom dark panes. */
+/* Overlay scrollbars for the custom panes. */
 .sk-scroll {
   scrollbar-width: thin;
-  scrollbar-color: rgb(255 255 255 / 20%) transparent;
+  scrollbar-color: rgb(0 0 0 / 25%) transparent;
 }
 .sk-scroll::-webkit-scrollbar {
   width: 8px;
@@ -51,9 +82,18 @@
   background: transparent;
 }
 .sk-scroll::-webkit-scrollbar-thumb {
-  background: rgb(255 255 255 / 18%);
+  background: rgb(0 0 0 / 22%);
   border-radius: 4px;
 }
 .sk-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgb(0 0 0 / 35%);
+}
+.dark .sk-scroll {
+  scrollbar-color: rgb(255 255 255 / 20%) transparent;
+}
+.dark .sk-scroll::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 18%);
+}
+.dark .sk-scroll::-webkit-scrollbar-thumb:hover {
   background: rgb(255 255 255 / 30%);
 }

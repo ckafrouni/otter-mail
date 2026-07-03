@@ -2,18 +2,29 @@ import { Outlet } from "@tanstack/react-router";
 import * as React from "react";
 import { Status, injectActiveTheme } from "@glaze/core/components";
 import { useConnection, useEnvironment } from "@glaze/core/hooks";
-import { SLACK_DARK_THEME } from "./gmail/slack-theme";
+import { SLACK_DARK_THEME, SLACK_LIGHT_THEME } from "./gmail/slack-theme";
 
-// Force the Slack skin regardless of the system appearance. Replaces
-// useTheme(): its prefers-color-scheme listener would strip the `dark` class
-// on a light system, and its accent sync would let the macOS accent override
-// the theme's.
-injectActiveTheme(SLACK_DARK_THEME);
+// Follow the system appearance with the matching Slack skin. Replaces
+// useTheme(): its accent sync would let the macOS accent override the
+// theme's, and the theme injection owns the `dark` class instead.
+function applySlackTheme() {
+  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  injectActiveTheme(dark ? SLACK_DARK_THEME : SLACK_LIGHT_THEME);
+}
+applySlackTheme();
 
 export function RootView() {
   // IPC connection and environment
   const connectionQuery = useConnection();
   const environmentQuery = useEnvironment();
+
+  // Re-skin live when macOS switches appearance (auto light/dark).
+  React.useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => applySlackTheme();
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
 
   // Cleanup IPC connection on unmount
   React.useEffect(() => {

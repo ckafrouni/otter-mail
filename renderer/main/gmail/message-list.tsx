@@ -267,7 +267,7 @@ function MessageRow({
         type="button"
         onClick={onSelect}
         className={[
-          "group my-px flex w-full items-start gap-2.5 rounded-lg px-3 py-2 text-left transition-colors",
+          "group my-px flex w-full items-start gap-2.5 rounded-lg px-3 py-2 text-left",
           selected ? "bg-(--sk-selblue)" : "hover:bg-(--sk-hover)",
         ].join(" ")}
       >
@@ -280,7 +280,11 @@ function MessageRow({
               <span
                 className={[
                   "min-w-0 truncate text-[15px] leading-snug",
-                  selected || unread ? "font-bold text-white" : "font-medium text-(--sk-text)",
+                  selected
+                    ? "font-bold text-white"
+                    : unread
+                      ? "font-bold text-(--sk-strong)"
+                      : "font-medium text-(--sk-text)",
                 ].join(" ")}
               >
                 {message.fromName || message.fromEmail}
@@ -290,7 +294,7 @@ function MessageRow({
               {combinedMeta ? (
                 <span className="flex items-center gap-1 text-[11px]">
                   {combinedMeta.mailbox ? (
-                    <span className={selected ? "text-white/70" : "text-white/40"}>
+                    <span className={selected ? "text-white/70" : "text-(--sk-faint)"}>
                       {combinedMeta.mailbox} -
                     </span>
                   ) : null}
@@ -308,7 +312,7 @@ function MessageRow({
                 <span
                   className={[
                     "rounded-full px-1.5 py-px text-[11px] font-semibold tabular-nums",
-                    selected ? "bg-white/25 text-white" : "bg-white/10 text-white/70",
+                    selected ? "bg-white/25 text-white" : "bg-(--sk-ctl) text-(--sk-muted)",
                   ].join(" ")}
                 >
                   {threadCount}
@@ -317,7 +321,7 @@ function MessageRow({
               <span
                 className={[
                   "text-[11px] tabular-nums",
-                  selected ? "text-white/75" : "text-white/40",
+                  selected ? "text-white/75" : "text-(--sk-faint)",
                 ].join(" ")}
               >
                 {formatRelativeDate(message.date)}
@@ -327,7 +331,7 @@ function MessageRow({
           <span
             className={[
               "truncate text-[14px] leading-snug",
-              selected ? "text-white/95" : unread ? "font-semibold text-white/90" : "text-white/60",
+              selected ? "text-white/95" : unread ? "font-semibold text-(--sk-strong)" : "text-(--sk-muted)",
             ].join(" ")}
           >
             {message.subject || "(no subject)"}
@@ -335,7 +339,7 @@ function MessageRow({
           <span
             className={[
               "truncate text-[13px] leading-snug",
-              selected ? "text-white/70" : "text-white/40",
+              selected ? "text-white/70" : "text-(--sk-faint)",
             ].join(" ")}
           >
             {message.snippet || " "}
@@ -352,7 +356,7 @@ function MessageRow({
           <button
             type="button"
             onClick={handleStarToggle}
-            className="mt-0.5 shrink-0 transition-colors"
+            className="mt-0.5 shrink-0"
             aria-label="Unflag"
           >
             <FlagIcon
@@ -665,10 +669,10 @@ export function MessageList({
       {/* Header */}
       <div className="drag-region flex h-[52px] shrink-0 items-center gap-2 border-b border-(--sk-border) px-4">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[16px] font-extrabold leading-tight text-white">
+          <div className="truncate text-[16px] font-extrabold leading-tight text-(--sk-strong)">
             {mailboxTitle}
           </div>
-          <div className="truncate text-[11px] leading-tight text-white/45">
+          <div className="truncate text-[11px] leading-tight text-(--sk-muted)">
             {formatMailboxSummary(mailboxTotal, mailboxUnread)}
           </div>
         </div>
@@ -689,19 +693,19 @@ export function MessageList({
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="flex w-full items-start gap-3 px-5 py-2.5">
                 <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  <div className="h-3.5 w-32 animate-pulse rounded-full bg-white/10" />
-                  <div className="h-3 w-48 animate-pulse rounded-full bg-white/[0.07]" />
-                  <div className="h-3 w-40 animate-pulse rounded-full bg-white/[0.05]" />
+                  <div className="h-3.5 w-32 animate-pulse rounded-full bg-(--sk-ctl)" />
+                  <div className="h-3 w-48 animate-pulse rounded-full bg-(--sk-hover)" />
+                  <div className="h-3 w-40 animate-pulse rounded-full bg-(--sk-hover)" />
                 </div>
               </div>
             ))}
           </div>
         ) : visibleMessages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
-            <span className="text-[15px] font-bold text-white/80">
+            <span className="text-[15px] font-bold text-(--sk-text)">
               {unreadOnly ? "No unread messages" : "No messages"}
             </span>
-            <span className="text-[13px] text-white/45">
+            <span className="text-[13px] text-(--sk-muted)">
               {unreadOnly
                 ? "Everything here has been read."
                 : searchQuery
@@ -733,7 +737,7 @@ export function MessageList({
                   type="button"
                   onClick={handleLoadMore}
                   disabled={isFetchingNextPage}
-                  className="h-7 rounded-md bg-white/10 px-3 text-[13px] font-medium text-white/80 transition-colors hover:bg-white/15 disabled:opacity-50"
+                  className="h-7 rounded-md bg-(--sk-ctl) px-3 text-[13px] font-medium text-(--sk-text) hover:bg-(--sk-ctl-hover) disabled:opacity-50"
                 >
                   {isFetchingNextPage ? "Loading..." : "Load more"}
                 </button>

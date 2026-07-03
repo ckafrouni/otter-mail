@@ -124,7 +124,7 @@ function MessageBody({
       <iframe
         sandbox="allow-same-origin"
         srcDoc={bodyHtml}
-        className="w-full rounded-lg border border-white/10 bg-white"
+        className="w-full rounded-lg border border-(--sk-border) bg-white"
         title="Message body"
         onLoad={(e) => {
           const iframe = e.currentTarget;
@@ -143,7 +143,7 @@ function MessageBody({
       </pre>
     );
   }
-  return <span className="text-[13px] text-white/40">(No message body)</span>;
+  return <span className="text-[13px] text-(--sk-muted)">(No message body)</span>;
 }
 
 type MessageAttachment = GmailMessageDetail["attachments"][number];
@@ -286,7 +286,7 @@ function ImageAttachmentTile({
             aria-label={`Open ${attachment.filename}`}
             onClick={handleOpen}
             {...dragProps}
-            className={`h-28 w-36 cursor-pointer overflow-hidden rounded-lg border border-white/10 bg-white/5${opening ? " opacity-60" : ""}`}
+            className={`h-28 w-36 cursor-pointer overflow-hidden rounded-lg border border-(--sk-border) bg-(--sk-ctl)${opening ? " opacity-60" : ""}`}
           >
             {url ? (
               <img
@@ -297,10 +297,10 @@ function ImageAttachmentTile({
               />
             ) : failed ? (
               <div className="flex h-full items-center justify-center">
-                <ImageIcon className="size-6 text-white/30" />
+                <ImageIcon className="size-6 text-(--sk-faint)" />
               </div>
             ) : (
-              <div className="h-full w-full animate-pulse bg-white/10" />
+              <div className="h-full w-full animate-pulse bg-(--sk-ctl)" />
             )}
           </div>
           <button
@@ -309,11 +309,11 @@ function ImageAttachmentTile({
               onDownload(messageId, attachment.id, attachment.filename, attachment.mimeType)
             }
             aria-label={`Download ${attachment.filename}`}
-            className="absolute right-1.5 top-1.5 flex size-6 items-center justify-center rounded-md bg-black/60 text-white opacity-0 transition-opacity hover:bg-black/80 focus-visible:opacity-100 group-hover:opacity-100"
+            className="absolute right-1.5 top-1.5 flex size-6 items-center justify-center rounded-md bg-black/60 text-white opacity-0 hover:bg-black/80 focus-visible:opacity-100 group-hover:opacity-100"
           >
             <DownloadIcon className="size-3.5" />
           </button>
-          <div className="mt-1 truncate text-[11px] text-white/50">{attachment.filename}</div>
+          <div className="mt-1 truncate text-[11px] text-(--sk-muted)">{attachment.filename}</div>
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
@@ -357,11 +357,11 @@ function FileAttachmentRow({
           aria-label={`Open ${attachment.filename}`}
           onClick={handleOpen}
           {...dragProps}
-          className={`flex cursor-pointer select-none items-center justify-between gap-3 rounded-lg bg-white/[0.05] px-3 py-2 transition-colors hover:bg-white/[0.09]${opening ? " opacity-60" : ""}`}
+          className={`flex cursor-pointer select-none items-center justify-between gap-3 rounded-lg bg-(--sk-ctl) px-3 py-2 hover:bg-(--sk-ctl-hover)${opening ? " opacity-60" : ""}`}
         >
           <div className="flex min-w-0 flex-col">
-            <span className="truncate text-[13px] text-white/90">{attachment.filename}</span>
-            <span className="text-[11px] text-white/40">
+            <span className="truncate text-[13px] text-(--sk-text)">{attachment.filename}</span>
+            <span className="text-[11px] text-(--sk-faint)">
               {attachment.mimeType} · {formatBytes(attachment.size)}
             </span>
           </div>
@@ -373,7 +373,7 @@ function FileAttachmentRow({
               onDownload(messageId, attachment.id, attachment.filename, attachment.mimeType);
             }}
             aria-label={`Download ${attachment.filename}`}
-            className="flex size-7 shrink-0 items-center justify-center rounded-md text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-(--sk-muted) hover:bg-(--sk-hover) hover:text-(--sk-strong)"
           >
             <DownloadIcon className="size-4" />
           </button>
@@ -412,7 +412,7 @@ function AttachmentList({
   const files = attachments.filter((a) => !a.mimeType.startsWith("image/"));
   return (
     <div className="mt-2 flex flex-col gap-2">
-      <span className="text-[12px] font-bold text-white/60">
+      <span className="text-[12px] font-bold text-(--sk-muted)">
         {attachments.length} attachment{attachments.length === 1 ? "" : "s"}
       </span>
       {images.length > 0 ? (
@@ -449,7 +449,7 @@ function DayDivider({ timestamp }: { timestamp: number }) {
   return (
     <div className="relative flex items-center justify-center py-3">
       <div className="absolute inset-x-0 top-1/2 h-px bg-(--sk-border)" />
-      <span className="relative rounded-full border border-(--sk-border) bg-(--sk-card) px-3 py-1 text-[12px] font-bold text-white/80">
+      <span className="relative rounded-full border border-(--sk-border) bg-(--sk-card) px-3 py-1 text-[12px] font-bold text-(--sk-text)">
         {formatDayLabel(timestamp)}
       </span>
     </div>
@@ -467,19 +467,19 @@ function CollapsedRow({
     <button
       type="button"
       onClick={onExpand}
-      className="flex w-full items-center gap-2.5 px-5 py-1.5 text-left transition-colors hover:bg-white/[0.03]"
+      className="flex w-full items-center gap-2.5 px-5 py-1.5 text-left hover:bg-(--sk-hover)"
     >
       <SenderAvatar name={summary.fromName} email={summary.fromEmail} size="sm" />
       <span
         className={[
           "shrink-0 text-[15px] leading-snug",
-          summary.unread ? "font-bold text-white" : "font-semibold text-white/80",
+          summary.unread ? "font-bold text-(--sk-strong)" : "font-semibold text-(--sk-text)",
         ].join(" ")}
       >
         {summary.fromName || summary.fromEmail}
       </span>
-      <span className="min-w-0 flex-1 truncate text-[13px] text-white/40">{summary.snippet}</span>
-      <span className="shrink-0 text-[11px] tabular-nums text-white/35">
+      <span className="min-w-0 flex-1 truncate text-[13px] text-(--sk-faint)">{summary.snippet}</span>
+      <span className="shrink-0 text-[11px] tabular-nums text-(--sk-faint)">
         {formatTime(summary.date)}
       </span>
     </button>
@@ -520,7 +520,7 @@ function ExpandedRow({
   const detail = detailQuery.data;
 
   return (
-    <div className="group flex gap-2.5 px-5 py-2 transition-colors hover:bg-white/[0.015]">
+    <div className="group flex gap-2.5 px-5 py-2">
       <SenderAvatar
         name={summary.fromName}
         email={summary.fromEmail}
@@ -533,25 +533,25 @@ function ExpandedRow({
           className="flex w-full items-baseline gap-2 text-left"
           aria-label="Collapse message"
         >
-          <span className="truncate text-[15px] font-bold leading-snug text-white">
+          <span className="truncate text-[15px] font-bold leading-snug text-(--sk-strong)">
             {summary.fromName || summary.fromEmail}
           </span>
           <span
-            className="shrink-0 text-[11px] tabular-nums text-white/40"
+            className="shrink-0 text-[11px] tabular-nums text-(--sk-faint)"
             title={formatFullDate(summary.date)}
           >
             {formatTime(summary.date)}
           </span>
         </button>
-        <div className="truncate text-[12px] text-white/40" title={`to ${summary.to}`}>
+        <div className="truncate text-[12px] text-(--sk-faint)" title={`to ${summary.to}`}>
           to {summary.to}
           {detail?.cc ? ` · cc ${detail.cc}` : ""}
         </div>
         <div className="mt-1.5">
           {detailQuery.isLoading ? (
             <div className="flex flex-col gap-2">
-              <div className="h-4 w-3/4 animate-pulse rounded-full bg-white/10" />
-              <div className="h-4 w-1/2 animate-pulse rounded-full bg-white/[0.07]" />
+              <div className="h-4 w-3/4 animate-pulse rounded-full bg-(--sk-ctl)" />
+              <div className="h-4 w-1/2 animate-pulse rounded-full bg-(--sk-hover)" />
             </div>
           ) : detail ? (
             <>
@@ -564,7 +564,7 @@ function ExpandedRow({
               />
             </>
           ) : (
-            <span className="text-[13px] text-white/40">Could not load this message.</span>
+            <span className="text-[13px] text-(--sk-muted)">Could not load this message.</span>
           )}
         </div>
       </div>
@@ -667,7 +667,7 @@ function ReplyBox({
 
   return (
     <div className="shrink-0 px-5 pb-4 pt-1">
-      <div className="rounded-lg border border-white/20 bg-(--sk-panel) transition-colors focus-within:border-white/40">
+      <div className="rounded-lg border border-(--sk-outline) bg-(--sk-panel) focus-within:border-(--sk-outline-hover)">
         <textarea
           ref={textareaRef}
           value={text}
@@ -684,7 +684,7 @@ function ReplyBox({
           }}
           placeholder={`Reply to ${senderFirstName}…`}
           aria-label="Reply"
-          className="sk-scroll max-h-48 w-full resize-none bg-transparent px-3 pt-2.5 text-[15px] leading-relaxed text-white outline-none placeholder:text-white/40"
+          className="sk-scroll max-h-48 w-full resize-none bg-transparent px-3 pt-2.5 text-[15px] leading-relaxed text-(--sk-strong) outline-none placeholder:text-(--sk-faint)"
         />
         <div className="flex items-center gap-1 px-2 pb-1.5">
           <HintTooltip label="Open full composer" hint="Cc, attachments…">
@@ -701,14 +701,14 @@ function ReplyBox({
           </HintTooltip>
           <span className="flex-1" />
           {text.trim() ? (
-            <span className="pr-1 text-[11px] text-white/30">⌘↩ to send</span>
+            <span className="pr-1 text-[11px] text-(--sk-faint)">⌘↩ to send</span>
           ) : null}
           <button
             type="button"
             onClick={handleSend}
             disabled={!canSend}
             aria-label="Send reply"
-            className="flex h-7 w-9 items-center justify-center rounded-md bg-(--sk-green) text-white transition-colors hover:brightness-110 disabled:bg-white/10 disabled:text-white/30"
+            className="flex h-7 w-9 items-center justify-center rounded-md bg-(--sk-green) text-white hover:brightness-110 disabled:bg-(--sk-ctl) disabled:text-(--sk-faint)"
           >
             <SendHorizontalIcon className="size-4" />
           </button>
@@ -793,8 +793,8 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
     return (
       <ReaderShell>
         <div className="flex flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
-          <span className="text-[15px] font-bold text-white/70">Select a conversation</span>
-          <span className="text-[13px] text-white/40">
+          <span className="text-[15px] font-bold text-(--sk-text)">Select a conversation</span>
+          <span className="text-[13px] text-(--sk-muted)">
             Choose a message from the list to read it here.
           </span>
         </div>
@@ -806,9 +806,9 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
     return (
       <ReaderShell>
         <div className="flex flex-col gap-3 p-5">
-          <div className="h-5 w-64 animate-pulse rounded-full bg-white/10" />
-          <div className="h-4 w-48 animate-pulse rounded-full bg-white/[0.07]" />
-          <div className="h-4 w-40 animate-pulse rounded-full bg-white/[0.05]" />
+          <div className="h-5 w-64 animate-pulse rounded-full bg-(--sk-ctl)" />
+          <div className="h-4 w-48 animate-pulse rounded-full bg-(--sk-hover)" />
+          <div className="h-4 w-40 animate-pulse rounded-full bg-(--sk-hover)" />
         </div>
       </ReaderShell>
     );
@@ -818,8 +818,8 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
     return (
       <ReaderShell>
         <div className="flex flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
-          <span className="text-[15px] font-bold text-white/70">Could not load message</span>
-          <span className="text-[13px] text-white/40">
+          <span className="text-[15px] font-bold text-(--sk-text)">Could not load message</span>
+          <span className="text-[13px] text-(--sk-muted)">
             The message could not be retrieved. Try again.
           </span>
         </div>
@@ -1045,7 +1045,7 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
     });
   };
 
-  const groupDivider = <span className="mx-1 h-5 w-px shrink-0 bg-white/10" aria-hidden />;
+  const groupDivider = <span className="mx-1 h-5 w-px shrink-0 bg-(--sk-border)" aria-hidden />;
 
   return (
     <>
@@ -1053,10 +1053,10 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
         {/* Conversation header */}
         <div className="drag-region flex h-[52px] shrink-0 items-center gap-1 border-b border-(--sk-border) px-4">
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[16px] font-extrabold leading-tight text-white">
+            <div className="truncate text-[16px] font-extrabold leading-tight text-(--sk-strong)">
               {message.subject || "(no subject)"}
             </div>
-            <div className="truncate text-[11px] leading-tight text-white/45">
+            <div className="truncate text-[11px] leading-tight text-(--sk-muted)">
               {isThread ? `${rows.length} messages` : formatFullDate(message.date)}
             </div>
           </div>
@@ -1128,7 +1128,7 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
         {/* Conversation */}
         <div className="sk-scroll min-h-0 flex-1 overflow-y-auto pb-2">
           <div className="px-5 pb-1 pt-5">
-            <h1 className="text-[20px] font-extrabold leading-snug text-white">
+            <h1 className="text-[20px] font-extrabold leading-snug text-(--sk-strong)">
               {message.subject || "(no subject)"}
             </h1>
             {messageLabels.length > 0 ? (

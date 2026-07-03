@@ -27,7 +27,7 @@ import {
   PlusIcon,
   ChevronDownIcon,
   LayersIcon,
-  HashIcon,
+  TagIcon,
   SearchIcon,
   SquarePenIcon,
 } from "lucide-react";
@@ -62,7 +62,7 @@ function viewIcon(view: MailView): ReactNode {
   return <LayersIcon className="size-4" />;
 }
 
-/** Slack-style sidebar row: muted at rest, bold white when unread, white pill when selected. */
+/** Slack-style sidebar row: muted at rest, bold when unread, inverted pill when selected. */
 function SkRow({
   icon,
   title,
@@ -89,11 +89,11 @@ function SkRow({
       onClick={onClick}
       style={style}
       className={[
-        "group flex h-7 w-full items-center gap-2 rounded-md pr-2 text-left text-[15px] leading-none transition-colors",
+        "group flex h-7 w-full items-center gap-2 rounded-md pr-2 text-left text-[15px] leading-none",
         selected
           ? "bg-(--sk-selected) font-medium text-(--sk-selected-fg)"
           : unread
-            ? "font-bold text-white hover:bg-(--sk-hover)"
+            ? "font-bold text-(--sk-strong) hover:bg-(--sk-hover)"
             : "text-(--sk-muted) hover:bg-(--sk-hover) hover:text-(--sk-text)",
       ].join(" ")}
     >
@@ -121,7 +121,7 @@ function Section({
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="flex h-6 items-center gap-1 rounded px-1.5 text-[13px] font-medium text-white/50 hover:text-white/80"
+          className="flex h-6 items-center gap-1 rounded px-1.5 text-[13px] font-medium text-(--sk-faint) hover:text-(--sk-text)"
           aria-label={`Toggle ${title}`}
         >
           <ChevronDownIcon
@@ -130,7 +130,7 @@ function Section({
           {title}
         </button>
         <span className="flex-1" />
-        <span className="opacity-0 transition-opacity group-hover:opacity-100">{action}</span>
+        <span className="opacity-0 group-hover:opacity-100">{action}</span>
       </div>
       {open ? children : null}
     </div>
@@ -143,9 +143,9 @@ function AddRow({ label, onClick }: { label: string; onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[15px] leading-none text-(--sk-muted) transition-colors hover:bg-(--sk-hover) hover:text-(--sk-text)"
+      className="flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[15px] leading-none text-(--sk-muted) hover:bg-(--sk-hover) hover:text-(--sk-text)"
     >
-      <span className="flex size-4 items-center justify-center rounded bg-white/10">
+      <span className="flex size-4 items-center justify-center rounded bg-(--sk-ctl)">
         <PlusIcon className="size-3" />
       </span>
       <span className="truncate">{label}</span>
@@ -189,8 +189,8 @@ function ViewRow({
               tabIndex={-1}
               aria-label={`Edit ${view.name}`}
               className={[
-                "shrink-0 opacity-0 transition-opacity group-hover:opacity-100",
-                selected ? "text-(--sk-selected-fg)/70" : "text-white/40 hover:text-white",
+                "shrink-0 opacity-0 group-hover:opacity-100",
+                selected ? "text-(--sk-selected-fg)/70" : "text-(--sk-faint) hover:text-(--sk-strong)",
               ].join(" ")}
               onClick={(e) => {
                 e.stopPropagation();
@@ -221,9 +221,12 @@ function ViewRow({
   );
 }
 
-function labelHash(label?: GmailLabel): ReactNode {
+function labelIcon(label?: GmailLabel): ReactNode {
   const color = label?.color?.backgroundColor;
-  return <HashIcon className="size-4" style={color ? { color } : undefined} />;
+  if (color) {
+    return <TagIcon className="size-4 fill-current" style={{ color }} />;
+  }
+  return <TagIcon className="size-4 text-(--sk-faint)" />;
 }
 
 function LabelNode({
@@ -262,7 +265,7 @@ function LabelNode({
               />
             </span>
           ) : (
-            labelHash(label)
+            labelIcon(label)
           )
         }
         title={node.segment}
@@ -406,8 +409,8 @@ export function AccountsSidebar({
               aria-label="Switch account"
               className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 hover:bg-(--sk-hover)"
             >
-              <span className="truncate text-[17px] font-extrabold text-white">{mailboxTitle}</span>
-              <ChevronDownIcon className="size-3.5 shrink-0 text-white/60" />
+              <span className="truncate text-[17px] font-extrabold text-(--sk-strong)">{mailboxTitle}</span>
+              <ChevronDownIcon className="size-3.5 shrink-0 text-(--sk-muted)" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
@@ -448,7 +451,7 @@ export function AccountsSidebar({
           type="button"
           onClick={onCompose}
           aria-label="New message"
-          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white text-[#1d1c1d] shadow-sm transition-transform hover:scale-105"
+          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-(--sk-selected) text-(--sk-selected-fg) shadow-sm hover:opacity-90"
         >
           <SquarePenIcon className="size-4" />
         </button>
@@ -459,11 +462,11 @@ export function AccountsSidebar({
         <button
           type="button"
           onClick={onOpenSearch}
-          className="flex h-7 w-full items-center gap-2 rounded-md border border-white/15 px-2 text-[13px] text-white/50 transition-colors hover:border-white/30 hover:text-white/75"
+          className="flex h-7 w-full items-center gap-2 rounded-md border border-(--sk-outline) px-2 text-[13px] text-(--sk-muted) hover:border-(--sk-outline-hover) hover:text-(--sk-text)"
         >
           <SearchIcon className="size-3.5 shrink-0" />
           <span className="truncate">Find a conversation…</span>
-          <span className="ml-auto shrink-0 text-[11px] text-white/35">⌘K</span>
+          <span className="ml-auto shrink-0 text-[11px] text-(--sk-faint)">⌘K</span>
         </button>
       </div>
 

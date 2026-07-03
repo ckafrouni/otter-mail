@@ -68,7 +68,7 @@ export function TopBar({
 
       <div className="flex min-w-0 flex-1 justify-center px-4">
         <div className="relative w-full max-w-[600px]">
-          <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-white/50" />
+          <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-(--sk-faint)" />
           <input
             ref={searchRef}
             value={searchQuery}
@@ -80,7 +80,7 @@ export function TopBar({
               }
             }}
             placeholder={isCombined ? "Search all mailboxes" : "Search mail"}
-            className="h-7 w-full rounded-md bg-white/10 pl-8 pr-8 text-[13px] text-white outline-none transition-colors placeholder:text-white/50 hover:bg-white/[0.14] focus:bg-white/[0.14] focus:ring-1 focus:ring-white/40"
+            className="h-7 w-full rounded-md bg-(--sk-ctl) pl-8 pr-8 text-[13px] text-(--sk-strong) outline-none placeholder:text-(--sk-faint) hover:bg-(--sk-ctl-hover) focus:bg-(--sk-ctl-hover) focus:ring-1 focus:ring-(--sk-outline-hover)"
             aria-label="Search mail"
           />
           {searchQuery ? (
@@ -88,7 +88,7 @@ export function TopBar({
               type="button"
               onClick={() => onSearchChange("")}
               aria-label="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-white/50 hover:text-white"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-(--sk-faint) hover:text-(--sk-strong)"
             >
               <XIcon className="size-3.5" />
             </button>
@@ -98,8 +98,8 @@ export function TopBar({
 
       {syncing ? (
         <div className="flex min-w-0 items-center gap-1.5 pr-1">
-          <span className="size-3 shrink-0 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />
-          <span className="max-w-40 truncate text-[11px] text-white/50">{syncLabel}</span>
+          <span className="size-3 shrink-0 animate-spin rounded-full border-2 border-(--sk-muted) border-t-transparent" />
+          <span className="max-w-40 truncate text-[11px] text-(--sk-muted)">{syncLabel}</span>
         </div>
       ) : null}
 
@@ -114,10 +114,13 @@ export function TopBar({
           <button
             type="button"
             aria-label="Account menu"
-            className="ml-1 flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-md text-[12px] font-bold text-white ring-white/60 transition-shadow hover:ring-2"
+            className={[
+              "ml-1 flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-md text-[12px] font-bold ring-(--sk-outline-hover) hover:ring-2",
+              isCombined || !selectedAccount ? "bg-(--sk-ctl) text-(--sk-strong)" : "text-white",
+            ].join(" ")}
             style={
               isCombined || !selectedAccount
-                ? { backgroundColor: "rgba(255,255,255,0.14)" }
+                ? undefined
                 : { backgroundColor: getAccountColor(selectedAccount) }
             }
           >
