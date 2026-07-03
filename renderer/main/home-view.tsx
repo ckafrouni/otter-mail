@@ -3,7 +3,7 @@ import { EmptyState, Button, toast } from "@glaze/core/components";
 import { AccountsSidebar } from "./gmail/accounts-sidebar";
 import { MessageList } from "./gmail/message-list";
 import { MessageReader } from "./gmail/message-reader";
-import { ComposeDialog } from "./gmail/compose-dialog";
+import { NewMessageView } from "./gmail/new-message-view";
 import { CommandPalette } from "./gmail/command-palette";
 import { ShortcutsHelpDialog } from "./gmail/shortcuts-help-dialog";
 import { TopBar } from "./gmail/top-bar";
@@ -417,6 +417,7 @@ export function HomeView() {
 
   const handleSelectAccount = (accountId: string) => {
     console.log("[HomeView:selectAccount]", { accountId });
+    setComposeOpen(false);
     setSelectedAccountId(accountId);
     setSelectedLabelId(accountId === COMBINED_ACCOUNT_ID ? INBOX_VIEW_ID : "INBOX");
     setSelectedMessageId(null);
@@ -427,6 +428,7 @@ export function HomeView() {
 
   const handleSelectLabel = (labelId: string) => {
     console.log("[HomeView:selectLabel]", { labelId });
+    setComposeOpen(false);
     setSelectedLabelId(labelId);
     setSelectedMessageId(null);
     setReaderAccountId(null);
@@ -435,6 +437,7 @@ export function HomeView() {
 
   const handleSelectMessage = (messageId: string, accountId: string) => {
     console.log("[HomeView:selectMessage]", { messageId, accountId });
+    setComposeOpen(false);
     setSelectedMessageId(messageId);
     setReaderAccountId(accountId);
   };
@@ -594,7 +597,13 @@ export function HomeView() {
               </>
             ) : null}
             <div className="min-w-0 flex-1">
-              {readerAccount ? (
+              {composeOpen && composeAccountId ? (
+                <NewMessageView
+                  accounts={accounts}
+                  defaultAccountId={composeAccountId}
+                  onClose={() => setComposeOpen(false)}
+                />
+              ) : readerAccount ? (
                 <MessageReader accountId={readerAccount} messageId={selectedMessageId} />
               ) : (
                 <div className="flex h-full items-center justify-center">
@@ -608,14 +617,6 @@ export function HomeView() {
           </div>
         </div>
       </div>
-
-      {composeAccountId && composeOpen ? (
-        <ComposeDialog
-          accountId={composeAccountId}
-          open={composeOpen}
-          onOpenChange={setComposeOpen}
-        />
-      ) : null}
 
       <ShortcutsHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
 
