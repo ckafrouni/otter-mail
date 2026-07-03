@@ -488,7 +488,22 @@ export function AccountsSidebar({
       <div className="sk-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-4 pt-2">
         {isCombined ? (
           <>
-            {views.filter((v) => v.kind !== "custom").map(viewRow)}
+            {views
+              .filter((v) => v.kind !== "custom")
+              .map((view) => (
+                <SkRow
+                  key={view.id}
+                  icon={viewIcon(view)}
+                  title={view.name}
+                  selected={selectedLabelId === view.id}
+                  unread={(viewUnreadCounts[view.id] ?? 0) > 0}
+                  badge={viewUnreadCounts[view.id] ?? 0}
+                  onClick={() => {
+                    console.log("[AccountsSidebar:selectView]", { viewId: view.id });
+                    onSelectLabel(view.id);
+                  }}
+                />
+              ))}
 
             <Section
               title="Views"

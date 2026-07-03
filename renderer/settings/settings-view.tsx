@@ -251,8 +251,8 @@ function ViewsPane({
   }
 
   // One section per mailbox: Combined first (it's a mailbox too), then
-  // accounts. Built-ins are system MAILBOXES (editable defaults), not views —
-  // only custom views live under "Views".
+  // accounts. Built-ins are fixed system mailboxes (not configurable) — only
+  // custom views are listed here.
   type Group = { label: string; views: MailView[]; canAdd: boolean; emptyHint?: string };
   const sections: { id: string; title: string; subtitle: string; groups: Group[] }[] = [
     ...(accounts.length > 1
@@ -262,11 +262,6 @@ function ViewsPane({
             title: "Combined",
             subtitle: "All mailboxes",
             groups: [
-              {
-                label: "Mailboxes",
-                views: views.filter((v) => v.kind !== "custom"),
-                canAdd: false,
-              },
               {
                 label: "Views",
                 views: views.filter(
