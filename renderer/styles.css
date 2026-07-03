@@ -39,7 +39,8 @@
   --sk-muted: #69696c;
   --sk-faint: #939295;
   --sk-blue: #1264a3; /* unread dot, links */
-  --sk-selblue: #1164a3; /* list-row selection (white text on it in both modes) */
+  --sk-selblue: #1164a3; /* list-row selection */
+  --sk-sel-fg: #ffffff; /* text on the list-row selection */
   --sk-green: #007a5a; /* send */
   --sk-selected: #1d1c1d; /* sidebar selected row (inverted pill) */
   --sk-selected-fg: #ffffff;
@@ -62,6 +63,7 @@
   --sk-faint: #77797d;
   --sk-blue: #1d9bd1;
   --sk-selblue: #1164a3;
+  --sk-sel-fg: #ffffff;
   --sk-green: #007a5a;
   --sk-selected: #f5f5f5;
   --sk-selected-fg: #1d1c1d;

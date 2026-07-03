@@ -21,6 +21,7 @@ import {
   useUntrashMessage,
 } from "./gmail/hooks";
 import { takeUndo, type UndoAction } from "./gmail/undo";
+import { getAccountColor, getAccountContrastColor } from "./gmail/account-style";
 import type { GmailMessageSummary } from "./gmail/types";
 import {
   useMailViews,
@@ -357,6 +358,43 @@ export function HomeView() {
   // Local-first: keep the on-disk cache synced in the background. Combined mode
   // refreshes all accounts via its own list handler (sentinel isn't a real account).
   useAccountSync(isCombined ? null : effectiveAccountId);
+
+  // Slack-style workspace branding: selections, badges, the compose button and
+  // the SDK accent all take the active account's color (Combined keeps the
+  // neutral defaults). Set on the document root so portaled dialogs/menus
+  // rebrand too; inline properties win over the injected theme rule.
+  const brandAccount = isCombined
+    ? null
+    : (accounts.find((a) => a.id === effectiveAccountId) ?? null);
+  const brand = brandAccount ? getAccountColor(brandAccount) : null;
+  useEffect(() => {
+    const root = document.documentElement.style;
+    const props = [
+      "--accent",
+      "--accent-contrast",
+      "--sk-selblue",
+      "--sk-sel-fg",
+      "--sk-selected",
+      "--sk-selected-fg",
+      "--sk-badge-bg",
+      "--sk-badge-fg",
+      "--sk-blue",
+    ];
+    if (!brand) {
+      for (const p of props) root.removeProperty(p);
+      return;
+    }
+    const contrast = getAccountContrastColor(brand);
+    root.setProperty("--accent", brand);
+    root.setProperty("--accent-contrast", contrast);
+    root.setProperty("--sk-selblue", brand);
+    root.setProperty("--sk-sel-fg", contrast);
+    root.setProperty("--sk-selected", brand);
+    root.setProperty("--sk-selected-fg", contrast);
+    root.setProperty("--sk-badge-bg", brand);
+    root.setProperty("--sk-badge-fg", contrast);
+    root.setProperty("--sk-blue", brand);
+  }, [brand]);
 
   // Resolve the selected view to concrete per-account rules.
   const combined = (() => {

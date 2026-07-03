@@ -281,7 +281,7 @@ function MessageRow({
                 className={[
                   "min-w-0 truncate text-[15px] leading-snug",
                   selected
-                    ? "font-bold text-white"
+                    ? "font-bold text-(--sk-sel-fg)"
                     : unread
                       ? "font-bold text-(--sk-strong)"
                       : "font-medium text-(--sk-text)",
@@ -294,14 +294,14 @@ function MessageRow({
               {combinedMeta ? (
                 <span className="flex items-center gap-1 text-[11px]">
                   {combinedMeta.mailbox ? (
-                    <span className={selected ? "text-white/70" : "text-(--sk-faint)"}>
+                    <span className={selected ? "text-(--sk-sel-fg)/70" : "text-(--sk-faint)"}>
                       {combinedMeta.mailbox} -
                     </span>
                   ) : null}
                   <span
                     className="font-semibold"
                     style={{
-                      color: selected ? "rgba(255,255,255,0.95)" : combinedMeta.accountColor,
+                      color: selected ? "var(--sk-sel-fg)" : combinedMeta.accountColor,
                     }}
                   >
                     {combinedMeta.accountName}
@@ -312,7 +312,7 @@ function MessageRow({
                 <span
                   className={[
                     "rounded-full px-1.5 py-px text-[11px] font-semibold tabular-nums",
-                    selected ? "bg-white/25 text-white" : "bg-(--sk-ctl) text-(--sk-muted)",
+                    selected ? "bg-(--sk-sel-fg)/25 text-(--sk-sel-fg)" : "bg-(--sk-ctl) text-(--sk-muted)",
                   ].join(" ")}
                 >
                   {threadCount}
@@ -321,7 +321,7 @@ function MessageRow({
               <span
                 className={[
                   "text-[11px] tabular-nums",
-                  selected ? "text-white/75" : "text-(--sk-faint)",
+                  selected ? "text-(--sk-sel-fg)/75" : "text-(--sk-faint)",
                 ].join(" ")}
               >
                 {formatRelativeDate(message.date)}
@@ -331,7 +331,7 @@ function MessageRow({
           <span
             className={[
               "truncate text-[14px] leading-snug",
-              selected ? "text-white/95" : unread ? "font-semibold text-(--sk-strong)" : "text-(--sk-muted)",
+              selected ? "text-(--sk-sel-fg)/95" : unread ? "font-semibold text-(--sk-strong)" : "text-(--sk-muted)",
             ].join(" ")}
           >
             {message.subject || "(no subject)"}
@@ -339,7 +339,7 @@ function MessageRow({
           <span
             className={[
               "truncate text-[13px] leading-snug",
-              selected ? "text-white/70" : "text-(--sk-faint)",
+              selected ? "text-(--sk-sel-fg)/70" : "text-(--sk-faint)",
             ].join(" ")}
           >
             {message.snippet || " "}
@@ -360,7 +360,7 @@ function MessageRow({
             aria-label="Unflag"
           >
             <FlagIcon
-              className={["size-4 fill-current", selected ? "text-white" : "text-(--red)"].join(" ")}
+              className={["size-4 fill-current", selected ? "text-(--sk-sel-fg)" : "text-(--red)"].join(" ")}
             />
           </button>
         ) : null}

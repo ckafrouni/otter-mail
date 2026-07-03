@@ -15,7 +15,7 @@ export const IconBtn = forwardRef<
         "flex size-8 shrink-0 items-center justify-center rounded-lg",
         "disabled:opacity-35 disabled:pointer-events-none",
         active
-          ? "bg-(--sk-selblue) text-white"
+          ? "bg-(--sk-selblue) text-(--sk-sel-fg)"
           : "text-(--sk-muted) hover:bg-(--sk-hover) hover:text-(--sk-strong)",
         className ?? "",
       ].join(" ")}
