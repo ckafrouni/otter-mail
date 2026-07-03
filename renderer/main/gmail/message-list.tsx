@@ -32,8 +32,10 @@ type ResolveLabel = (accountId: string | undefined, labelId: string) => GmailLab
 /** Cross-account query descriptor for the Combined mailbox. */
 export type CombinedList = { viewId: string; name: string; selections: LabelSelection[] };
 
-/** Mailbox + account identity shown next to the date in Combined view rows. */
-type CombinedMeta = { mailbox: string; accountName: string; accountColor: string };
+/** Mailbox + account identity shown next to the date in Combined view rows.
+    mailbox is null when every selection in the view is the same mailbox (e.g.
+    built-in Inbox), where naming it on every row would be redundant. */
+type CombinedMeta = { mailbox: string | null; accountName: string; accountColor: string };
 
 type MessageListProps = {
   /** Active account — used for account-mode queries and as a fallback owner id. */
@@ -65,10 +67,16 @@ function resolveCombinedMeta(
     (s) => s.accountId === message.accountId && message.labelIds.includes(s.labelId),
   );
   if (!matched) return null;
-  const label = resolveLabel(message.accountId, matched.labelId);
-  const mailbox = label ? labelDisplayName(label) : (SYSTEM_LABEL_NAMES[matched.labelId] ?? matched.labelId);
+  const mailboxName = (s: LabelSelection) => {
+    const label = resolveLabel(s.accountId, s.labelId);
+    return label ? labelDisplayName(label) : (SYSTEM_LABEL_NAMES[s.labelId] ?? s.labelId);
+  };
+  // When the whole view is one mailbox (built-in Inbox/Sent, or a custom view
+  // ticking the same label everywhere), the mailbox prefix is obvious — omit it.
+  const mailbox = mailboxName(matched);
+  const uniform = combined.selections.every((s) => mailboxName(s) === mailbox);
   return {
-    mailbox,
+    mailbox: uniform ? null : mailbox,
     accountName: getAccountDisplayName(account),
     accountColor: getAccountColor(account),
   };
@@ -192,9 +200,11 @@ function MessageRow({
             <div className="flex items-center gap-1 shrink-0">
               {combinedMeta ? (
                 <span className="flex items-center gap-1">
-                  <Text variant="mini" color={selected ? undefined : "secondary"} style={onAccentMuted}>
-                    {combinedMeta.mailbox} -
-                  </Text>
+                  {combinedMeta.mailbox ? (
+                    <Text variant="mini" color={selected ? undefined : "secondary"} style={onAccentMuted}>
+                      {combinedMeta.mailbox} -
+                    </Text>
+                  ) : null}
                   <Text
                     variant="mini"
                     className="font-medium"
