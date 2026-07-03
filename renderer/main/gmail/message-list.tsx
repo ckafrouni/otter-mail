@@ -124,7 +124,7 @@ function MessageRow({
       onClick={onSelect}
       className={[
         "group w-full text-left px-3 py-2.5 flex items-start gap-3 border-b border-separator",
-        "hover:bg-control-subtle transition-colors",
+        "hover:bg-control-subtle",
         selected ? "bg-control" : "",
       ].join(" ")}
     >

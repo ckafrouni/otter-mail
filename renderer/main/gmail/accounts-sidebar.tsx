@@ -88,6 +88,7 @@ function CombinedViewRow({
   return (
     <SidebarListItem
       selected={selected}
+      className="group hover:bg-control-subtle"
       onClick={() => {
         console.log("[AccountsSidebar:selectView]", { viewId: view.id });
         onSelect();
@@ -101,7 +102,7 @@ function CombinedViewRow({
         <button
           type="button"
           aria-label={`Edit ${view.name}`}
-          className="text-tertiary hover:text-primary transition-colors"
+          className="text-tertiary hover:text-primary opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
           onClick={(e) => {
             e.stopPropagation();
             onEdit();
@@ -133,6 +134,7 @@ function renderLabelTreeNode(
       <SidebarListItem
         key={node.key}
         selected={label ? selectedLabelId === label.id : false}
+        className="hover:bg-control-subtle"
         onClick={handleSelect}
       >
         {labelIcon(label)}
@@ -154,6 +156,7 @@ function renderLabelTreeNode(
       collapsible
       defaultOpen={false}
       selected={label ? selectedLabelId === label.id : false}
+      className="hover:bg-control-subtle"
       onClick={handleSelect}
       icon={labelIcon(label)}
       title={node.segment}
@@ -278,7 +281,7 @@ export function AccountsSidebar({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className="flex items-center gap-2 w-full rounded-control px-2 py-1.5 hover:bg-control-subtle transition-colors min-w-0"
+              className="flex items-center gap-2 w-full rounded-control px-2 py-1.5 hover:bg-control-subtle min-w-0"
               aria-label="Switch account"
             >
               {isCombined ? (
@@ -441,6 +444,7 @@ export function AccountsSidebar({
               <SidebarListItem
                 key={label.id}
                 selected={selectedLabelId === label.id}
+                className="hover:bg-control-subtle"
                 onClick={() => {
                   console.log("[AccountsSidebar:selectLabel]", { labelId: label.id });
                   onSelectLabel(label.id);
@@ -459,6 +463,7 @@ export function AccountsSidebar({
               <SidebarListItem
                 key={id}
                 selected={selectedLabelId === id}
+                className="hover:bg-control-subtle"
                 onClick={() => {
                   console.log("[AccountsSidebar:selectLabel]", { labelId: id });
                   onSelectLabel(id);
@@ -497,6 +502,7 @@ export function AccountsSidebar({
           <SidebarListItem
             icon={<PlusIcon className="size-4" />}
             title="Add Gmail account"
+            className="hover:bg-control-subtle"
             onClick={() => void handleAddAccount()}
           />
         ) : null}
