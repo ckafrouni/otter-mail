@@ -1,22 +1,29 @@
 import { useMemo, useState } from "react";
-import { Badge, Button, Field, Input, Text, EmptyState } from "@glaze/core/components";
 import {
-  BanIcon,
-  ChevronDownIcon,
-  SearchIcon,
-  SquareIcon,
-  SquareCheckBigIcon,
-} from "lucide-react";
+  Button,
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  Field,
+  FieldSet,
+  Input,
+  Text,
+  EmptyState,
+} from "@glaze/core/components";
+import { BanIcon, PlusIcon, XIcon } from "lucide-react";
 import { useAllAccountLabels, useCombinedCounts } from "./hooks";
 import { defaultRulesFor } from "./custom-views";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
-import { buildLabelTree, flattenLabelTree, type LabelTreeNode } from "./label-tree";
 import { SYSTEM_LABEL_NAMES, SYSTEM_LABEL_ORDER, labelDisplayName } from "./label-names";
 import type { GmailAccount, GmailLabel, MailView, ViewRule } from "./types";
 
 /**
- * Standalone view editor (used by the Settings window's Views pane). Mount it
- * with a `key` per view — initial state derives from props at mount.
+ * Smart Mailbox-style view editor (Settings → Views). Each account is one
+ * compact rule card with "Must have" / "Must not have" chip rows; labels are
+ * added from a native menu. Mount with a `key` per view — initial state
+ * derives from props at mount.
  */
 type ViewEditorFormProps = {
   /** The view being edited; null when creating a new custom view. */
@@ -28,29 +35,19 @@ type ViewEditorFormProps = {
   onDone: () => void;
 };
 
-type PickMode = "require" | "exclude";
-/** accountId → labelId → how the label constrains the view. */
-type Picks = Record<string, Record<string, PickMode>>;
+type AccountPicks = { allOf: string[]; noneOf: string[] };
+type Picks = Record<string, AccountPicks>;
 
 function rulesToPicks(rules: ViewRule[]): Picks {
   const picks: Picks = {};
-  for (const rule of rules) {
-    const entry: Record<string, PickMode> = {};
-    for (const id of rule.allOf) entry[id] = "require";
-    for (const id of rule.noneOf) entry[id] = "exclude";
-    picks[rule.accountId] = entry;
-  }
+  for (const rule of rules) picks[rule.accountId] = { allOf: [...rule.allOf], noneOf: [...rule.noneOf] };
   return picks;
 }
 
 function picksToRules(picks: Picks): ViewRule[] {
-  const rules: ViewRule[] = [];
-  for (const [accountId, entry] of Object.entries(picks)) {
-    const allOf = Object.keys(entry).filter((id) => entry[id] === "require");
-    const noneOf = Object.keys(entry).filter((id) => entry[id] === "exclude");
-    if (allOf.length > 0 || noneOf.length > 0) rules.push({ accountId, allOf, noneOf });
-  }
-  return rules;
+  return Object.entries(picks)
+    .filter(([, p]) => p.allOf.length > 0 || p.noneOf.length > 0)
+    .map(([accountId, p]) => ({ accountId, allOf: p.allOf, noneOf: p.noneOf }));
 }
 
 function sortSystemLabels(labels: GmailLabel[]): GmailLabel[] {
@@ -63,109 +60,131 @@ function sortSystemLabels(labels: GmailLabel[]): GmailLabel[] {
     });
 }
 
-// User labels nest by "/" in the name — flatten the tree into a depth-annotated,
-// pre-order list so the flat row list can indent children under their parent.
-function userLabelRows(labels: GmailLabel[]): { node: LabelTreeNode; depth: number }[] {
-  return flattenLabelTree(buildLabelTree(labels.filter((l) => l.type === "user")));
+function chipName(label: GmailLabel | undefined, labelId: string): string {
+  if (!label) return SYSTEM_LABEL_NAMES[labelId] ?? labelId;
+  const display = labelDisplayName(label);
+  return label.type === "user" ? (display.split("/").pop() ?? display) : display;
 }
 
-// Mirrors LabelChip's pill classes so recap chips match list chips in height,
-// but takes a resolved display name (LabelChip only accepts a raw GmailLabel).
-function RecapChip({
-  name,
-  color,
+const PILL =
+  "inline-flex w-fit shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-pill text-small-strong px-1.5 py-0.5";
+
+function LabelChipButton({
+  label,
+  labelId,
   excluded,
+  onRemove,
 }: {
-  name: string;
-  color?: { backgroundColor: string; textColor: string };
+  label: GmailLabel | undefined;
+  labelId: string;
   excluded?: boolean;
+  onRemove: () => void;
 }) {
-  if (excluded) {
-    return (
-      <span className="inline-flex w-fit shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-pill text-small-strong px-1.5 py-0.5 bg-support-red/15 text-support-red">
-        <BanIcon className="size-3" />
-        {name}
-      </span>
-    );
-  }
-  if (color) {
-    return (
-      <span
-        className="inline-flex w-fit shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-pill text-small-strong px-1.5 py-0.5"
-        style={{ backgroundColor: color.backgroundColor, color: color.textColor }}
+  const name = chipName(label, labelId);
+  const style =
+    !excluded && label?.color
+      ? { backgroundColor: label.color.backgroundColor, color: label.color.textColor }
+      : undefined;
+  return (
+    <span
+      className={[PILL, excluded ? "bg-support-red/15 text-support-red" : label?.color ? "" : "bg-control"].join(" ")}
+      style={style}
+    >
+      {excluded ? <BanIcon className="size-3" /> : null}
+      {name}
+      <button
+        type="button"
+        aria-label={`Remove ${name}`}
+        onClick={onRemove}
+        className="opacity-60 hover:opacity-100 cursor-pointer"
       >
-        {name}
-      </span>
-    );
-  }
-  return <Badge color="secondary">{name}</Badge>;
+        <XIcon className="size-3" />
+      </button>
+    </span>
+  );
 }
 
-function LabelRow({
-  displayName,
-  color,
-  depth,
-  mode,
-  onToggleRequire,
-  onToggleExclude,
+function AddLabelMenu({
+  labels,
+  usedIds,
+  onPick,
 }: {
-  displayName: string;
-  color?: string;
-  depth: number;
-  mode: PickMode | undefined;
-  onToggleRequire: () => void;
-  onToggleExclude: () => void;
+  labels: GmailLabel[];
+  usedIds: Set<string>;
+  onPick: (labelId: string) => void;
 }) {
+  const user = labels.filter((l) => l.type === "user" && !usedIds.has(l.id));
+  const system = sortSystemLabels(labels).filter((l) => !usedIds.has(l.id));
   return (
-    <div
-      className={[
-        "group flex items-center rounded-control",
-        mode === "require"
-          ? "bg-accent/10"
-          : mode === "exclude"
-            ? "bg-support-red/10"
-            : "hover:bg-control-subtle",
-      ].join(" ")}
-    >
-      <button
-        type="button"
-        onClick={onToggleRequire}
-        className="flex flex-1 min-w-0 items-center gap-2.5 py-1.5 pr-1 text-left cursor-pointer"
-        style={{ paddingLeft: `${8 + depth * 16}px` }}
-      >
-        {mode === "require" ? (
-          <SquareCheckBigIcon className="size-4 shrink-0 text-accent" />
-        ) : mode === "exclude" ? (
-          <BanIcon className="size-4 shrink-0 text-support-red" />
-        ) : (
-          <SquareIcon className="size-4 shrink-0 text-tertiary" />
-        )}
-        <span
-          className={["size-2.5 shrink-0 rounded-full", color ? "" : "bg-foreground-40"].join(" ")}
-          style={color ? { backgroundColor: color } : undefined}
-        />
-        <Text
-          variant="small"
-          truncate
-          className={["flex-1 min-w-0", mode === "exclude" ? "line-through" : ""].join(" ")}
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="Add label"
+          className="flex size-5 shrink-0 items-center justify-center rounded-full bg-control text-secondary hover:text-primary cursor-pointer"
         >
-          {displayName}
-        </Text>
-      </button>
-      <button
-        type="button"
-        aria-label={mode === "exclude" ? `Stop excluding ${displayName}` : `Exclude ${displayName}`}
-        title={mode === "exclude" ? "Stop excluding" : "Exclude — hide emails with this label"}
-        onClick={onToggleExclude}
-        className={[
-          "shrink-0 px-2 py-1.5 cursor-pointer",
-          mode === "exclude"
-            ? "text-support-red"
-            : "text-tertiary opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-support-red",
-        ].join(" ")}
-      >
-        <BanIcon className="size-3.5" />
-      </button>
+          <PlusIcon className="size-3" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        {user.map((label) => (
+          <DropdownMenuItem key={label.id} onSelect={() => onPick(label.id)}>
+            {labelDisplayName(label)}
+          </DropdownMenuItem>
+        ))}
+        {user.length > 0 && system.length > 0 ? <DropdownMenuSeparator /> : null}
+        {system.map((label) => (
+          <DropdownMenuItem key={label.id} onSelect={() => onPick(label.id)}>
+            {labelDisplayName(label)}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function ChipRow({
+  title,
+  labelIds,
+  excluded,
+  emptyHint,
+  labels,
+  usedIds,
+  onAdd,
+  onRemove,
+}: {
+  title: string;
+  labelIds: string[];
+  excluded?: boolean;
+  emptyHint?: string;
+  labels: GmailLabel[];
+  usedIds: Set<string>;
+  onAdd: (labelId: string) => void;
+  onRemove: (labelId: string) => void;
+}) {
+  const byId = new Map(labels.map((l) => [l.id, l]));
+  return (
+    <div className="flex items-start gap-2">
+      <Text variant="mini" color="secondary" className="w-28 shrink-0 pt-[3px]">
+        {title}
+      </Text>
+      <div className="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
+        {labelIds.map((id) => (
+          <LabelChipButton
+            key={id}
+            label={byId.get(id)}
+            labelId={id}
+            excluded={excluded}
+            onRemove={() => onRemove(id)}
+          />
+        ))}
+        {labelIds.length === 0 && emptyHint ? (
+          <Text variant="mini" color="tertiary" className="pt-[3px]">
+            {emptyHint}
+          </Text>
+        ) : null}
+        <AddLabelMenu labels={labels} usedIds={usedIds} onPick={onAdd} />
+      </div>
     </div>
   );
 }
@@ -176,47 +195,17 @@ export function ViewEditorForm({ view, accounts, onSave, onDelete, onReset, onDo
   const anyLoading = accountLabels.some((a) => a.isLoading);
 
   const initialRules = view == null ? [] : view.rules ?? defaultRulesFor(view.kind, accounts);
-  const initialPicks = rulesToPicks(initialRules);
-  const hasAnyInitial = Object.values(initialPicks).some((e) => Object.keys(e).length > 0);
 
   const [name, setName] = useState(view?.name ?? "");
-  const [picks, setPicks] = useState<Picks>(initialPicks);
-  const [filter, setFilter] = useState("");
-  // Accounts that already constrain the view start expanded, the rest
-  // collapsed; a blank view starts with every account expanded.
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() =>
-    hasAnyInitial
-      ? Object.fromEntries(
-          accounts.map((a) => [a.id, Object.keys(initialPicks[a.id] ?? {}).length === 0]),
-        )
-      : {},
-  );
+  const [picks, setPicks] = useState<Picks>(() => rulesToPicks(initialRules));
 
   const isDefault = view?.kind === "inbox" || view?.kind === "sent";
 
-  const setMode = (accountId: string, labelId: string, next: PickMode | undefined) => {
-    setPicks((prev) => {
-      const entry = { ...(prev[accountId] ?? {}) };
-      if (next === undefined) delete entry[labelId];
-      else entry[labelId] = next;
-      return { ...prev, [accountId]: entry };
-    });
-  };
-
-  const toggleRequire = (accountId: string, labelId: string) => {
-    const current = picks[accountId]?.[labelId];
-    setMode(accountId, labelId, current === "require" ? undefined : "require");
-  };
-
-  const toggleExclude = (accountId: string, labelId: string) => {
-    const current = picks[accountId]?.[labelId];
-    setMode(accountId, labelId, current === "exclude" ? undefined : "exclude");
+  const update = (accountId: string, fn: (p: AccountPicks) => AccountPicks) => {
+    setPicks((prev) => ({ ...prev, [accountId]: fn(prev[accountId] ?? { allOf: [], noneOf: [] }) }));
   };
 
   const rules = useMemo(() => picksToRules(picks), [picks]);
-  const pickCount = rules.reduce((n, r) => n + r.allOf.length + r.noneOf.length, 0);
-
-  // Live match count for the draft rules, straight from the local store.
   const draftCounts = useCombinedCounts(rules, `draft:${view?.id ?? "new"}`, true);
 
   const canSave = name.trim().length > 0 && rules.length > 0;
@@ -226,193 +215,27 @@ export function ViewEditorForm({ view, accounts, onSave, onDelete, onReset, onDo
     void onSave({ id: view?.id, name: name.trim(), rules }).then(onDone);
   };
 
-  const query = filter.trim().toLowerCase();
-  const matches = (label: GmailLabel) => labelDisplayName(label).toLowerCase().includes(query);
-
-  const sortedByAccount = useMemo(
-    () =>
-      accountLabels.map((entry) => ({
-        ...entry,
-        account: accounts.find((a) => a.id === entry.accountId) ?? null,
-        systemLabels: sortSystemLabels(entry.labels),
-        userRows: userLabelRows(entry.labels),
-      })),
-    [accountLabels, accounts],
-  );
-
-  // Resolves a label id to recap-chip display data (friendly name + Gmail color).
-  const chipFor = (
-    accountId: string,
-    labelId: string,
-  ): { name: string; color?: { backgroundColor: string; textColor: string } } => {
-    const entry = accountLabels.find((a) => a.accountId === accountId);
-    const label = entry?.labels.find((l) => l.id === labelId);
-    if (!label) return { name: SYSTEM_LABEL_NAMES[labelId] ?? labelId };
-    const display = labelDisplayName(label);
-    return {
-      name: label.type === "user" ? (display.split("/").pop() ?? display) : display,
-      color: label.color ?? undefined,
-    };
-  };
-
-  const recap = rules.map((rule) => ({
-    accountId: rule.accountId,
-    email: accounts.find((a) => a.id === rule.accountId)?.email ?? rule.accountId,
-    allOf: rule.allOf.map((id) => ({ id, ...chipFor(rule.accountId, id) })),
-    noneOf: rule.noneOf.map((id) => ({ id, ...chipFor(rule.accountId, id) })),
-  }));
+  if (accounts.length === 0) {
+    return <EmptyState placement="inline" title="No accounts" description="Connect an account to build views." />;
+  }
 
   return (
-    <div className="flex flex-col gap-3">
-      <Field label="Name" orientation="vertical">
-        <Input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="e.g. Action Required"
-          autoFocus={view == null}
-        />
-      </Field>
+    <div className="flex flex-col gap-4">
+      <FieldSet>
+        <Field label="Name">
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Action Required"
+            autoFocus={view == null}
+            className="w-64"
+          />
+        </Field>
+      </FieldSet>
 
       <div className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-between gap-2">
-          <Text variant="small-strong">Labels</Text>
-          <div className="flex items-center gap-2">
-            <Text variant="mini" color="tertiary">
-              <SquareCheckBigIcon className="inline size-3 text-accent align-[-2px]" /> must have
-              {"   "}
-              <BanIcon className="inline size-3 text-support-red align-[-2px] ml-2" /> must not
-            </Text>
-            {pickCount > 0 ? (
-              <Button variant="transparent" size="small" onClick={() => setPicks({})}>
-                Clear
-              </Button>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="relative">
-          <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-tertiary pointer-events-none" />
-          <Input
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filter labels…"
-            className="pl-8"
-          />
-        </div>
-
-        {anyLoading && sortedByAccount.every((a) => a.systemLabels.length === 0 && a.userRows.length === 0) ? (
-          <Text variant="small" color="tertiary">
-            Loading labels…
-          </Text>
-        ) : accounts.length === 0 ? (
-          <EmptyState
-            placement="inline"
-            title="No accounts"
-            description="Connect an account to pick labels."
-          />
-        ) : (
-          // Own scroll region so the recap and Save stay reachable while
-          // browsing long label lists.
-          <div className="flex flex-col gap-2 max-h-[46vh] overflow-y-auto pr-0.5">
-            {sortedByAccount.map((entry) => {
-              const accountPicks = picks[entry.accountId] ?? {};
-              const activeCount = Object.keys(accountPicks).length;
-              const isCollapsed = query.length === 0 && (collapsed[entry.accountId] ?? false);
-              const visibleUserRows = query
-                ? entry.userRows.filter(({ node }) => node.label && matches(node.label))
-                : entry.userRows;
-              const visibleSystem = query ? entry.systemLabels.filter(matches) : entry.systemLabels;
-              if (query && visibleUserRows.length === 0 && visibleSystem.length === 0) return null;
-              return (
-                <div
-                  key={entry.accountId}
-                  className="flex flex-col rounded-control border border-separator overflow-hidden"
-                >
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setCollapsed((prev) => ({ ...prev, [entry.accountId]: !isCollapsed }))
-                    }
-                    className="flex w-full items-center gap-2 px-2.5 py-2 hover:bg-control-subtle cursor-pointer text-left"
-                  >
-                    <span
-                      className="size-2.5 shrink-0 rounded-full"
-                      style={{
-                        backgroundColor: entry.account ? getAccountColor(entry.account) : undefined,
-                      }}
-                    />
-                    <Text variant="small-strong" truncate>
-                      {entry.account ? getAccountDisplayName(entry.account) : entry.accountId}
-                    </Text>
-                    <Text variant="mini" color="tertiary" truncate className="flex-1 min-w-0">
-                      {entry.account?.email ?? ""}
-                    </Text>
-                    {activeCount > 0 ? (
-                      <Text variant="mini" color="secondary" className="shrink-0">
-                        {activeCount} selected
-                      </Text>
-                    ) : null}
-                    <ChevronDownIcon
-                      className={[
-                        "size-3.5 shrink-0 text-tertiary transition-transform",
-                        isCollapsed ? "-rotate-90" : "",
-                      ].join(" ")}
-                    />
-                  </button>
-                  {!isCollapsed ? (
-                    <div className="flex flex-col px-1.5 pb-1.5">
-                      {visibleUserRows.map(({ node, depth }) =>
-                        node.label ? (
-                          <LabelRow
-                            key={node.key}
-                            displayName={query ? labelDisplayName(node.label) : node.segment}
-                            color={node.label.color?.backgroundColor}
-                            depth={query ? 0 : depth}
-                            mode={accountPicks[node.label.id]}
-                            onToggleRequire={() => toggleRequire(entry.accountId, node.label!.id)}
-                            onToggleExclude={() => toggleExclude(entry.accountId, node.label!.id)}
-                          />
-                        ) : query ? null : (
-                          <Text
-                            key={node.key}
-                            variant="small"
-                            color="tertiary"
-                            truncate
-                            className="py-1.5 pr-2"
-                            style={{ paddingLeft: `${8 + depth * 16}px` }}
-                          >
-                            {node.segment}
-                          </Text>
-                        ),
-                      )}
-                      {visibleSystem.length > 0 ? (
-                        <Text variant="mini" color="tertiary" className="px-2 pt-2 pb-0.5">
-                          System
-                        </Text>
-                      ) : null}
-                      {visibleSystem.map((label) => (
-                        <LabelRow
-                          key={label.id}
-                          displayName={labelDisplayName(label)}
-                          color={label.color?.backgroundColor}
-                          depth={0}
-                          mode={accountPicks[label.id]}
-                          onToggleRequire={() => toggleRequire(entry.accountId, label.id)}
-                          onToggleExclude={() => toggleExclude(entry.accountId, label.id)}
-                        />
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-1 rounded-control bg-control-subtle px-3 py-2.5">
-        <div className="flex items-baseline justify-between gap-2">
-          <Text variant="small-strong">This view will show</Text>
+        <div className="flex items-baseline justify-between gap-2 px-1">
+          <Text variant="small-strong">Show emails that match</Text>
           {rules.length > 0 && draftCounts.data ? (
             <Text variant="mini" color="secondary" className="shrink-0 tabular-nums">
               {draftCounts.data.total.toLocaleString()} messages
@@ -420,27 +243,65 @@ export function ViewEditorForm({ view, accounts, onSave, onDelete, onReset, onDo
             </Text>
           ) : null}
         </div>
-        {recap.length === 0 ? (
-          <Text variant="small" color="tertiary">
-            Nothing yet — click a label to require it, or its <BanIcon className="inline size-3 align-[-2px]" /> to
-            exclude it.
-          </Text>
-        ) : (
-          recap.map((r) => (
-            <div key={r.accountId} className="flex items-center gap-1.5 flex-wrap py-0.5">
-              <Text variant="mini" color="tertiary" className="shrink-0">
-                {r.email}
-              </Text>
-              {r.allOf.length === 0 ? <Badge color="secondary">All mail</Badge> : null}
-              {r.allOf.map((c) => (
-                <RecapChip key={c.id} name={c.name} color={c.color} />
-              ))}
-              {r.noneOf.map((c) => (
-                <RecapChip key={c.id} name={c.name} excluded />
-              ))}
-            </div>
-          ))
-        )}
+
+        <div className="flex flex-col gap-2">
+          {accounts.map((account) => {
+            const entry = accountLabels.find((a) => a.accountId === account.id);
+            const labels = entry?.labels ?? [];
+            const p = picks[account.id] ?? { allOf: [], noneOf: [] };
+            const usedIds = new Set([...p.allOf, ...p.noneOf]);
+            return (
+              <div key={account.id} className="flex flex-col gap-2 rounded-control bg-control-subtle px-3 py-2.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="size-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: getAccountColor(account) }}
+                  />
+                  <Text variant="small-strong" className="shrink-0">
+                    {getAccountDisplayName(account)}
+                  </Text>
+                  <Text variant="mini" color="tertiary" truncate>
+                    {account.email}
+                  </Text>
+                </div>
+                {labels.length === 0 && anyLoading ? (
+                  <Text variant="mini" color="tertiary">
+                    Loading labels…
+                  </Text>
+                ) : (
+                  <>
+                    <ChipRow
+                      title="Must have"
+                      labelIds={p.allOf}
+                      emptyHint={p.noneOf.length > 0 ? "All mail" : "Not included — add a label"}
+                      labels={labels}
+                      usedIds={usedIds}
+                      onAdd={(id) => update(account.id, (cur) => ({ ...cur, allOf: [...cur.allOf, id] }))}
+                      onRemove={(id) =>
+                        update(account.id, (cur) => ({ ...cur, allOf: cur.allOf.filter((x) => x !== id) }))
+                      }
+                    />
+                    <ChipRow
+                      title="Must not have"
+                      labelIds={p.noneOf}
+                      excluded
+                      labels={labels}
+                      usedIds={usedIds}
+                      onAdd={(id) => update(account.id, (cur) => ({ ...cur, noneOf: [...cur.noneOf, id] }))}
+                      onRemove={(id) =>
+                        update(account.id, (cur) => ({ ...cur, noneOf: cur.noneOf.filter((x) => x !== id) }))
+                      }
+                    />
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <Text variant="mini" color="tertiary" className="px-1">
+          A message must carry every "must have" label and none of the "must not have" ones; accounts add
+          together.
+        </Text>
       </div>
 
       <div className="flex items-center gap-2 pt-1">

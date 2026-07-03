@@ -7,6 +7,7 @@ import {
   PlusIcon,
   SendIcon,
   SettingsIcon,
+  Trash2Icon,
   UsersIcon,
 } from "lucide-react";
 import {
@@ -99,12 +100,12 @@ function AccountRow({ account }: { account: GmailAccount }) {
   const color = getAccountColor(account);
 
   return (
-    <div className="flex items-start gap-3 py-2">
-      <Avatar size="small" className="mt-0.5">
+    <div className="flex items-center gap-3 py-2.5">
+      <Avatar size="small">
         {account.picture ? <AvatarImage src={account.picture} alt={name} /> : null}
         <AvatarFallback>{(name[0] ?? "?").toUpperCase()}</AvatarFallback>
       </Avatar>
-      <div className="flex flex-col flex-1 min-w-0 gap-1">
+      <div className="flex flex-col flex-1 min-w-0 gap-0.5">
         <Input
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -112,52 +113,53 @@ function AccountRow({ account }: { account: GmailAccount }) {
           onKeyDown={(e) => {
             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
           }}
+          className="w-56"
         />
         <Text variant="mini" color="tertiary" truncate>
           {account.email}
         </Text>
-        <div className="flex items-center gap-1.5 pt-0.5">
-          {ACCOUNT_COLOR_PALETTE.map((swatch) => (
-            <button
-              key={swatch}
-              type="button"
-              aria-label={`Set color ${swatch}`}
-              className="size-4 rounded-full flex items-center justify-center"
-              style={{ backgroundColor: swatch }}
-              onClick={() => void updateAccount.mutateAsync({ accountId: account.id, color: swatch })}
-            >
-              {color === swatch ? <span className="size-1.5 rounded-full bg-white" /> : null}
-            </button>
-          ))}
-        </div>
       </div>
-      <div className="shrink-0 pt-1">
-        {confirmingRemove ? (
-          <div className="flex items-center gap-1.5">
-            <Button variant="filled" size="small" onClick={() => setConfirmingRemove(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="filled"
-              size="small"
-              className="text-support-red"
-              disabled={removeAccount.isPending}
-              onClick={() => void removeAccount.mutateAsync(account.id)}
-            >
-              {removeAccount.isPending ? "Removing…" : "Confirm"}
-            </Button>
-          </div>
-        ) : (
+      <div className="flex items-center gap-1.5 shrink-0">
+        {ACCOUNT_COLOR_PALETTE.map((swatch) => (
+          <button
+            key={swatch}
+            type="button"
+            aria-label={`Set color ${swatch}`}
+            className="size-4 rounded-full flex items-center justify-center"
+            style={{ backgroundColor: swatch }}
+            onClick={() => void updateAccount.mutateAsync({ accountId: account.id, color: swatch })}
+          >
+            {color === swatch ? <span className="size-1.5 rounded-full bg-white" /> : null}
+          </button>
+        ))}
+      </div>
+      {confirmingRemove ? (
+        <div className="flex items-center gap-1.5 shrink-0">
+          <Button variant="filled" size="small" onClick={() => setConfirmingRemove(false)}>
+            Cancel
+          </Button>
           <Button
-            variant="transparent"
+            variant="filled"
             size="small"
             className="text-support-red"
-            onClick={() => setConfirmingRemove(true)}
+            disabled={removeAccount.isPending}
+            onClick={() => void removeAccount.mutateAsync(account.id)}
           >
-            Remove…
+            {removeAccount.isPending ? "Removing…" : "Remove"}
           </Button>
-        )}
-      </div>
+        </div>
+      ) : (
+        <Button
+          variant="transparent"
+          size="small"
+          iconOnly
+          aria-label={`Remove ${account.email}`}
+          className="shrink-0 text-tertiary hover:text-support-red"
+          onClick={() => setConfirmingRemove(true)}
+        >
+          <Trash2Icon className="size-4" />
+        </Button>
+      )}
     </div>
   );
 }
