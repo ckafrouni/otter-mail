@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import {
+  ButtonGroup,
+  ButtonGroupSeparator,
   ContextMenu,
   ContextMenuTrigger,
   ContextMenuContent,
@@ -953,85 +955,76 @@ export function MessageReader({
         <ToolbarTitle className="truncate">{message.subject || "(no subject)"}</ToolbarTitle>
       </div>
       <ToolbarActions>
-        <Button variant="glass" size="large" iconOnly onClick={handleReply} aria-label="Reply">
-          <ReplyIcon className="size-4.5" />
-        </Button>
-        <Button variant="glass" size="large" iconOnly onClick={handleReplyAll} aria-label="Reply all">
-          <ReplyAllIcon className="size-4.5" />
-        </Button>
-        <Button
-          variant="glass"
-          size="large"
-          iconOnly
-          onClick={handleForward}
-          disabled={forwardPending}
-          aria-label="Forward"
-        >
-          <ForwardIcon className="size-4.5" />
-        </Button>
-        <Button
-          variant="glass"
-          size="large"
-          iconOnly
-          onClick={handleArchive}
-          aria-label={isThread ? "Archive conversation" : "Archive"}
-        >
-          <ArchiveIcon className="size-4.5" />
-        </Button>
-        <Button
-          variant="glass"
-          size="large"
-          iconOnly
-          onClick={handleTrash}
-          aria-label={isThread ? "Trash conversation" : "Trash"}
-        >
-          <Trash2Icon className="size-4.5" />
-        </Button>
-        <Button
-          variant="glass"
-          size="large"
-          iconOnly
-          onClick={handleJunk}
-          aria-label={isThread ? "Move conversation to junk" : "Move to junk"}
-        >
-          <ArchiveXIcon className="size-4.5" />
-        </Button>
-        <LabelPickerMenu
-          accountId={accountId}
-          messageId={message.id}
-          labelIds={message.labelIds}
-        >
-          <Button variant="glass" size="large" iconOnly aria-label="Move to label">
-            <span className="flex items-center gap-0.5">
-              <FolderIcon className="size-4.5" />
-              <ChevronDownIcon className="size-3" />
-            </span>
+        {/* Apple Mail clusters: reply trio · archive/trash/junk · move · flag+read */}
+        <ButtonGroup variant="glass" size="large">
+          <Button iconOnly onClick={handleReply} aria-label="Reply">
+            <ReplyIcon className="size-4.5" />
           </Button>
-        </LabelPickerMenu>
-        <Button
-          variant="glass"
-          size="large"
-          iconOnly
-          onClick={handleToggleFlag}
-          aria-label={isFlagged ? "Unflag" : "Flag"}
-        >
-          <FlagIcon
-            className={["size-4.5", isFlagged ? "fill-current text-support-red" : ""].join(" ")}
-          />
-        </Button>
-        <Button
-          variant="glass"
-          size="large"
-          iconOnly
-          onClick={handleToggleRead}
-          aria-label={isUnread ? "Mark as read" : "Mark as unread"}
-        >
-          {isUnread ? (
-            <MailOpenIcon className="size-4.5" />
-          ) : (
-            <MailIcon className="size-4.5" />
-          )}
-        </Button>
+          <Button iconOnly onClick={handleReplyAll} aria-label="Reply all">
+            <ReplyAllIcon className="size-4.5" />
+          </Button>
+          <Button iconOnly onClick={handleForward} disabled={forwardPending} aria-label="Forward">
+            <ForwardIcon className="size-4.5" />
+          </Button>
+        </ButtonGroup>
+        <ButtonGroup variant="glass" size="large">
+          <Button
+            iconOnly
+            onClick={handleArchive}
+            aria-label={isThread ? "Archive conversation" : "Archive"}
+          >
+            <ArchiveIcon className="size-4.5" />
+          </Button>
+          <ButtonGroupSeparator />
+          <Button
+            iconOnly
+            onClick={handleTrash}
+            aria-label={isThread ? "Trash conversation" : "Trash"}
+          >
+            <Trash2Icon className="size-4.5" />
+          </Button>
+          <ButtonGroupSeparator />
+          <Button
+            iconOnly
+            onClick={handleJunk}
+            aria-label={isThread ? "Move conversation to junk" : "Move to junk"}
+          >
+            <ArchiveXIcon className="size-4.5" />
+          </Button>
+        </ButtonGroup>
+        <ButtonGroup variant="glass" size="large">
+          <LabelPickerMenu
+            accountId={accountId}
+            messageId={message.id}
+            labelIds={message.labelIds}
+          >
+            <Button iconOnly aria-label="Move to label">
+              <span className="flex items-center gap-0.5">
+                <FolderIcon className="size-4.5" />
+                <ChevronDownIcon className="size-3" />
+              </span>
+            </Button>
+          </LabelPickerMenu>
+        </ButtonGroup>
+        <ButtonGroup variant="glass" size="large">
+          <Button iconOnly onClick={handleToggleFlag} aria-label={isFlagged ? "Unflag" : "Flag"}>
+            <FlagIcon
+              className={["size-4.5 text-support-red", isFlagged ? "fill-current" : ""].join(" ")}
+            />
+          </Button>
+          <ButtonGroupSeparator />
+          <Button
+            iconOnly
+            onClick={handleToggleRead}
+            aria-label={isUnread ? "Mark as read" : "Mark as unread"}
+          >
+            {isUnread ? (
+              <MailOpenIcon className="size-4.5" />
+            ) : (
+              <MailIcon className="size-4.5" />
+            )}
+          </Button>
+        </ButtonGroup>
         {searchField}
       </ToolbarActions>
     </Toolbar>
