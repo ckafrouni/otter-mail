@@ -45,6 +45,7 @@ import { parseAddressEntry, splitAddressList } from "./address";
 import { isTypingTarget } from "./keyboard";
 import { IconBtn, HintTooltip } from "./slack-ui";
 import { RichTextArea, textToHtml, type RichTextRef } from "./rich-text";
+import { RecipientInput } from "./recipient-input";
 import type {
   ComposeAttachment,
   GmailLabel,
@@ -819,9 +820,6 @@ function InlineComposer({
         ? "Reply to everyone…"
         : "Add a note (optional)…";
 
-  const recipientInput =
-    "min-w-0 flex-1 bg-transparent text-[13px] text-(--sk-strong) outline-none placeholder:text-(--sk-faint)";
-
   return (
     <div className="shrink-0 px-5 pb-4 pt-1" data-inline-compose="">
       <div
@@ -838,16 +836,15 @@ function InlineComposer({
             {INLINE_MODE_LABEL[mode]}
           </span>
           <span className="shrink-0 text-[12px] text-(--sk-faint)">To</span>
-          <input
+          <RecipientInput
             ref={toRef}
             value={to}
-            onChange={(e) => {
+            onChange={(v) => {
               recipientsDirty.current = true;
-              setTo(e.target.value);
+              setTo(v);
             }}
             placeholder="recipient@example.com"
-            aria-label="To"
-            className={recipientInput}
+            ariaLabel="To"
           />
           {!ccVisible ? (
             <button
@@ -865,14 +862,13 @@ function InlineComposer({
         {ccVisible ? (
           <div className="flex items-center gap-2 border-b border-(--sk-border) px-3 py-1.5">
             <span className="shrink-0 text-[12px] text-(--sk-faint)">Cc</span>
-            <input
+            <RecipientInput
               value={cc}
-              onChange={(e) => {
+              onChange={(v) => {
                 recipientsDirty.current = true;
-                setCc(e.target.value);
+                setCc(v);
               }}
-              aria-label="Cc"
-              className={recipientInput}
+              ariaLabel="Cc"
             />
           </div>
         ) : null}
@@ -1008,6 +1004,8 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
       if (e.key !== "Escape" || !inlineRef.current) return;
       const el = e.target as Element | null;
       if (el && typeof el.closest === "function" && el.closest('[role="dialog"]')) return;
+      // An open autocomplete popup owns Escape (it dismisses itself).
+      if (el && typeof el.closest === "function" && el.closest('[data-ac-open="true"]')) return;
       e.preventDefault();
       e.stopPropagation();
       setInline(null);

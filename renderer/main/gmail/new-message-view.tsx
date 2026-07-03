@@ -13,6 +13,7 @@ import { parseAddressEntry, splitAddressList } from "./address";
 import { getAccountColor } from "./account-style";
 import { IconBtn, HintTooltip } from "./slack-ui";
 import { RichTextArea, type RichTextRef } from "./rich-text";
+import { RecipientInput } from "./recipient-input";
 import type { GmailAccount } from "./types";
 
 /**
@@ -56,6 +57,8 @@ export function NewMessageView({
       if (e.key !== "Escape" || expandedRef.current) return;
       const el = e.target as Element | null;
       if (el && typeof el.closest === "function" && el.closest('[role="dialog"]')) return;
+      // An open autocomplete popup owns Escape (it dismisses itself).
+      if (el && typeof el.closest === "function" && el.closest('[data-ac-open="true"]')) return;
       e.preventDefault();
       e.stopPropagation();
       onClose();
@@ -88,9 +91,6 @@ export function NewMessageView({
         onClose();
       }, () => toast.error("Could not send the message"));
   };
-
-  const recipientInput =
-    "min-w-0 flex-1 bg-transparent text-[13px] text-(--sk-strong) outline-none placeholder:text-(--sk-faint)";
 
   if (expanded && fromAccount) {
     return (
@@ -180,13 +180,12 @@ export function NewMessageView({
 
           <div className="flex items-center gap-2 border-b border-(--sk-border) px-3 py-1.5">
             <span className="shrink-0 text-[12px] text-(--sk-faint)">To</span>
-            <input
+            <RecipientInput
               ref={toRef}
               value={to}
-              onChange={(e) => setTo(e.target.value)}
+              onChange={setTo}
               placeholder="recipient@example.com"
-              aria-label="To"
-              className={recipientInput}
+              ariaLabel="To"
             />
             {!ccVisible ? (
               <button
@@ -201,12 +200,7 @@ export function NewMessageView({
           {ccVisible ? (
             <div className="flex items-center gap-2 border-b border-(--sk-border) px-3 py-1.5">
               <span className="shrink-0 text-[12px] text-(--sk-faint)">Cc</span>
-              <input
-                value={cc}
-                onChange={(e) => setCc(e.target.value)}
-                aria-label="Cc"
-                className={recipientInput}
-              />
+              <RecipientInput value={cc} onChange={setCc} ariaLabel="Cc" />
             </div>
           ) : null}
           <div className="flex items-center gap-2 border-b border-(--sk-border) px-3 py-1.5">
@@ -216,7 +210,7 @@ export function NewMessageView({
               onChange={(e) => setSubject(e.target.value)}
               placeholder="What's this about?"
               aria-label="Subject"
-              className={recipientInput}
+              className="min-w-0 flex-1 bg-transparent text-[13px] text-(--sk-strong) outline-none placeholder:text-(--sk-faint)"
             />
           </div>
 
