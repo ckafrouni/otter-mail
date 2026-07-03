@@ -770,6 +770,33 @@ export function useModifyThread() {
       );
       qc.setQueryData<GmailMessageSummary[]>(threadKey, (old) => old?.map(applyPatch));
 
+      // Thread-scoped removals also drop the row from lists the thread can no
+      // longer match, so archive/move/junk clear the view instantly like trash.
+      // Safe only here (whole-thread removal); single-message ops can't know
+      // whether sibling messages still match.
+      if (removeLabelIds.length > 0) {
+        for (const [key] of prevMessagesQueries) {
+          const listLabelId = key[2];
+          if (typeof listLabelId === "string" && removeLabelIds.includes(listLabelId)) {
+            qc.setQueryData(key, (old: InfiniteData<ListMessagesResult> | undefined) =>
+              removeMessagesFromInfiniteData(old, inThread),
+            );
+          }
+        }
+        for (const [key] of prevCombinedQueries) {
+          const rules = key[2] as ViewRule[] | undefined;
+          if (
+            Array.isArray(rules) &&
+            rules.length > 0 &&
+            rules.every((r) => r.allOf.some((id) => removeLabelIds.includes(id)))
+          ) {
+            qc.setQueryData(key, (old: InfiniteData<ListMessagesResult> | undefined) =>
+              removeMessagesFromInfiniteData(old, inThread),
+            );
+          }
+        }
+      }
+
       // Per-message count deltas summed across the thread; only possible when
       // the thread's messages are cached (reader open) — invalidation reconciles.
       if (prevThread) {
