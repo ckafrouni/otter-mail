@@ -129,26 +129,30 @@ export const RichTextArea = forwardRef<
     if (autoFocus) editorRef.current?.focus();
   }, [autoFocus]);
 
-  // Reflect the caret's formatting in the strip.
+  const refreshToolbar = () => {
+    const el = editorRef.current;
+    if (!el || !el.contains(document.getSelection()?.anchorNode ?? null)) return;
+    setToolbar({
+      bold: document.queryCommandState("bold"),
+      italic: document.queryCommandState("italic"),
+      underline: document.queryCommandState("underline"),
+      strike: document.queryCommandState("strikeThrough"),
+    });
+  };
+
+  // Reflect the caret's formatting in the strip while moving around.
   useEffect(() => {
-    const update = () => {
-      const el = editorRef.current;
-      if (!el || !el.contains(document.getSelection()?.anchorNode ?? null)) return;
-      setToolbar({
-        bold: document.queryCommandState("bold"),
-        italic: document.queryCommandState("italic"),
-        underline: document.queryCommandState("underline"),
-        strike: document.queryCommandState("strikeThrough"),
-      });
-    };
-    document.addEventListener("selectionchange", update);
-    return () => document.removeEventListener("selectionchange", update);
+    document.addEventListener("selectionchange", refreshToolbar);
+    return () => document.removeEventListener("selectionchange", refreshToolbar);
   }, []);
 
   const exec = (command: string, value?: string) => {
     editorRef.current?.focus();
     document.execCommand(command, false, value);
     emitChange();
+    // Toggling with a still caret fires no selectionchange — sync immediately
+    // so the button reflects the new typing style.
+    refreshToolbar();
   };
 
   // Gmail/Slack formatting shortcuts. stopPropagation keeps app-level
