@@ -40,6 +40,7 @@ import {
 import { gmailApi } from "./api";
 import { ComposeDialog, type ComposePrefill } from "./compose-dialog";
 import { LabelChip } from "./label-chip";
+import { SenderAvatar } from "./sender-avatar";
 import { LabelPickerMenu } from "./label-picker-menu";
 import { parseAddressEntry, splitAddressList } from "./address";
 import type {
@@ -412,11 +413,12 @@ function CollapsedMessageCard({
     <button
       type="button"
       onClick={onExpand}
-      className="w-full text-left rounded-card border border-separator px-4 py-3 flex items-start gap-3 hover:bg-control-subtle transition-colors"
+      className={[
+        "w-full text-left rounded-card border border-separator px-4 py-3 flex items-center gap-3 transition-colors",
+        summary.unread ? "bg-accent/[0.05] hover:bg-accent/[0.1]" : "hover:bg-control-subtle",
+      ].join(" ")}
     >
-      {summary.unread ? (
-        <span className="size-1.5 rounded-full bg-accent shrink-0 mt-1.5" />
-      ) : null}
+      <SenderAvatar name={summary.fromName} email={summary.fromEmail} size="sm" />
       <div className="flex flex-col min-w-0 flex-1 gap-0.5">
         <div className="flex items-center justify-between gap-2">
           <Text
@@ -426,9 +428,12 @@ function CollapsedMessageCard({
           >
             {summary.fromName || summary.fromEmail}
           </Text>
-          <Text variant="mini" color="tertiary" className="shrink-0 tabular-nums">
-            {formatCardDate(summary.date)}
-          </Text>
+          <span className="flex items-center gap-1.5 shrink-0">
+            {summary.unread ? <span className="size-1.5 rounded-full bg-accent" /> : null}
+            <Text variant="mini" color="tertiary" className="tabular-nums">
+              {formatCardDate(summary.date)}
+            </Text>
+          </span>
         </div>
         <Text variant="mini" color="tertiary" truncate>
           {summary.snippet}
@@ -468,12 +473,13 @@ function ExpandedMessageCard({
   const detail = detailQuery.data;
 
   return (
-    <div className="rounded-card border border-separator">
+    <div className="rounded-card border border-separator overflow-hidden">
       <button
         type="button"
         onClick={onCollapse}
-        className="w-full text-left px-4 py-3 flex items-start gap-3"
+        className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-control-subtle transition-colors"
       >
+        <SenderAvatar name={summary.fromName} email={summary.fromEmail} />
         <div className="flex flex-col min-w-0 flex-1 gap-0.5">
           <Text variant="small-strong" truncate>
             {summary.fromName || summary.fromEmail}
@@ -916,13 +922,16 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
         ) : (
           <div className="flex flex-col gap-4 p-4">
             {/* Header */}
-            <div className="flex flex-col gap-1 border-b border-separator pb-4">
+            <div className="flex flex-col gap-2.5 border-b border-separator pb-4">
               <Text variant="large-strong" as="h1">
                 {message.subject || "(no subject)"}
               </Text>
-              <Text variant="small-strong">
-                {message.fromName || message.fromEmail}
-              </Text>
+              <div className="flex items-center gap-3">
+                <SenderAvatar name={message.fromName} email={message.fromEmail} />
+                <div className="flex flex-col min-w-0 gap-0.5">
+                  <Text variant="small-strong" truncate>
+                    {message.fromName || message.fromEmail}
+                  </Text>
 
               <CollapsibleRoot open={detailsOpen} onOpenChange={setDetailsOpen}>
                 <CollapsibleTrigger className="-ml-1 flex items-center gap-1 rounded-control px-1 py-0.5 hover:bg-control-subtle transition-colors">
@@ -949,10 +958,11 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
                   </div>
                 </CollapsibleContent>
               </CollapsibleRoot>
-
-              <Text variant="mini" color="tertiary">
-                {formatFullDate(message.date)}
-              </Text>
+                </div>
+                <Text variant="mini" color="tertiary" className="ml-auto shrink-0 self-start pt-0.5 tabular-nums">
+                  {formatFullDate(message.date)}
+                </Text>
+              </div>
               {messageLabels.length > 0 ? (
                 <div className="flex items-center gap-1.5 flex-wrap pt-1">
                   {messageLabels.map((label) => (

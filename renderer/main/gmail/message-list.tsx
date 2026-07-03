@@ -28,6 +28,7 @@ import {
 } from "./hooks";
 import { LabelChip } from "./label-chip";
 import { LabelPickerMenu } from "./label-picker-menu";
+import { SenderAvatar } from "./sender-avatar";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
 import { SYSTEM_LABEL_NAMES, labelDisplayName } from "./label-names";
 import type { GmailAccount, GmailLabel, GmailMessageSummary, SyncStatus, ViewRule } from "./types";
@@ -203,7 +204,7 @@ function MessageRow({
         type="button"
         onClick={onSelect}
         className={[
-          "group w-full text-left rounded-lg px-3 py-2 my-0.5 flex items-start gap-3",
+          "group w-full text-left rounded-lg px-3 py-2.5 my-0.5 flex items-start gap-3",
           selected
             ? "bg-accent"
             : unread
@@ -211,6 +212,9 @@ function MessageRow({
               : "hover:bg-control-subtle",
         ].join(" ")}
       >
+        <span className="mt-0.5">
+          <SenderAvatar name={message.fromName} email={message.fromEmail} />
+        </span>
         <div className="flex flex-col min-w-0 flex-1 gap-0.5">
           <div className="flex items-center justify-between gap-2">
             <Text
@@ -524,7 +528,7 @@ export function MessageList({
                   resolveLabel={resolveLabel}
                   combinedMeta={resolveCombinedMeta(message, combined, accounts, resolveLabel)}
                 />
-                {showDivider ? <div className="h-px bg-separator mx-5" /> : null}
+                {showDivider ? <div className="h-px bg-separator ml-[64px] mr-5" /> : null}
               </div>
             );
           })}
