@@ -93,6 +93,8 @@ export type MailView = {
   kind: ViewKind;
   /** null = use the dynamic default for this kind (only for inbox/sent). */
   rules: ViewRule[] | null;
+  /** Owning mailbox: an account id, or "__combined__". Absent = combined. */
+  mailbox?: string;
 };
 
 /** Per-account local-sync progress, exposed to the renderer for status UI. */

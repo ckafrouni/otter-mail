@@ -106,4 +106,6 @@ export interface MailView {
   name: string;
   kind: ViewKind;
   rules: ViewRule[] | null;
+  /** Owning mailbox: an account id, or "__combined__". Absent = combined. */
+  mailbox?: string;
 }

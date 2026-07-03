@@ -88,7 +88,7 @@ function PaneIconTile({ color, Icon }: { color: string; Icon: typeof UsersIcon }
 }
 
 /** One entry in the settings navigation history. */
-type Loc = { pane: SettingsPane; viewId: string | null };
+type Loc = { pane: SettingsPane; viewId: string | null; mailbox?: string | null };
 
 function AccountRow({ account }: { account: GmailAccount }) {
   const updateAccount = useUpdateAccount();
@@ -204,13 +204,18 @@ function viewSummary(view: MailView): string {
   return `${labels} filter${labels === 1 ? "" : "s"} across ${accounts} account${accounts === 1 ? "" : "s"}`;
 }
 
+const COMBINED_MAILBOX = "__combined__";
+
 function ViewsPane({
   editingId,
+  editingMailbox,
   onOpenView,
   onDone,
 }: {
   editingId: string | null;
-  onOpenView: (viewId: string) => void;
+  /** Owning mailbox when creating (editingId "new"). */
+  editingMailbox: string | null;
+  onOpenView: (viewId: string, mailbox: string) => void;
   onDone: () => void;
 }) {
   const { views, saveView, deleteView, resetView } = useMailViews();
@@ -226,12 +231,18 @@ function ViewsPane({
       );
     }
     const editingView = editingId === "new" ? null : views.find((v) => v.id === editingId) ?? null;
+    const mailbox = editingView
+      ? (editingView.mailbox ?? COMBINED_MAILBOX)
+      : (editingMailbox ?? COMBINED_MAILBOX);
+    // Account-owned views edit against that account's labels only.
+    const scopedAccounts =
+      mailbox === COMBINED_MAILBOX ? accounts : accounts.filter((a) => a.id === mailbox);
     return (
       <ViewEditorForm
         key={editingId}
         view={editingView}
-        accounts={accounts}
-        onSave={saveView}
+        accounts={scopedAccounts}
+        onSave={(input) => saveView({ ...input, mailbox })}
         onDelete={deleteView}
         onReset={resetView}
         onDone={onDone}
@@ -239,28 +250,73 @@ function ViewsPane({
     );
   }
 
+  // One section per mailbox: Combined first (it's a mailbox too), then accounts.
+  const sections: { id: string; title: string; subtitle: string; views: MailView[] }[] = [
+    ...(accounts.length > 1
+      ? [
+          {
+            id: COMBINED_MAILBOX,
+            title: "Combined",
+            subtitle: "All mailboxes",
+            views: views.filter((v) => (v.mailbox ?? COMBINED_MAILBOX) === COMBINED_MAILBOX),
+          },
+        ]
+      : []),
+    ...accounts.map((a) => ({
+      id: a.id,
+      title: getAccountDisplayName(a),
+      subtitle: a.email,
+      views: views.filter((v) => v.kind === "custom" && v.mailbox === a.id),
+    })),
+  ];
+
   return (
-    <div className="flex flex-col gap-3">
-      <div className="rounded-control bg-control-subtle p-1">
-        <List.Root items={views} getItemKey={(v: MailView) => v.id}>
-          {views.map((view) => (
-            <List.Item key={view.id} item={view} onClick={() => onOpenView(view.id)}>
-              <List.ItemIcon>{viewIcon(view)}</List.ItemIcon>
-              <List.ItemContent>
-                <List.ItemTitle>{view.name}</List.ItemTitle>
-                <List.ItemDescription>{viewSummary(view)}</List.ItemDescription>
-              </List.ItemContent>
-              <List.ItemAccessory>
-                <ChevronRightIcon className="size-4 text-tertiary" />
-              </List.ItemAccessory>
-            </List.Item>
-          ))}
-        </List.Root>
-      </div>
-      <Button variant="filled" size="small" className="self-start" onClick={() => onOpenView("new")}>
-        <PlusIcon className="size-4" />
-        New view
-      </Button>
+    <div className="flex flex-col gap-5">
+      {sections.map((section) => (
+        <div key={section.id} className="flex flex-col gap-2">
+          <div className="flex items-baseline gap-2">
+            <Text variant="small-strong">{section.title}</Text>
+            <Text variant="mini" color="tertiary">
+              {section.subtitle}
+            </Text>
+          </div>
+          {section.views.length > 0 ? (
+            <div className="rounded-control bg-control-subtle p-1">
+              <List.Root items={section.views} getItemKey={(v: MailView) => v.id}>
+                {section.views.map((view) => (
+                  <List.Item
+                    key={view.id}
+                    item={view}
+                    onClick={() => onOpenView(view.id, section.id)}
+                  >
+                    <List.ItemIcon>{viewIcon(view)}</List.ItemIcon>
+                    <List.ItemContent>
+                      <List.ItemTitle>{view.name}</List.ItemTitle>
+                      <List.ItemDescription>{viewSummary(view)}</List.ItemDescription>
+                    </List.ItemContent>
+                    <List.ItemAccessory>
+                      <ChevronRightIcon className="size-4 text-tertiary" />
+                    </List.ItemAccessory>
+                  </List.Item>
+                ))}
+              </List.Root>
+            </div>
+          ) : (
+            <Text variant="mini" color="tertiary">
+              No views yet.
+            </Text>
+          )}
+          <Button
+            variant="filled"
+            size="small"
+            className="self-start"
+            onClick={() => onOpenView("new", section.id)}
+          >
+            <PlusIcon className="size-4" />
+            New view
+          </Button>
+        </div>
+      ))}
     </div>
   );
 }
@@ -312,6 +368,7 @@ export function SettingsView() {
           const next: Loc = {
             pane: target.pane,
             viewId: target.pane === "views" ? (target.viewId ?? null) : null,
+            mailbox: target.pane === "views" ? (target.mailbox ?? null) : null,
           };
           const current = n.stack[n.index];
           if (current.pane === next.pane && current.viewId === next.viewId) return n;
@@ -619,7 +676,8 @@ export function SettingsView() {
           {loc.pane === "views" ? (
             <ViewsPane
               editingId={loc.viewId}
-              onOpenView={(viewId) => navigate({ pane: "views", viewId })}
+              editingMailbox={loc.mailbox ?? null}
+              onOpenView={(viewId, mailbox) => navigate({ pane: "views", viewId, mailbox })}
               onDone={() => navigate({ pane: "views", viewId: null })}
             />
           ) : null}

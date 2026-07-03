@@ -40,13 +40,17 @@ export function registerHandlers(): void {
   // Settings window handlers. Accepts an optional navigation target so any
   // window can deep-link into a pane (e.g. edit a view from the main sidebar).
   ipcMain.handle("window:openSettings", async (_event, params: unknown) => {
-    const p = params as { pane?: unknown; viewId?: unknown } | undefined;
+    const p = params as { pane?: unknown; viewId?: unknown; mailbox?: unknown } | undefined;
     const pane =
       p?.pane === "general" || p?.pane === "accounts" || p?.pane === "views" || p?.pane === "oauth"
         ? p.pane
         : null;
     if (pane) {
-      setSettingsTarget({ pane, viewId: typeof p?.viewId === "string" ? p.viewId : null });
+      setSettingsTarget({
+        pane,
+        viewId: typeof p?.viewId === "string" ? p.viewId : null,
+        mailbox: typeof p?.mailbox === "string" ? p.mailbox : null,
+      });
     }
     const existed = getSettingsWindow() != null;
     await openSettingsWindow();

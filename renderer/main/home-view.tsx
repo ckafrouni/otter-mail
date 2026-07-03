@@ -223,7 +223,7 @@ export function HomeView() {
     }
     const view = views.find((v) => v.id === selectedLabelId);
     if (!view) return; // plain label
-    if (!view.rules?.some((r) => r.accountId === effectiveAccountId)) {
+    if (view.mailbox !== effectiveAccountId) {
       setSelectedLabelId("INBOX");
     }
   }, [isCombined, views, selectedLabelId, effectiveAccountId]);
@@ -242,10 +242,10 @@ export function HomeView() {
         rules: view ? resolveRules(view, accounts) : [],
       };
     }
-    // Views are mailbox-agnostic building blocks: an account mailbox renders
-    // its slice of a view — the same rules, pruned to the active account.
+    // Account mailboxes own their views outright — rules reference only the
+    // owning account, but prune defensively anyway.
     const view = views.find((v) => v.id === selectedLabelId);
-    if (!view || !effectiveAccountId) return null;
+    if (!view || !effectiveAccountId || view.mailbox !== effectiveAccountId) return null;
     const rules = resolveRules(view, accounts).filter((r) => r.accountId === effectiveAccountId);
     if (rules.length === 0) return null;
     return { viewId: `${effectiveAccountId}:${view.id}`, name: view.name, rules };

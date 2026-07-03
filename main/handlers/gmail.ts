@@ -356,7 +356,12 @@ export function registerGmailHandlers(): void {
     try {
       const name = assertString(p?.name, "name");
       const id = typeof p?.id === "string" ? p.id : undefined;
-      const view = await viewsStore.saveView({ id, name, rules: parseRules(p?.rules) });
+      const view = await viewsStore.saveView({
+        id,
+        name,
+        rules: parseRules(p?.rules),
+        mailbox: asString(p?.mailbox),
+      });
       ipcMain.broadcast("gmail:views-changed");
       return view;
     } catch (err) {

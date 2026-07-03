@@ -7,6 +7,8 @@ export type SettingsTarget = {
   pane: "general" | "accounts" | "views" | "oauth";
   /** For the views pane: a view id to edit, or "new" to create one. */
   viewId?: string | null;
+  /** For "new": which mailbox (account id or "__combined__") owns the view. */
+  mailbox?: string | null;
 };
 
 // Where the settings window should navigate on (re)open. The renderer pulls

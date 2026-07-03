@@ -122,10 +122,10 @@ export type SyncSettings = {
   notificationsMode: NotificationsMode;
 };
 
-export type SaveViewParams = { id?: string; name: string; rules: ViewRule[] };
+export type SaveViewParams = { id?: string; name: string; rules: ViewRule[]; mailbox?: string };
 
 export type SettingsPane = "general" | "accounts" | "views" | "oauth";
-export type SettingsTarget = { pane: SettingsPane; viewId?: string | null };
+export type SettingsTarget = { pane: SettingsPane; viewId?: string | null; mailbox?: string | null };
 
 export const gmailApi = {
   getCredentials: (): Promise<CredentialsResult> => ipc("gmail:getCredentials"),

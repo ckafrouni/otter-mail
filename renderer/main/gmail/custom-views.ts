@@ -184,7 +184,13 @@ export function useMailViews() {
           ? views.map((v) => (v.id === input.id ? { ...v, name: input.name, rules: input.rules } : v))
           : [
               ...views,
-              { id: `pending:${input.name}`, name: input.name, kind: "custom", rules: input.rules },
+              {
+                id: `pending:${input.name}`,
+                name: input.name,
+                kind: "custom",
+                rules: input.rules,
+                mailbox: input.mailbox ?? COMBINED_ACCOUNT_ID,
+              },
             ],
       ),
     onError: (_err, _vars, context) => {

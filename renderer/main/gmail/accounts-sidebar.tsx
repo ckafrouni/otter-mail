@@ -245,19 +245,15 @@ export function AccountsSidebar({
 
   const accounts = accountsQuery.data ?? [];
   const labels: GmailLabel[] = labelsQuery.data ?? [];
-  // Account mode scopes counts (and rows) to the active account's rule slice.
+  // Views belong to one mailbox; each mailbox (account or Combined) lists its own.
   const countScope = isCombined ? accounts : accounts.filter((a) => a.id === selectedAccountId);
   const viewUnreadCounts = useViewUnreadCounts(views, countScope, true);
   const accountViews = isCombined
     ? []
-    : views.filter(
-        (v) =>
-          v.kind === "custom" &&
-          (v.rules ?? []).some(
-            (r) =>
-              r.accountId === selectedAccountId && (r.allOf.length > 0 || r.noneOf.length > 0),
-          ),
-      );
+    : views.filter((v) => v.kind === "custom" && v.mailbox === selectedAccountId);
+  const combinedViews = views.filter(
+    (v) => v.kind === "custom" && (v.mailbox ?? COMBINED_ACCOUNT_ID) === COMBINED_ACCOUNT_ID,
+  );
   const globalSync = useGlobalSyncStatus(accounts.map((a) => a.id));
   const { deleteView, resetView } = useMailViews();
 
@@ -440,36 +436,34 @@ export function AccountsSidebar({
                 size="small"
                 aria-label="New view"
                 onClick={() => {
-                  void gmailApi.openSettings({ pane: "views", viewId: "new" });
+                  void gmailApi.openSettings({ pane: "views", viewId: "new", mailbox: isCombined ? COMBINED_ACCOUNT_ID : selectedAccountId });
                 }}
               >
                 <PlusIcon className="size-3.5" />
               </Button>
             }
           >
-            {views.filter((v) => v.kind === "custom").length === 0 ? (
+            {combinedViews.length === 0 ? (
               <div className="px-3 py-1.5">
                 <Text variant="mini" color="tertiary">
                   Tap + to build a view from any labels across your accounts.
                 </Text>
               </div>
             ) : (
-              views
-                .filter((v) => v.kind === "custom")
-                .map((view) => (
-                  <CombinedViewRow
-                    key={view.id}
-                    view={view}
-                    selected={selectedLabelId === view.id}
-                    unreadCount={viewUnreadCounts[view.id] ?? 0}
-                    onSelect={() => onSelectLabel(view.id)}
-                    onDelete={() => void deleteView(view.id)}
-                    onReset={() => void resetView(view.id)}
-                    onEdit={() => {
-                      void gmailApi.openSettings({ pane: "views", viewId: view.id });
-                    }}
-                  />
-                ))
+              combinedViews.map((view) => (
+                <CombinedViewRow
+                  key={view.id}
+                  view={view}
+                  selected={selectedLabelId === view.id}
+                  unreadCount={viewUnreadCounts[view.id] ?? 0}
+                  onSelect={() => onSelectLabel(view.id)}
+                  onDelete={() => void deleteView(view.id)}
+                  onReset={() => void resetView(view.id)}
+                  onEdit={() => {
+                    void gmailApi.openSettings({ pane: "views", viewId: view.id });
+                  }}
+                />
+              ))
             )}
           </SidebarListGroup>
         </SidebarList>
@@ -528,7 +522,7 @@ export function AccountsSidebar({
                 size="small"
                 aria-label="New view"
                 onClick={() => {
-                  void gmailApi.openSettings({ pane: "views", viewId: "new" });
+                  void gmailApi.openSettings({ pane: "views", viewId: "new", mailbox: isCombined ? COMBINED_ACCOUNT_ID : selectedAccountId });
                 }}
               >
                 <PlusIcon className="size-3.5" />

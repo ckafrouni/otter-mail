@@ -47,11 +47,16 @@ async function getViewsPath(): Promise<string> {
   return path.join(userDataPath, "views.json");
 }
 
+const COMBINED_MAILBOX = "__combined__";
+
 function withDefaults(views: MailView[]): MailView[] {
   const builtins = DEFAULT_VIEWS.map(
     (fallback) => views.find((v) => v.id === fallback.id) ?? fallback,
   );
-  const custom = views.filter((v) => !BUILTIN_IDS.has(v.id));
+  // Custom views are owned by one mailbox; pre-ownership views were combined.
+  const custom = views
+    .filter((v) => !BUILTIN_IDS.has(v.id))
+    .map((v) => ({ ...v, mailbox: v.mailbox ?? COMBINED_MAILBOX }));
   return [...builtins, ...custom];
 }
 
@@ -90,7 +95,12 @@ function genId(): string {
   return `v_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export async function saveView(input: { id?: string; name: string; rules: ViewRule[] }): Promise<MailView> {
+export async function saveView(input: {
+  id?: string;
+  name: string;
+  rules: ViewRule[];
+  mailbox?: string;
+}): Promise<MailView> {
   const views = await readViews();
   if (input.id) {
     const index = views.findIndex((v) => v.id === input.id);
@@ -100,7 +110,13 @@ export async function saveView(input: { id?: string; name: string; rules: ViewRu
       return views[index];
     }
   }
-  const view: MailView = { id: genId(), name: input.name, kind: "custom", rules: input.rules };
+  const view: MailView = {
+    id: genId(),
+    name: input.name,
+    kind: "custom",
+    rules: input.rules,
+    mailbox: input.mailbox ?? COMBINED_MAILBOX,
+  };
   views.push(view);
   await writeViews(views);
   return view;
