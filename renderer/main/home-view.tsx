@@ -1,17 +1,20 @@
-import { useEffect, useRef, useState } from "react";
-import { SplitView, EmptyState, Button, toast } from "@glaze/core/components";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { EmptyState, Button, toast } from "@glaze/core/components";
 import { AccountsSidebar } from "./gmail/accounts-sidebar";
 import { MessageList } from "./gmail/message-list";
 import { MessageReader } from "./gmail/message-reader";
 import { ComposeDialog } from "./gmail/compose-dialog";
 import { CommandPalette } from "./gmail/command-palette";
 import { ShortcutsHelpDialog } from "./gmail/shortcuts-help-dialog";
+import { TopBar } from "./gmail/top-bar";
+import { WorkspaceRail } from "./gmail/workspace-rail";
 import { isTypingTarget } from "./gmail/keyboard";
 import {
   useCredentials,
   useAccounts,
   useAddAccount,
   useAccountSync,
+  useGlobalSyncStatus,
   useModifyMessage,
   useModifyThread,
   useUntrashThread,
@@ -30,6 +33,54 @@ import {
   STARRED_VIEW_ID,
   DRAFTS_VIEW_ID,
 } from "./gmail/custom-views";
+
+/** A place the user was at, for the top-bar back/forward buttons. */
+type NavLoc = {
+  accountId: string | null;
+  labelId: string;
+  messageId: string | null;
+  readerAccountId: string | null;
+};
+
+/** Drag-resizable pane width persisted to localStorage. */
+function useStoredWidth(key: string, def: number, min: number, max: number) {
+  const [width, setWidth] = useState(() => {
+    const saved = Number(localStorage.getItem(key));
+    return Number.isFinite(saved) && saved >= min && saved <= max ? saved : def;
+  });
+  const widthRef = useRef(width);
+  widthRef.current = width;
+
+  const start = (e: ReactPointerEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = widthRef.current;
+    const move = (ev: PointerEvent) => {
+      setWidth(Math.min(max, Math.max(min, startW + ev.clientX - startX)));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      localStorage.setItem(key, String(widthRef.current));
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
+  return { width, start };
+}
+
+function PaneResizer({ onPointerDown }: { onPointerDown: (e: ReactPointerEvent) => void }) {
+  return (
+    <div className="relative w-px shrink-0 bg-(--sk-border)">
+      <div
+        onPointerDown={onPointerDown}
+        className="absolute inset-y-0 -left-[3px] z-10 w-[7px] cursor-col-resize"
+        aria-hidden
+      />
+    </div>
+  );
+}
 
 export function HomeView() {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
@@ -55,6 +106,11 @@ export function HomeView() {
 
   const isCombined = selectedAccountId === COMBINED_ACCOUNT_ID;
 
+  const globalSync = useGlobalSyncStatus(accountIds);
+
+  const sidebarPane = useStoredWidth("gmail:pane:sidebar", 230, 180, 320);
+  const listPane = useStoredWidth("gmail:pane:list", 400, 300, 640);
+
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
@@ -66,7 +122,26 @@ export function HomeView() {
     return () => window.removeEventListener("keydown", down);
   }, []);
 
-  // ⌘1 = Combined mailbox, ⌘2…⌘9 = accounts in sidebar order. The ref is
+  // ⌘F and "/" focus the top-bar search field.
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === "f" && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        searchRef.current?.focus();
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e)) return;
+      if (e.key === "/") {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", down);
+    return () => window.removeEventListener("keydown", down);
+  }, []);
+
+  // ⌘1 = Combined mailbox, ⌘2…⌘9 = accounts in rail order. The ref is
   // populated below once handleSelectAccount exists.
   const accountSwitchRef = useRef<{ ids: string[]; select: (id: string) => void }>({
     ids: [],
@@ -206,6 +281,57 @@ export function HomeView() {
     saveLastLocation({ accountId: selectedAccountId, labelId: selectedLabelId });
   }, [initialized, selectedAccountId, selectedLabelId]);
 
+  // ── Back/forward navigation history (top bar) ────────────────────────────
+  const [nav, setNav] = useState<{ stack: NavLoc[]; idx: number }>({ stack: [], idx: -1 });
+  const navigatingRef = useRef(false);
+  useEffect(() => {
+    if (!initialized) return;
+    if (navigatingRef.current) {
+      navigatingRef.current = false;
+      return;
+    }
+    const loc: NavLoc = {
+      accountId: selectedAccountId,
+      labelId: selectedLabelId,
+      messageId: selectedMessageId,
+      readerAccountId,
+    };
+    setNav((h) => {
+      const cur = h.stack[h.idx];
+      if (
+        cur &&
+        cur.accountId === loc.accountId &&
+        cur.labelId === loc.labelId &&
+        cur.messageId === loc.messageId
+      ) {
+        return h;
+      }
+      const stack = [...h.stack.slice(Math.max(0, h.idx - 98), h.idx + 1), loc];
+      return { stack, idx: stack.length - 1 };
+    });
+  }, [initialized, selectedAccountId, selectedLabelId, selectedMessageId, readerAccountId]);
+
+  const applyNavLoc = (loc: NavLoc) => {
+    navigatingRef.current = true;
+    setSelectedAccountId(loc.accountId);
+    setSelectedLabelId(loc.labelId);
+    setSelectedMessageId(loc.messageId);
+    setReaderAccountId(loc.readerAccountId);
+    setSearchQuery("");
+  };
+  const goBack = () => {
+    if (nav.idx <= 0) return;
+    console.log("[HomeView:navBack]");
+    applyNavLoc(nav.stack[nav.idx - 1]);
+    setNav({ ...nav, idx: nav.idx - 1 });
+  };
+  const goForward = () => {
+    if (nav.idx >= nav.stack.length - 1) return;
+    console.log("[HomeView:navForward]");
+    applyNavLoc(nav.stack[nav.idx + 1]);
+    setNav({ ...nav, idx: nav.idx + 1 });
+  };
+
   const effectiveAccountId = isCombined
     ? COMBINED_ACCOUNT_ID
     : selectedAccountId && accounts.some((a) => a.id === selectedAccountId)
@@ -323,7 +449,7 @@ export function HomeView() {
   // (a) Loading credentials
   if (credentialsQuery.isLoading) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className="h-full flex items-center justify-center bg-(--sk-card)">
         <div className="size-6 rounded-full border-2 border-accent border-t-transparent animate-spin" />
       </div>
     );
@@ -332,7 +458,7 @@ export function HomeView() {
   // (a) No credentials configured
   if (!credentials?.hasCredentials) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className="h-full flex items-center justify-center bg-(--sk-card)">
         <EmptyState
           title="Set up Gmail"
           description="Configure your Google OAuth credentials in Settings to connect Gmail accounts."
@@ -349,7 +475,7 @@ export function HomeView() {
   // (b) Credentials set but no accounts connected
   if (!accountsQuery.isLoading && accounts.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className="h-full flex items-center justify-center bg-(--sk-card)">
         <EmptyState
           title="Connect your Gmail account"
           description="Sign in with Google to start reading your emails."
@@ -371,60 +497,81 @@ export function HomeView() {
   const readerAccount = readerAccountId ?? (isCombined ? firstRealAccountId : effectiveAccountId);
   const hasListTarget = isCombined || effectiveAccountId != null;
 
-  // (c) Normal three-pane layout via SplitView
+  // (c) Slack-style frame: top bar, workspace rail, floating content card.
   return (
     <>
-      <SplitView
-        sidebar={
-          <AccountsSidebar
+      <div className="flex h-full flex-col bg-(--sk-frame) text-(--sk-text)">
+        <TopBar
+          canGoBack={nav.idx > 0}
+          canGoForward={nav.idx < nav.stack.length - 1}
+          onBack={goBack}
+          onForward={goForward}
+          searchQuery={searchQuery}
+          onSearchChange={handleSearchChange}
+          searchRef={searchRef}
+          syncing={globalSync.syncing}
+          syncLabel={globalSync.label}
+          accounts={accounts}
+          selectedAccountId={effectiveAccountId}
+          onSelectAccount={handleSelectAccount}
+          onOpenHelp={() => setHelpOpen(true)}
+        />
+        <div className="flex min-h-0 flex-1">
+          <WorkspaceRail
+            accounts={accounts}
             selectedAccountId={effectiveAccountId}
             onSelectAccount={handleSelectAccount}
-            selectedLabelId={selectedLabelId}
-            onSelectLabel={handleSelectLabel}
-            views={views}
+            onAddAccount={() => void handleAddAccount()}
           />
-        }
-        sidebarSize={{ default: 220, min: 180, max: 300 }}
-        list={
-          hasListTarget ? (
-            <MessageList
-              accountId={(isCombined ? firstRealAccountId : effectiveAccountId) ?? ""}
-              labelId={selectedLabelId}
-              combined={combined}
-              accountIds={accountIds}
-              accounts={accounts}
-              selectedMessageId={selectedMessageId}
-              onSelectMessage={handleSelectMessage}
-              onDeselect={() => {
-                setSelectedMessageId(null);
-                setReaderAccountId(null);
-              }}
-              searchQuery={searchQuery}
-            />
-          ) : undefined
-        }
-        listSize={{ default: 440, min: 300, max: 640 }}
-        storageKey="gmail-main"
-        className="h-full"
-      >
-        {/* Primary pane */}
-        {readerAccount ? (
-          <MessageReader
-            accountId={readerAccount}
-            messageId={selectedMessageId}
-            onCompose={() => setComposeOpen(true)}
-            searchQuery={searchQuery}
-            onSearchChange={handleSearchChange}
-          />
-        ) : (
-          <div className="h-full flex items-center justify-center">
-            <EmptyState
-              title="No account selected"
-              description="Select an account from the sidebar."
-            />
+          <div className="mb-1.5 mr-1.5 flex min-w-0 flex-1 overflow-hidden rounded-lg border border-(--sk-border) bg-(--sk-card)">
+            <div style={{ width: sidebarPane.width }} className="shrink-0 overflow-hidden">
+              <AccountsSidebar
+                selectedAccountId={effectiveAccountId}
+                onSelectAccount={handleSelectAccount}
+                selectedLabelId={selectedLabelId}
+                onSelectLabel={handleSelectLabel}
+                views={views}
+                onCompose={() => setComposeOpen(true)}
+                onOpenSearch={() => setPaletteOpen(true)}
+              />
+            </div>
+            <PaneResizer onPointerDown={sidebarPane.start} />
+            {hasListTarget ? (
+              <>
+                <div style={{ width: listPane.width }} className="shrink-0 overflow-hidden">
+                  <MessageList
+                    accountId={(isCombined ? firstRealAccountId : effectiveAccountId) ?? ""}
+                    labelId={selectedLabelId}
+                    combined={combined}
+                    accountIds={accountIds}
+                    accounts={accounts}
+                    selectedMessageId={selectedMessageId}
+                    onSelectMessage={handleSelectMessage}
+                    onDeselect={() => {
+                      setSelectedMessageId(null);
+                      setReaderAccountId(null);
+                    }}
+                    searchQuery={searchQuery}
+                  />
+                </div>
+                <PaneResizer onPointerDown={listPane.start} />
+              </>
+            ) : null}
+            <div className="min-w-0 flex-1">
+              {readerAccount ? (
+                <MessageReader accountId={readerAccount} messageId={selectedMessageId} />
+              ) : (
+                <div className="flex h-full items-center justify-center">
+                  <EmptyState
+                    title="No account selected"
+                    description="Select an account from the rail."
+                  />
+                </div>
+              )}
+            </div>
           </div>
-        )}
-      </SplitView>
+        </div>
+      </div>
 
       {composeAccountId && composeOpen ? (
         <ComposeDialog

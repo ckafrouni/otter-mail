@@ -1,41 +1,27 @@
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import {
-  ButtonGroup,
-  ButtonGroupSeparator,
   ContextMenu,
   ContextMenuTrigger,
   ContextMenuContent,
   ContextMenuItem,
-  ScrollArea,
-  Toolbar,
-  ToolbarTitle,
-  ToolbarActions,
-  ToolbarSearchButton,
-  type ToolbarSearchButtonRef,
-  Button,
-  EmptyState,
-  Text,
   toast,
-  CollapsibleRoot,
-  CollapsibleTrigger,
-  CollapsibleContent,
-  CollapsibleChevron,
 } from "@glaze/core/components";
 import {
   ArchiveIcon,
   ArchiveXIcon,
   ChevronDownIcon,
+  DownloadIcon,
   FlagIcon,
   FolderIcon,
-  Trash2Icon,
-  MailOpenIcon,
+  ForwardIcon,
+  ImageIcon,
   MailIcon,
+  MailOpenIcon,
+  PenLineIcon,
   ReplyIcon,
   ReplyAllIcon,
-  ForwardIcon,
-  DownloadIcon,
-  ImageIcon,
-  SquarePenIcon,
+  SendHorizontalIcon,
+  Trash2Icon,
 } from "lucide-react";
 import {
   useAccounts,
@@ -47,6 +33,7 @@ import {
   useTrashThread,
   useGetAttachment,
   useLabels,
+  useSendMessage,
 } from "./hooks";
 import { gmailApi } from "./api";
 import { ComposeDialog, type ComposePrefill } from "./compose-dialog";
@@ -55,6 +42,7 @@ import { SenderAvatar } from "./sender-avatar";
 import { LabelPickerMenu } from "./label-picker-menu";
 import { parseAddressEntry, splitAddressList } from "./address";
 import { isTypingTarget } from "./keyboard";
+import { IconBtn, HintTooltip } from "./slack-ui";
 import type {
   ComposeAttachment,
   GmailLabel,
@@ -65,9 +53,6 @@ import type {
 type MessageReaderProps = {
   accountId: string;
   messageId: string | null;
-  onCompose: () => void;
-  searchQuery: string;
-  onSearchChange: (q: string) => void;
 };
 
 type ComposeState = {
@@ -100,13 +85,29 @@ function formatFullDate(timestamp: number): string {
   });
 }
 
-function formatCardDate(timestamp: number): string {
-  return new Date(timestamp).toLocaleString([], {
-    month: "short",
+function formatTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+/** Slack-style day-divider label: Today, Yesterday, weekday, or a date. */
+function formatDayLabel(timestamp: number): string {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const dayDiff = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
+  if (dayDiff === 0) return "Today";
+  if (dayDiff === 1) return "Yesterday";
+  if (dayDiff < 7) return date.toLocaleDateString([], { weekday: "long" });
+  return date.toLocaleDateString([], {
+    month: "long",
     day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
+    ...(date.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}),
   });
+}
+
+function dayKey(timestamp: number): string {
+  const d = new Date(timestamp);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
 
 function MessageBody({
@@ -117,11 +118,13 @@ function MessageBody({
   bodyText: string | null;
 }) {
   if (bodyHtml) {
+    // Marketing/HTML mail is designed for a white canvas — give it a light
+    // card inside the dark conversation, like an unfurled link in Slack.
     return (
       <iframe
         sandbox="allow-same-origin"
         srcDoc={bodyHtml}
-        className="w-full border-none rounded-card"
+        className="w-full rounded-lg border border-white/10 bg-white"
         title="Message body"
         onLoad={(e) => {
           const iframe = e.currentTarget;
@@ -135,16 +138,12 @@ function MessageBody({
   }
   if (bodyText) {
     return (
-      <pre className="whitespace-pre-wrap font-sans text-regular text-primary leading-relaxed">
+      <pre className="whitespace-pre-wrap font-sans text-[15px] leading-relaxed text-(--sk-text)">
         {bodyText}
       </pre>
     );
   }
-  return (
-    <Text variant="small" color="tertiary">
-      (No message body)
-    </Text>
-  );
+  return <span className="text-[13px] text-white/40">(No message body)</span>;
 }
 
 type MessageAttachment = GmailMessageDetail["attachments"][number];
@@ -281,45 +280,41 @@ function ImageAttachmentTile({
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-    <div className="group relative w-36 select-none">
-      <div
-        role="button"
-        aria-label={`Open ${attachment.filename}`}
-        onClick={handleOpen}
-        {...dragProps}
-        className={`h-28 w-36 cursor-pointer overflow-hidden rounded-card border border-separator bg-well${opening ? " opacity-60" : ""}`}
-      >
-        {url ? (
-          <img
-            src={url}
-            alt={attachment.filename}
-            draggable={false}
-            className="h-full w-full object-cover"
-          />
-        ) : failed ? (
-          <div className="flex h-full items-center justify-center">
-            <ImageIcon className="size-6 text-tertiary" />
+        <div className="group relative w-36 select-none">
+          <div
+            role="button"
+            aria-label={`Open ${attachment.filename}`}
+            onClick={handleOpen}
+            {...dragProps}
+            className={`h-28 w-36 cursor-pointer overflow-hidden rounded-lg border border-white/10 bg-white/5${opening ? " opacity-60" : ""}`}
+          >
+            {url ? (
+              <img
+                src={url}
+                alt={attachment.filename}
+                draggable={false}
+                className="h-full w-full object-cover"
+              />
+            ) : failed ? (
+              <div className="flex h-full items-center justify-center">
+                <ImageIcon className="size-6 text-white/30" />
+              </div>
+            ) : (
+              <div className="h-full w-full animate-pulse bg-white/10" />
+            )}
           </div>
-        ) : (
-          <div className="h-full w-full animate-pulse bg-control" />
-        )}
-      </div>
-      <Button
-        variant="filled"
-        size="small"
-        iconOnly
-        onClick={() =>
-          onDownload(messageId, attachment.id, attachment.filename, attachment.mimeType)
-        }
-        aria-label={`Download ${attachment.filename}`}
-        className="absolute right-1.5 top-1.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-      >
-        <DownloadIcon className="size-3.5" />
-      </Button>
-      <Text variant="mini" color="tertiary" truncate className="mt-1">
-        {attachment.filename}
-      </Text>
-    </div>
+          <button
+            type="button"
+            onClick={() =>
+              onDownload(messageId, attachment.id, attachment.filename, attachment.mimeType)
+            }
+            aria-label={`Download ${attachment.filename}`}
+            className="absolute right-1.5 top-1.5 flex size-6 items-center justify-center rounded-md bg-black/60 text-white opacity-0 transition-opacity hover:bg-black/80 focus-visible:opacity-100 group-hover:opacity-100"
+          >
+            <DownloadIcon className="size-3.5" />
+          </button>
+          <div className="mt-1 truncate text-[11px] text-white/50">{attachment.filename}</div>
+        </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem icon="arrow.up.forward.app" onSelect={handleOpen}>
@@ -357,35 +352,32 @@ function FileAttachmentRow({
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-    <div
-      role="button"
-      aria-label={`Open ${attachment.filename}`}
-      onClick={handleOpen}
-      {...dragProps}
-      className={`flex cursor-pointer select-none items-center justify-between gap-3 px-3 py-2 rounded-card bg-well hover:bg-control transition-colors${opening ? " opacity-60" : ""}`}
-    >
-      <div className="flex flex-col min-w-0">
-        <Text variant="small" truncate>
-          {attachment.filename}
-        </Text>
-        <Text variant="mini" color="tertiary">
-          {attachment.mimeType} · {formatBytes(attachment.size)}
-        </Text>
-      </div>
-      <Button
-        variant="filled"
-        size="small"
-        iconOnly
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => {
-          e.stopPropagation();
-          onDownload(messageId, attachment.id, attachment.filename, attachment.mimeType);
-        }}
-        aria-label={`Download ${attachment.filename}`}
-      >
-        <DownloadIcon className="size-4" />
-      </Button>
-    </div>
+        <div
+          role="button"
+          aria-label={`Open ${attachment.filename}`}
+          onClick={handleOpen}
+          {...dragProps}
+          className={`flex cursor-pointer select-none items-center justify-between gap-3 rounded-lg bg-white/[0.05] px-3 py-2 transition-colors hover:bg-white/[0.09]${opening ? " opacity-60" : ""}`}
+        >
+          <div className="flex min-w-0 flex-col">
+            <span className="truncate text-[13px] text-white/90">{attachment.filename}</span>
+            <span className="text-[11px] text-white/40">
+              {attachment.mimeType} · {formatBytes(attachment.size)}
+            </span>
+          </div>
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDownload(messageId, attachment.id, attachment.filename, attachment.mimeType);
+            }}
+            aria-label={`Download ${attachment.filename}`}
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <DownloadIcon className="size-4" />
+          </button>
+        </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem icon="arrow.up.forward.app" onSelect={handleOpen}>
@@ -419,8 +411,10 @@ function AttachmentList({
   const images = attachments.filter((a) => a.mimeType.startsWith("image/"));
   const files = attachments.filter((a) => !a.mimeType.startsWith("image/"));
   return (
-    <div className="flex flex-col gap-2 border-t border-separator pt-4">
-      <Text variant="small-strong">Attachments ({attachments.length})</Text>
+    <div className="mt-2 flex flex-col gap-2">
+      <span className="text-[12px] font-bold text-white/60">
+        {attachments.length} attachment{attachments.length === 1 ? "" : "s"}
+      </span>
       {images.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {images.map((att) => (
@@ -451,7 +445,18 @@ function AttachmentList({
   );
 }
 
-function CollapsedMessageCard({
+function DayDivider({ timestamp }: { timestamp: number }) {
+  return (
+    <div className="relative flex items-center justify-center py-3">
+      <div className="absolute inset-x-0 top-1/2 h-px bg-(--sk-border)" />
+      <span className="relative rounded-full border border-(--sk-border) bg-(--sk-card) px-3 py-1 text-[12px] font-bold text-white/80">
+        {formatDayLabel(timestamp)}
+      </span>
+    </div>
+  );
+}
+
+function CollapsedRow({
   summary,
   onExpand,
 }: {
@@ -462,37 +467,26 @@ function CollapsedMessageCard({
     <button
       type="button"
       onClick={onExpand}
-      className={[
-        "w-full text-left rounded-card border border-separator px-4 py-3 flex items-center gap-3 transition-colors",
-        summary.unread ? "bg-accent/[0.05] hover:bg-accent/[0.1]" : "hover:bg-control-subtle",
-      ].join(" ")}
+      className="flex w-full items-center gap-2.5 px-5 py-1.5 text-left transition-colors hover:bg-white/[0.03]"
     >
       <SenderAvatar name={summary.fromName} email={summary.fromEmail} size="sm" />
-      <div className="flex flex-col min-w-0 flex-1 gap-0.5">
-        <div className="flex items-center justify-between gap-2">
-          <Text
-            variant={summary.unread ? "small-strong" : "small"}
-            truncate
-            className="flex-1 min-w-0"
-          >
-            {summary.fromName || summary.fromEmail}
-          </Text>
-          <span className="flex items-center gap-1.5 shrink-0">
-            {summary.unread ? <span className="size-1.5 rounded-full bg-accent" /> : null}
-            <Text variant="mini" color="tertiary" className="tabular-nums">
-              {formatCardDate(summary.date)}
-            </Text>
-          </span>
-        </div>
-        <Text variant="mini" color="tertiary" truncate>
-          {summary.snippet}
-        </Text>
-      </div>
+      <span
+        className={[
+          "shrink-0 text-[15px] leading-snug",
+          summary.unread ? "font-bold text-white" : "font-semibold text-white/80",
+        ].join(" ")}
+      >
+        {summary.fromName || summary.fromEmail}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-[13px] text-white/40">{summary.snippet}</span>
+      <span className="shrink-0 text-[11px] tabular-nums text-white/35">
+        {formatTime(summary.date)}
+      </span>
     </button>
   );
 }
 
-function ExpandedMessageCard({
+function ExpandedRow({
   accountId,
   summary,
   onCollapse,
@@ -507,81 +501,233 @@ function ExpandedMessageCard({
   const modifyMessage = useModifyMessage();
   const markedRead = useRef(false);
 
-  // Expanding an unread message marks it read, like opening a single message.
+  // Reading a message marks it read — debounced so j/k scrubbing through the
+  // list (which mounts and unmounts expanded rows) doesn't fire per row.
   useEffect(() => {
     if (markedRead.current || !summary.unread) return;
-    markedRead.current = true;
-    console.log("[MessageReader:cardMarkRead]", { messageId: summary.id });
-    void modifyMessage.mutateAsync({
-      accountId,
-      messageId: summary.id,
-      removeLabelIds: ["UNREAD"],
-    });
+    const timer = setTimeout(() => {
+      markedRead.current = true;
+      console.log("[MessageReader:markRead]", { messageId: summary.id });
+      void modifyMessage.mutateAsync({
+        accountId,
+        messageId: summary.id,
+        removeLabelIds: ["UNREAD"],
+      });
+    }, 300);
+    return () => clearTimeout(timer);
   }, [summary.unread, summary.id, accountId, modifyMessage]);
 
   const detail = detailQuery.data;
 
   return (
-    <div className="rounded-card border border-separator overflow-hidden">
-      <button
-        type="button"
-        onClick={onCollapse}
-        className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-control-subtle transition-colors"
-      >
-        <SenderAvatar name={summary.fromName} email={summary.fromEmail} />
-        <div className="flex flex-col min-w-0 flex-1 gap-0.5">
-          <Text variant="small-strong" truncate>
+    <div className="group flex gap-2.5 px-5 py-2 transition-colors hover:bg-white/[0.015]">
+      <SenderAvatar
+        name={summary.fromName}
+        email={summary.fromEmail}
+        className="mt-0.5 shrink-0"
+      />
+      <div className="min-w-0 flex-1">
+        <button
+          type="button"
+          onClick={onCollapse}
+          className="flex w-full items-baseline gap-2 text-left"
+          aria-label="Collapse message"
+        >
+          <span className="truncate text-[15px] font-bold leading-snug text-white">
             {summary.fromName || summary.fromEmail}
-          </Text>
-          <Text variant="mini" color="secondary" truncate>
-            to {summary.to}
-          </Text>
+          </span>
+          <span
+            className="shrink-0 text-[11px] tabular-nums text-white/40"
+            title={formatFullDate(summary.date)}
+          >
+            {formatTime(summary.date)}
+          </span>
+        </button>
+        <div className="truncate text-[12px] text-white/40" title={`to ${summary.to}`}>
+          to {summary.to}
+          {detail?.cc ? ` · cc ${detail.cc}` : ""}
         </div>
-        <Text variant="mini" color="tertiary" className="shrink-0 tabular-nums">
-          {formatCardDate(summary.date)}
-        </Text>
-      </button>
-      <div className="px-4 pb-4 flex flex-col gap-3">
-        {detailQuery.isLoading ? (
-          <div className="flex flex-col gap-2">
-            <div className="h-4 w-3/4 rounded-pill bg-control animate-pulse" />
-            <div className="h-4 w-1/2 rounded-pill bg-control animate-pulse" />
-          </div>
-        ) : detail ? (
-          <>
-            <MessageBody bodyHtml={detail.bodyHtml} bodyText={detail.bodyText} />
-            <AttachmentList
-              accountId={accountId}
-              messageId={summary.id}
-              attachments={detail.attachments}
-              onDownload={onDownload}
-            />
-          </>
-        ) : (
-          <Text variant="small" color="tertiary">
-            Could not load this message.
-          </Text>
-        )}
+        <div className="mt-1.5">
+          {detailQuery.isLoading ? (
+            <div className="flex flex-col gap-2">
+              <div className="h-4 w-3/4 animate-pulse rounded-full bg-white/10" />
+              <div className="h-4 w-1/2 animate-pulse rounded-full bg-white/[0.07]" />
+            </div>
+          ) : detail ? (
+            <>
+              <MessageBody bodyHtml={detail.bodyHtml} bodyText={detail.bodyText} />
+              <AttachmentList
+                accountId={accountId}
+                messageId={summary.id}
+                attachments={detail.attachments}
+                onDownload={onDownload}
+              />
+            </>
+          ) : (
+            <span className="text-[13px] text-white/40">Could not load this message.</span>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-export function MessageReader({
+/** Reply-all recipients for the latest message, from this account's viewpoint. */
+function computeReplyAll(
+  last: GmailMessageSummary & { cc?: string },
+  ownEmail: string,
+): { to: string; cc: string | undefined } {
+  const own = ownEmail.toLowerCase();
+  const fromSelf = last.fromEmail.toLowerCase() === own;
+  const seen = new Set<string>([own]);
+  const to: string[] = [];
+  const cc: string[] = [];
+  if (!fromSelf) {
+    to.push(last.fromEmail);
+    seen.add(last.fromEmail.toLowerCase());
+  }
+  for (const entry of splitAddressList(last.to)) {
+    const email = parseAddressEntry(entry).email.toLowerCase();
+    if (!email || seen.has(email)) continue;
+    seen.add(email);
+    // Replying to your own message keeps its recipients in To.
+    (fromSelf ? to : cc).push(entry);
+  }
+  for (const entry of splitAddressList(last.cc ?? "")) {
+    const email = parseAddressEntry(entry).email.toLowerCase();
+    if (!email || seen.has(email)) continue;
+    seen.add(email);
+    cc.push(entry);
+  }
+  if (to.length === 0) to.push(last.fromEmail);
+  return { to: to.join(", "), cc: cc.length > 0 ? cc.join(", ") : undefined };
+}
+
+function ReplyBox({
   accountId,
-  messageId,
-  onCompose,
-  searchQuery,
-  onSearchChange,
-}: MessageReaderProps) {
-  // Apple Mail chrome: compose at the toolbar's left, search at the top right,
-  // in every reader state (empty, loading, message open).
-  const composeButton = (
-    <Button variant="glass" size="large" iconOnly onClick={onCompose} aria-label="New message">
-      <SquarePenIcon className="size-4.5" />
-    </Button>
+  lastMessage,
+  replySubject,
+  threadId,
+  onExpand,
+}: {
+  accountId: string;
+  lastMessage: GmailMessageSummary;
+  replySubject: string;
+  threadId: string;
+  onExpand: (draftBody: string) => void;
+}) {
+  const [text, setText] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const sendMessage = useSendMessage();
+  const accountsQuery = useAccounts();
+  // The latest message's detail carries its Cc line (summaries don't); it is
+  // usually already cached since the last message renders expanded.
+  const lastDetailQuery = useMessage(accountId, lastMessage.id);
+
+  // Editing state resets when switching conversations.
+  useEffect(() => {
+    setText("");
+  }, [threadId]);
+
+  const autoGrow = () => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
+  };
+
+  const canSend = text.trim().length > 0 && !sendMessage.isPending;
+
+  const handleSend = () => {
+    if (!canSend) return;
+    const ownEmail = accountsQuery.data?.find((a) => a.id === accountId)?.email ?? "";
+    const source = lastDetailQuery.data ?? lastMessage;
+    const { to, cc } = computeReplyAll(source, ownEmail);
+    const body = text;
+    console.log("[MessageReader:inlineReply]", { threadId, to });
+    setText("");
+    sendMessage
+      .mutateAsync({
+        accountId,
+        to,
+        cc,
+        subject: replySubject,
+        body,
+        threadId,
+        replyToMessageId: lastMessage.id,
+      })
+      .catch(() => {
+        toast.error("Could not send the reply");
+        setText(body);
+      });
+  };
+
+  const senderFirstName =
+    (lastMessage.fromName || lastMessage.fromEmail).split(" ")[0] || "thread";
+
+  return (
+    <div className="shrink-0 px-5 pb-4 pt-1">
+      <div className="rounded-lg border border-white/20 bg-(--sk-panel) transition-colors focus-within:border-white/40">
+        <textarea
+          ref={textareaRef}
+          value={text}
+          rows={1}
+          onChange={(e) => {
+            setText(e.target.value);
+            autoGrow();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              handleSend();
+            }
+          }}
+          placeholder={`Reply to ${senderFirstName}…`}
+          aria-label="Reply"
+          className="sk-scroll max-h-48 w-full resize-none bg-transparent px-3 pt-2.5 text-[15px] leading-relaxed text-white outline-none placeholder:text-white/40"
+        />
+        <div className="flex items-center gap-1 px-2 pb-1.5">
+          <HintTooltip label="Open full composer" hint="Cc, attachments…">
+            <IconBtn
+              label="Open full composer"
+              className="size-7"
+              onClick={() => {
+                onExpand(text);
+                setText("");
+              }}
+            >
+              <PenLineIcon className="size-3.5" />
+            </IconBtn>
+          </HintTooltip>
+          <span className="flex-1" />
+          {text.trim() ? (
+            <span className="pr-1 text-[11px] text-white/30">⌘↩ to send</span>
+          ) : null}
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={!canSend}
+            aria-label="Send reply"
+            className="flex h-7 w-9 items-center justify-center rounded-md bg-(--sk-green) text-white transition-colors hover:brightness-110 disabled:bg-white/10 disabled:text-white/30"
+          >
+            <SendHorizontalIcon className="size-4" />
+          </button>
+        </div>
+      </div>
+    </div>
   );
-  const searchRef = useRef<ToolbarSearchButtonRef>(null);
+}
+
+function ReaderShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex h-full min-w-0 flex-col">
+      <div className="drag-region h-[52px] shrink-0 border-b border-(--sk-border)" />
+      {children}
+    </div>
+  );
+}
+
+export function MessageReader({ accountId, messageId }: MessageReaderProps) {
   // Reply/reply-all/forward handlers exist only when a message is open; the
   // render below refreshes this ref so the once-mounted listener stays current.
   const readerActions = useRef<{ reply?: () => void; replyAll?: () => void; forward?: () => void }>(
@@ -589,16 +735,8 @@ export function MessageReader({
   );
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
-      if (e.key === "f" && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        searchRef.current?.focus();
-        return;
-      }
       if (e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e)) return;
-      if (e.key === "/") {
-        e.preventDefault();
-        searchRef.current?.focus();
-      } else if (e.key === "r") {
+      if (e.key === "r") {
         e.preventDefault();
         readerActions.current.reply?.();
       } else if (e.key === "a") {
@@ -616,9 +754,6 @@ export function MessageReader({
   // shortcuts are inert when no message is on screen.
   readerActions.current = {};
 
-  const searchField = (
-    <ToolbarSearchButton ref={searchRef} value={searchQuery} onChange={onSearchChange} size="large" />
-  );
   const messageQuery = useMessage(accountId, messageId);
   const labelsQuery = useLabels(accountId);
   const accountsQuery = useAccounts();
@@ -636,23 +771,13 @@ export function MessageReader({
 
   const [compose, setCompose] = useState<ComposeState | null>(null);
   const [forwardPending, setForwardPending] = useState(false);
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set());
-
-  const hasAutoMarked = useRef<string | null>(null);
   const seededRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    setDetailsOpen(false);
-    // Deselecting clears the auto-read guard so reopening the same message
-    // (e.g. after marking it unread) marks it read again.
-    if (!messageId) hasAutoMarked.current = null;
-  }, [messageId]);
-
-  // Seed which conversation cards start expanded: the last message, every
+  // Seed which conversation rows start expanded: the last message, every
   // unread one, and the opened message itself (differs when opened via search).
   useEffect(() => {
-    if (!isThread || !messageId || !threadId) return;
+    if (!messageId || !threadId || threadMessages.length === 0) return;
     const seedKey = `${accountId}:${threadId}:${messageId}`;
     if (seededRef.current === seedKey) return;
     seededRef.current = seedKey;
@@ -662,78 +787,50 @@ export function MessageReader({
     if (last) ids.add(last.id);
     ids.add(messageId);
     setExpandedIds(ids);
-  }, [isThread, accountId, threadId, messageId, threadMessages]);
-
-  // Auto-mark as read when a single message opens (conversation cards mark
-  // themselves as they expand). Debounced so j/k scrubbing past unread rows
-  // doesn't fire a mutation per row — only where the selection settles.
-  useEffect(() => {
-    if (!message || !messageId) return;
-    if (threadQuery.isLoading || isThread) return;
-    if (hasAutoMarked.current === messageId) return;
-    if (!message.unread) return;
-
-    const timer = setTimeout(() => {
-      hasAutoMarked.current = messageId;
-      console.log("[MessageReader:autoMarkRead]", { messageId });
-      void modifyMessage.mutateAsync({
-        accountId,
-        messageId,
-        removeLabelIds: ["UNREAD"],
-      });
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [message, messageId, accountId, modifyMessage, threadQuery.isLoading, isThread]);
+  }, [accountId, threadId, messageId, threadMessages]);
 
   if (!messageId) {
     return (
-      <div className="h-full flex flex-col">
-        <Toolbar>
-          <div className="flex items-center gap-3 min-w-0">{composeButton}</div>
-          <ToolbarActions>{searchField}</ToolbarActions>
-        </Toolbar>
-        <div className="relative flex-1">
-          <EmptyState
-            title="Select a message"
-            description="Choose a message from the list to read it."
-          />
+      <ReaderShell>
+        <div className="flex flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
+          <span className="text-[15px] font-bold text-white/70">Select a conversation</span>
+          <span className="text-[13px] text-white/40">
+            Choose a message from the list to read it here.
+          </span>
         </div>
-      </div>
+      </ReaderShell>
     );
   }
 
   if (messageQuery.isLoading || threadQuery.isLoading) {
     return (
-      <div className="h-full flex flex-col">
-        <Toolbar>
-          <div className="flex items-center gap-3 min-w-0">{composeButton}</div>
-          <ToolbarActions>{searchField}</ToolbarActions>
-        </Toolbar>
-        <div className="flex flex-col gap-3 p-4">
-          <div className="h-5 w-64 rounded-pill bg-control animate-pulse" />
-          <div className="h-4 w-48 rounded-pill bg-control animate-pulse" />
-          <div className="h-4 w-40 rounded-pill bg-control animate-pulse" />
+      <ReaderShell>
+        <div className="flex flex-col gap-3 p-5">
+          <div className="h-5 w-64 animate-pulse rounded-full bg-white/10" />
+          <div className="h-4 w-48 animate-pulse rounded-full bg-white/[0.07]" />
+          <div className="h-4 w-40 animate-pulse rounded-full bg-white/[0.05]" />
         </div>
-      </div>
+      </ReaderShell>
     );
   }
 
   if (!message) {
     return (
-      <div className="h-full flex flex-col">
-        <Toolbar>
-          <div className="flex items-center gap-3 min-w-0">{composeButton}</div>
-          <ToolbarActions>{searchField}</ToolbarActions>
-        </Toolbar>
-        <div className="relative flex-1">
-          <EmptyState
-            title="Could not load message"
-            description="The message could not be retrieved. Try again."
-          />
+      <ReaderShell>
+        <div className="flex flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
+          <span className="text-[15px] font-bold text-white/70">Could not load message</span>
+          <span className="text-[13px] text-white/40">
+            The message could not be retrieved. Try again.
+          </span>
         </div>
-      </div>
+      </ReaderShell>
     );
   }
+
+  // From here on the conversation is renderable — a thread of one message
+  // falls back to the opened message itself.
+  const rows: GmailMessageSummary[] = threadMessages.length > 0 ? threadMessages : [message];
+  const lastRow = rows[rows.length - 1];
 
   const isUnread = isThread ? threadMessages.some((m) => m.unread) : message.unread;
 
@@ -948,188 +1045,143 @@ export function MessageReader({
     });
   };
 
-  const toolbar = (
-    <Toolbar>
-      <div className="flex items-center gap-3 min-w-0">
-        {composeButton}
-        <ToolbarTitle className="truncate">{message.subject || "(no subject)"}</ToolbarTitle>
-      </div>
-      <ToolbarActions>
-        {/* Apple Mail clusters: reply trio · archive/trash/junk · move · flag+read */}
-        <ButtonGroup variant="glass" size="large">
-          <Button iconOnly onClick={handleReply} aria-label="Reply">
-            <ReplyIcon className="size-4.5" />
-          </Button>
-          <Button iconOnly onClick={handleReplyAll} aria-label="Reply all">
-            <ReplyAllIcon className="size-4.5" />
-          </Button>
-          <Button iconOnly onClick={handleForward} disabled={forwardPending} aria-label="Forward">
-            <ForwardIcon className="size-4.5" />
-          </Button>
-        </ButtonGroup>
-        <ButtonGroup variant="glass" size="large">
-          <Button
-            iconOnly
-            onClick={handleArchive}
-            aria-label={isThread ? "Archive conversation" : "Archive"}
-          >
-            <ArchiveIcon className="size-4.5" />
-          </Button>
-          <ButtonGroupSeparator />
-          <Button
-            iconOnly
-            onClick={handleTrash}
-            aria-label={isThread ? "Trash conversation" : "Trash"}
-          >
-            <Trash2Icon className="size-4.5" />
-          </Button>
-          <ButtonGroupSeparator />
-          <Button
-            iconOnly
-            onClick={handleJunk}
-            aria-label={isThread ? "Move conversation to junk" : "Move to junk"}
-          >
-            <ArchiveXIcon className="size-4.5" />
-          </Button>
-        </ButtonGroup>
-        <ButtonGroup variant="glass" size="large">
-          <LabelPickerMenu
-            accountId={accountId}
-            messageId={message.id}
-            labelIds={message.labelIds}
-          >
-            <Button iconOnly aria-label="Move to label">
-              <span className="flex items-center gap-0.5">
-                <FolderIcon className="size-4.5" />
-                <ChevronDownIcon className="size-3" />
-              </span>
-            </Button>
-          </LabelPickerMenu>
-        </ButtonGroup>
-        <ButtonGroup variant="glass" size="large">
-          <Button iconOnly onClick={handleToggleFlag} aria-label={isFlagged ? "Unflag" : "Flag"}>
-            <FlagIcon
-              className={["size-4.5 text-support-red", isFlagged ? "fill-current" : ""].join(" ")}
-            />
-          </Button>
-          <ButtonGroupSeparator />
-          <Button
-            iconOnly
-            onClick={handleToggleRead}
-            aria-label={isUnread ? "Mark as read" : "Mark as unread"}
-          >
-            {isUnread ? (
-              <MailOpenIcon className="size-4.5" />
-            ) : (
-              <MailIcon className="size-4.5" />
-            )}
-          </Button>
-        </ButtonGroup>
-        {searchField}
-      </ToolbarActions>
-    </Toolbar>
-  );
+  const groupDivider = <span className="mx-1 h-5 w-px shrink-0 bg-white/10" aria-hidden />;
 
   return (
     <>
-      <ScrollArea className="h-full" toolbar={toolbar}>
-        {isThread ? (
-          <div className="flex flex-col gap-3 p-4">
-            <div className="flex flex-col gap-0.5">
-              <Text variant="large-strong" as="h1">
-                {message.subject || "(no subject)"}
-              </Text>
-              <Text variant="mini" color="tertiary">
-                {threadMessages.length} messages
-              </Text>
+      <div className="flex h-full min-w-0 flex-col">
+        {/* Conversation header */}
+        <div className="drag-region flex h-[52px] shrink-0 items-center gap-1 border-b border-(--sk-border) px-4">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[16px] font-extrabold leading-tight text-white">
+              {message.subject || "(no subject)"}
             </div>
-            <div className="flex flex-col gap-2">
-              {threadMessages.map((m) =>
-                expandedIds.has(m.id) ? (
-                  <ExpandedMessageCard
-                    key={m.id}
+            <div className="truncate text-[11px] leading-tight text-white/45">
+              {isThread ? `${rows.length} messages` : formatFullDate(message.date)}
+            </div>
+          </div>
+
+          <HintTooltip label="Reply" hint="R">
+            <IconBtn label="Reply" onClick={handleReply}>
+              <ReplyIcon className="size-4" />
+            </IconBtn>
+          </HintTooltip>
+          <HintTooltip label="Reply all" hint="A">
+            <IconBtn label="Reply all" onClick={handleReplyAll}>
+              <ReplyAllIcon className="size-4" />
+            </IconBtn>
+          </HintTooltip>
+          <HintTooltip label="Forward" hint="F">
+            <IconBtn label="Forward" onClick={handleForward} disabled={forwardPending}>
+              <ForwardIcon className="size-4" />
+            </IconBtn>
+          </HintTooltip>
+
+          {groupDivider}
+
+          <HintTooltip label="Archive" hint="E">
+            <IconBtn label="Archive" onClick={handleArchive}>
+              <ArchiveIcon className="size-4" />
+            </IconBtn>
+          </HintTooltip>
+          <HintTooltip label="Move to Trash" hint="#">
+            <IconBtn label="Move to Trash" onClick={handleTrash}>
+              <Trash2Icon className="size-4" />
+            </IconBtn>
+          </HintTooltip>
+          <HintTooltip label="Move to Junk" hint="!">
+            <IconBtn label="Move to Junk" onClick={handleJunk}>
+              <ArchiveXIcon className="size-4" />
+            </IconBtn>
+          </HintTooltip>
+
+          {groupDivider}
+
+          <LabelPickerMenu accountId={accountId} messageId={message.id} labelIds={message.labelIds}>
+            <IconBtn label="Move to label">
+              <span className="flex items-center gap-0.5">
+                <FolderIcon className="size-4" />
+                <ChevronDownIcon className="size-3" />
+              </span>
+            </IconBtn>
+          </LabelPickerMenu>
+
+          {groupDivider}
+
+          <HintTooltip label={isFlagged ? "Unflag" : "Flag"} hint="S">
+            <IconBtn label={isFlagged ? "Unflag" : "Flag"} onClick={handleToggleFlag}>
+              <FlagIcon
+                className={["size-4 text-(--red)", isFlagged ? "fill-current" : ""].join(" ")}
+              />
+            </IconBtn>
+          </HintTooltip>
+          <HintTooltip label={isUnread ? "Mark as read" : "Mark as unread"}>
+            <IconBtn
+              label={isUnread ? "Mark as read" : "Mark as unread"}
+              onClick={handleToggleRead}
+            >
+              {isUnread ? <MailOpenIcon className="size-4" /> : <MailIcon className="size-4" />}
+            </IconBtn>
+          </HintTooltip>
+        </div>
+
+        {/* Conversation */}
+        <div className="sk-scroll min-h-0 flex-1 overflow-y-auto pb-2">
+          <div className="px-5 pb-1 pt-5">
+            <h1 className="text-[20px] font-extrabold leading-snug text-white">
+              {message.subject || "(no subject)"}
+            </h1>
+            {messageLabels.length > 0 ? (
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                {messageLabels.map((label) => (
+                  <LabelChip key={label.id} label={label} />
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          {rows.map((m, i) => {
+            const prev = rows[i - 1];
+            const newDay = !prev || dayKey(prev.date) !== dayKey(m.date);
+            return (
+              <div key={m.id}>
+                {newDay ? <DayDivider timestamp={m.date} /> : null}
+                {expandedIds.has(m.id) || rows.length === 1 ? (
+                  <ExpandedRow
                     accountId={accountId}
                     summary={m}
                     onCollapse={() => toggleExpanded(m.id)}
                     onDownload={handleDownloadAttachment}
                   />
                 ) : (
-                  <CollapsedMessageCard
-                    key={m.id}
-                    summary={m}
-                    onExpand={() => toggleExpanded(m.id)}
-                  />
-                ),
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-4 p-4">
-            {/* Header */}
-            <div className="flex flex-col gap-2.5 border-b border-separator pb-4">
-              <Text variant="large-strong" as="h1">
-                {message.subject || "(no subject)"}
-              </Text>
-              <div className="flex items-center gap-3">
-                <SenderAvatar name={message.fromName} email={message.fromEmail} />
-                <div className="flex flex-col min-w-0 gap-0.5">
-                  <Text variant="small-strong" truncate>
-                    {message.fromName || message.fromEmail}
-                  </Text>
-
-              <CollapsibleRoot open={detailsOpen} onOpenChange={setDetailsOpen}>
-                <CollapsibleTrigger className="-ml-1 flex items-center gap-1 rounded-control px-1 py-0.5 hover:bg-control-subtle transition-colors">
-                  <CollapsibleChevron />
-                  <Text variant="small" color="secondary" truncate>
-                    {detailsOpen ? "Hide details" : `to ${message.to}`}
-                  </Text>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <div className="flex flex-col gap-0.5 pt-1 pl-1">
-                    {message.fromName ? (
-                      <Text variant="small" color="secondary">
-                        From: {message.fromName} &lt;{message.fromEmail}&gt;
-                      </Text>
-                    ) : null}
-                    <Text variant="small" color="secondary">
-                      To: {message.to}
-                    </Text>
-                    {message.cc ? (
-                      <Text variant="small" color="secondary">
-                        Cc: {message.cc}
-                      </Text>
-                    ) : null}
-                  </div>
-                </CollapsibleContent>
-              </CollapsibleRoot>
-                </div>
-                <Text variant="mini" color="tertiary" className="ml-auto shrink-0 self-start pt-0.5 tabular-nums">
-                  {formatFullDate(message.date)}
-                </Text>
+                  <CollapsedRow summary={m} onExpand={() => toggleExpanded(m.id)} />
+                )}
               </div>
-              {messageLabels.length > 0 ? (
-                <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                  {messageLabels.map((label) => (
-                    <LabelChip key={label.id} label={label} />
-                  ))}
-                </div>
-              ) : null}
-            </div>
+            );
+          })}
+        </div>
 
-            {/* Body */}
-            <div className="flex-1">
-              <MessageBody bodyHtml={message.bodyHtml} bodyText={message.bodyText} />
-            </div>
-
-            <AttachmentList
-              accountId={accountId}
-              messageId={messageId}
-              attachments={message.attachments}
-              onDownload={handleDownloadAttachment}
-            />
-          </div>
-        )}
-      </ScrollArea>
+        {/* Slack-style inline reply (sends a reply-all into the thread) */}
+        {lastRow ? (
+          <ReplyBox
+            accountId={accountId}
+            lastMessage={lastRow}
+            replySubject={replySubject}
+            threadId={message.threadId || message.id}
+            onExpand={(draftBody) => {
+              const ownEmail =
+                accountsQuery.data?.find((a) => a.id === accountId)?.email ?? "";
+              const source = lastRow;
+              const { to, cc } = computeReplyAll(source, ownEmail);
+              setCompose({
+                title: "Reply All",
+                prefill: { to, cc, subject: replySubject, body: draftBody || quotedReplyBody },
+                replyTo: { threadId: message.threadId || message.id, messageId: lastRow.id },
+              });
+            }}
+          />
+        ) : null}
+      </div>
 
       {compose ? (
         <ComposeDialog

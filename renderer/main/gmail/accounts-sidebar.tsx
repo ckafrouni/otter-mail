@@ -1,21 +1,10 @@
-import { useState } from "react";
-import type React from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import {
   ContextMenu,
   ContextMenuTrigger,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
-  Sidebar,
-  SidebarList,
-  SidebarListItem,
-  SidebarListItemAccessory,
-  SidebarListGroup,
-  SidebarFooter,
-  Avatar,
-  AvatarImage,
-  AvatarFallback,
-  Button,
   Dialog,
   Field,
   Input,
@@ -24,7 +13,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  Text,
   toast,
 } from "@glaze/core/components";
 import {
@@ -35,29 +23,25 @@ import {
   BookmarkIcon,
   ArchiveXIcon,
   Trash2Icon,
-  TagIcon,
   SettingsIcon,
   PlusIcon,
   ChevronDownIcon,
   LayersIcon,
+  HashIcon,
+  SearchIcon,
+  SquarePenIcon,
 } from "lucide-react";
-import {
-  useAccounts,
-  useLabels,
-  useAddAccount,
-  useCreateLabel,
-  useViewUnreadCounts,
-  useGlobalSyncStatus,
-} from "./hooks";
+import { useAccounts, useLabels, useAddAccount, useCreateLabel, useViewUnreadCounts } from "./hooks";
 import type { GmailLabel, MailView } from "./types";
 import { gmailApi } from "./api";
 import { COMBINED_ACCOUNT_ID, useMailViews } from "./custom-views";
 import { buildLabelTree, type LabelTreeNode } from "./label-tree";
-import { getAccountColor, getAccountDisplayName } from "./account-style";
+import { getAccountDisplayName } from "./account-style";
+import { UnreadPill } from "./slack-ui";
 
 const SIDEBAR_SYSTEM_ORDER = ["INBOX", "STARRED", "SENT", "DRAFT", "IMPORTANT", "SPAM", "TRASH"];
 
-const SYSTEM_LABEL_MAP: Record<string, { name: string; icon: React.ReactNode }> = {
+const SYSTEM_LABEL_MAP: Record<string, { name: string; icon: ReactNode }> = {
   INBOX: { name: "Inbox", icon: <InboxIcon className="size-4" /> },
   STARRED: { name: "Starred", icon: <StarIcon className="size-4" /> },
   SENT: { name: "Sent", icon: <SendIcon className="size-4" /> },
@@ -67,29 +51,109 @@ const SYSTEM_LABEL_MAP: Record<string, { name: string; icon: React.ReactNode }> 
   TRASH: { name: "Trash", icon: <Trash2Icon className="size-4" /> },
 };
 
-// Gmail's own label icon is a solid filled tag — colored per label when Gmail
-// has a color set, otherwise a neutral solid tag (via the design system's
-// automatic solid rendering for semantic gray on icons).
-function labelIcon(label?: GmailLabel): React.ReactNode {
-  const color = label?.color?.backgroundColor;
-  if (color) {
-    return <TagIcon className="size-4 shrink-0 fill-current" style={{ color }} />;
-  }
-  return <TagIcon className="size-4 shrink-0 text-tertiary" />;
+function viewIcon(view: MailView): ReactNode {
+  if (view.kind === "inbox") return <InboxIcon className="size-4" />;
+  if (view.kind === "starred") return <StarIcon className="size-4" />;
+  if (view.kind === "sent") return <SendIcon className="size-4" />;
+  if (view.kind === "drafts") return <FileIcon className="size-4" />;
+  if (view.kind === "important") return <BookmarkIcon className="size-4" />;
+  if (view.kind === "junk") return <ArchiveXIcon className="size-4" />;
+  if (view.kind === "trash") return <Trash2Icon className="size-4" />;
+  return <LayersIcon className="size-4" />;
 }
 
-function viewIcon(view: MailView): React.ReactNode {
-  if (view.kind === "inbox") return <InboxIcon className="size-4 shrink-0" />;
-  if (view.kind === "starred") return <StarIcon className="size-4 shrink-0" />;
-  if (view.kind === "sent") return <SendIcon className="size-4 shrink-0" />;
-  if (view.kind === "drafts") return <FileIcon className="size-4 shrink-0" />;
-  if (view.kind === "important") return <BookmarkIcon className="size-4 shrink-0" />;
-  if (view.kind === "junk") return <ArchiveXIcon className="size-4 shrink-0" />;
-  if (view.kind === "trash") return <Trash2Icon className="size-4 shrink-0" />;
-  return <LayersIcon className="size-4 shrink-0 text-tertiary" />;
+/** Slack-style sidebar row: muted at rest, bold white when unread, white pill when selected. */
+function SkRow({
+  icon,
+  title,
+  selected,
+  unread,
+  badge,
+  trailing,
+  depth = 0,
+  onClick,
+}: {
+  icon: ReactNode;
+  title: string;
+  selected?: boolean;
+  unread?: boolean;
+  badge?: number;
+  trailing?: ReactNode;
+  depth?: number;
+  onClick?: () => void;
+}) {
+  const style: CSSProperties = { paddingLeft: 8 + depth * 18 };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={style}
+      className={[
+        "group flex h-7 w-full items-center gap-2 rounded-md pr-2 text-left text-[15px] leading-none transition-colors",
+        selected
+          ? "bg-(--sk-selected) font-medium text-(--sk-selected-fg)"
+          : unread
+            ? "font-bold text-white hover:bg-(--sk-hover)"
+            : "text-(--sk-muted) hover:bg-(--sk-hover) hover:text-(--sk-text)",
+      ].join(" ")}
+    >
+      <span className={["shrink-0", selected ? "" : "opacity-80"].join(" ")}>{icon}</span>
+      <span className="min-w-0 flex-1 truncate">{title}</span>
+      {badge != null ? <UnreadPill count={badge} selected={selected} /> : null}
+      {trailing}
+    </button>
+  );
 }
 
-function CombinedViewRow({
+function Section({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="mt-4">
+      <div className="group flex h-6 items-center gap-1 pr-2">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="flex h-6 items-center gap-1 rounded px-1.5 text-[13px] font-medium text-white/50 hover:text-white/80"
+          aria-label={`Toggle ${title}`}
+        >
+          <ChevronDownIcon
+            className={["size-3 transition-transform", open ? "" : "-rotate-90"].join(" ")}
+          />
+          {title}
+        </button>
+        <span className="flex-1" />
+        <span className="opacity-0 transition-opacity group-hover:opacity-100">{action}</span>
+      </div>
+      {open ? children : null}
+    </div>
+  );
+}
+
+/** Slack's "+ Add channels" style footer row for a section. */
+function AddRow({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[15px] leading-none text-(--sk-muted) transition-colors hover:bg-(--sk-hover) hover:text-(--sk-text)"
+    >
+      <span className="flex size-4 items-center justify-center rounded bg-white/10">
+        <PlusIcon className="size-3" />
+      </span>
+      <span className="truncate">{label}</span>
+    </button>
+  );
+}
+
+function ViewRow({
   view,
   selected,
   unreadCount,
@@ -105,42 +169,36 @@ function CombinedViewRow({
   onEdit: () => void;
   onDelete: () => void;
   onReset: () => void;
-}): React.ReactNode {
+}): ReactNode {
   return (
     <ContextMenu>
       <ContextMenuTrigger>
-        <SidebarListItem
+        <SkRow
+          icon={viewIcon(view)}
+          title={view.name}
           selected={selected}
-          className="group hover:bg-control-subtle"
+          unread={unreadCount > 0}
+          badge={unreadCount}
           onClick={() => {
             console.log("[AccountsSidebar:selectView]", { viewId: view.id });
             onSelect();
           }}
-          icon={
-            // Mirrors the chevron gutter the per-account sidebar reserves (it
-            // has collapsible label rows; Combined has none) so both modes
-            // share the same icon column and row rhythm.
-            <span className="flex items-center gap-2">
-              <span className="size-3.5 shrink-0 -ml-1.5 -mr-2" aria-hidden />
-              {viewIcon(view)}
+          trailing={
+            <span
+              role="button"
+              tabIndex={-1}
+              aria-label={`Edit ${view.name}`}
+              className={[
+                "shrink-0 opacity-0 transition-opacity group-hover:opacity-100",
+                selected ? "text-(--sk-selected-fg)/70" : "text-white/40 hover:text-white",
+              ].join(" ")}
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit();
+              }}
+            >
+              <SettingsIcon className="size-3.5" />
             </span>
-          }
-          title={unreadCount > 0 ? <span className="text-strong">{view.name}</span> : view.name}
-          accessory={
-            <SidebarListItemAccessory>
-              {unreadCount > 0 ? unreadCount : null}
-              <button
-                type="button"
-                aria-label={`Edit ${view.name}`}
-                className="text-tertiary hover:text-primary opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEdit();
-                }}
-              >
-                <SettingsIcon className="size-3.5" />
-              </button>
-            </SidebarListItemAccessory>
           }
         />
       </ContextMenuTrigger>
@@ -163,50 +221,76 @@ function CombinedViewRow({
   );
 }
 
-function renderLabelTreeNode(
-  node: LabelTreeNode,
-  selectedLabelId: string,
-  onSelectLabel: (labelId: string) => void,
-): React.ReactNode {
-  const { label, children } = node;
-  const unreadCount = label?.unread && label.unread > 0 ? label.unread : undefined;
-  const handleSelect = label
-    ? () => {
-        console.log("[AccountsSidebar:selectLabel]", { labelId: label.id });
-        onSelectLabel(label.id);
-      }
-    : undefined;
+function labelHash(label?: GmailLabel): ReactNode {
+  const color = label?.color?.backgroundColor;
+  return <HashIcon className="size-4" style={color ? { color } : undefined} />;
+}
 
-  if (children.length === 0) {
-    // Props mode (not children mode): only it auto-reserves the chevron gutter,
-    // so leaf icons line up in one column with collapsible parents, like Gmail.
-    return (
-      <SidebarListItem
-        key={node.key}
-        selected={label ? selectedLabelId === label.id : false}
-        className="hover:bg-control-subtle"
-        onClick={handleSelect}
-        icon={labelIcon(label)}
-        title={unreadCount ? <span className="text-strong">{node.segment}</span> : node.segment}
-        accessory={unreadCount}
-      />
-    );
-  }
+function LabelNode({
+  node,
+  depth,
+  selectedLabelId,
+  onSelectLabel,
+}: {
+  node: LabelTreeNode;
+  depth: number;
+  selectedLabelId: string;
+  onSelectLabel: (labelId: string) => void;
+}): ReactNode {
+  const [open, setOpen] = useState(false);
+  const { label, children } = node;
+  const unread = label?.unread && label.unread > 0 ? label.unread : 0;
+  const hasChildren = children.length > 0;
 
   return (
-    <SidebarListItem
-      key={node.key}
-      collapsible
-      defaultOpen={false}
-      selected={label ? selectedLabelId === label.id : false}
-      className="hover:bg-control-subtle"
-      onClick={handleSelect}
-      icon={labelIcon(label)}
-      title={node.segment}
-      accessory={unreadCount}
-    >
-      {children.map((child) => renderLabelTreeNode(child, selectedLabelId, onSelectLabel))}
-    </SidebarListItem>
+    <>
+      <SkRow
+        icon={
+          hasChildren ? (
+            <span
+              role="button"
+              tabIndex={-1}
+              aria-label={open ? `Collapse ${node.segment}` : `Expand ${node.segment}`}
+              className="flex items-center"
+              onClick={(e) => {
+                e.stopPropagation();
+                setOpen((o) => !o);
+              }}
+            >
+              <ChevronDownIcon
+                className={["size-4 transition-transform", open ? "" : "-rotate-90"].join(" ")}
+              />
+            </span>
+          ) : (
+            labelHash(label)
+          )
+        }
+        title={node.segment}
+        depth={depth}
+        selected={label ? selectedLabelId === label.id : false}
+        unread={unread > 0}
+        badge={unread}
+        onClick={
+          label
+            ? () => {
+                console.log("[AccountsSidebar:selectLabel]", { labelId: label.id });
+                onSelectLabel(label.id);
+              }
+            : () => setOpen((o) => !o)
+        }
+      />
+      {open
+        ? children.map((child) => (
+            <LabelNode
+              key={child.key}
+              node={child}
+              depth={depth + 1}
+              selectedLabelId={selectedLabelId}
+              onSelectLabel={onSelectLabel}
+            />
+          ))
+        : null}
+    </>
   );
 }
 
@@ -216,15 +300,9 @@ type AccountsSidebarProps = {
   selectedLabelId: string;
   onSelectLabel: (labelId: string) => void;
   views: MailView[];
+  onCompose: () => void;
+  onOpenSearch: () => void;
 };
-
-function getInitials(name: string): string {
-  return name
-    .split(" ")
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase() ?? "")
-    .join("");
-}
 
 export function AccountsSidebar({
   selectedAccountId,
@@ -232,6 +310,8 @@ export function AccountsSidebar({
   selectedLabelId,
   onSelectLabel,
   views,
+  onCompose,
+  onOpenSearch,
 }: AccountsSidebarProps) {
   const isCombined = selectedAccountId === COMBINED_ACCOUNT_ID;
 
@@ -254,17 +334,19 @@ export function AccountsSidebar({
   const combinedViews = views.filter(
     (v) => v.kind === "custom" && (v.mailbox ?? COMBINED_ACCOUNT_ID) === COMBINED_ACCOUNT_ID,
   );
-  const globalSync = useGlobalSyncStatus(accounts.map((a) => a.id));
   const { deleteView, resetView } = useMailViews();
 
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId) ?? null;
+  const mailboxTitle = isCombined
+    ? "Combined"
+    : selectedAccount
+      ? getAccountDisplayName(selectedAccount)
+      : "No account";
 
   // Same order as the Combined built-in views, Important appended.
   const systemLabels = labels
     .filter((l) => l.type === "system" && l.id in SYSTEM_LABEL_MAP)
-    .sort(
-      (a, b) => SIDEBAR_SYSTEM_ORDER.indexOf(a.id) - SIDEBAR_SYSTEM_ORDER.indexOf(b.id),
-    );
+    .sort((a, b) => SIDEBAR_SYSTEM_ORDER.indexOf(a.id) - SIDEBAR_SYSTEM_ORDER.indexOf(b.id));
   const userLabels = labels.filter((l) => l.type === "user");
   const userLabelTree = buildLabelTree(userLabels);
 
@@ -276,11 +358,6 @@ export function AccountsSidebar({
     } catch {
       // error surfaced by mutation
     }
-  };
-
-  const handleOpenSettings = () => {
-    console.log("[AccountsSidebar:openSettings]");
-    void window.glazeAPI.glaze.ipc.invoke("window:openSettings");
   };
 
   const handleCreateLabel = async () => {
@@ -297,70 +374,40 @@ export function AccountsSidebar({
     }
   };
 
+  const openViewEditor = (viewId: string) => {
+    void gmailApi.openSettings({
+      pane: "views",
+      viewId,
+      mailbox: isCombined ? COMBINED_ACCOUNT_ID : selectedAccountId,
+    });
+  };
+
+  const viewRow = (view: MailView) => (
+    <ViewRow
+      key={view.id}
+      view={view}
+      selected={selectedLabelId === view.id}
+      unreadCount={viewUnreadCounts[view.id] ?? 0}
+      onSelect={() => onSelectLabel(view.id)}
+      onDelete={() => void deleteView(view.id)}
+      onReset={() => void resetView(view.id)}
+      onEdit={() => openViewEditor(view.id)}
+    />
+  );
+
   return (
-    <Sidebar
-      footer={
-        <SidebarFooter>
-          <div className="flex w-full items-center justify-between gap-2">
-            {globalSync.syncing ? (
-              <div className="flex min-w-0 items-center gap-1.5 px-1">
-                <span className="size-3 shrink-0 rounded-full border-2 border-accent border-t-transparent animate-spin" />
-                <Text variant="mini" color="tertiary" truncate>
-                  {globalSync.label}
-                </Text>
-              </div>
-            ) : (
-              <span />
-            )}
-            <Button
-              variant="transparent"
-              size="small"
-              iconOnly
-              onClick={handleOpenSettings}
-              aria-label="Open Settings"
-            >
-              <SettingsIcon className="size-4" />
-            </Button>
-          </div>
-        </SidebarFooter>
-      }
-    >
-      {/* Account switcher */}
-      <div className="px-3 pt-2 pb-1">
+    <div className="flex h-full min-w-0 flex-col">
+      {/* Header: mailbox switcher + compose */}
+      <div className="drag-region flex h-[52px] shrink-0 items-center justify-between gap-2 border-b border-(--sk-border) px-3">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className="flex items-center gap-2 w-full rounded-control px-2 py-1.5 hover:bg-control-subtle min-w-0"
+              type="button"
               aria-label="Switch account"
+              className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 hover:bg-(--sk-hover)"
             >
-              {isCombined ? (
-                <Avatar size="small">
-                  <AvatarFallback>
-                    <LayersIcon className="size-4" />
-                  </AvatarFallback>
-                </Avatar>
-              ) : (
-                <Avatar size="small">
-                  {selectedAccount?.picture ? (
-                    <AvatarImage
-                      src={selectedAccount.picture}
-                      alt={getAccountDisplayName(selectedAccount)}
-                    />
-                  ) : null}
-                  <AvatarFallback>
-                    {selectedAccount ? getInitials(getAccountDisplayName(selectedAccount)) : "?"}
-                  </AvatarFallback>
-                </Avatar>
-              )}
-              <div className="flex flex-col min-w-0 flex-1 text-left">
-                <Text variant="small-strong" truncate>
-                  {isCombined ? "Combined" : (selectedAccount ? getAccountDisplayName(selectedAccount) : "No account")}
-                </Text>
-                <Text variant="mini" color="secondary" truncate>
-                  {isCombined ? "All mailboxes" : (selectedAccount?.email ?? "")}
-                </Text>
-              </div>
-              <ChevronDownIcon className="size-3.5 shrink-0 text-tertiary" />
+              <span className="truncate text-[17px] font-extrabold text-white">{mailboxTitle}</span>
+              <ChevronDownIcon className="size-3.5 shrink-0 text-white/60" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
@@ -368,7 +415,9 @@ export function AccountsSidebar({
               <>
                 <DropdownMenuItem
                   onSelect={() => {
-                    console.log("[AccountsSidebar:selectAccount]", { accountId: COMBINED_ACCOUNT_ID });
+                    console.log("[AccountsSidebar:selectAccount]", {
+                      accountId: COMBINED_ACCOUNT_ID,
+                    });
                     onSelectAccount(COMBINED_ACCOUNT_ID);
                   }}
                 >
@@ -385,200 +434,99 @@ export function AccountsSidebar({
                   onSelectAccount(account.id);
                 }}
               >
-                <span className="flex items-center gap-2 min-w-0">
-                  <span
-                    className="size-2 rounded-full shrink-0"
-                    style={{ backgroundColor: getAccountColor(account) }}
-                  />
-                  <span className="truncate">{account.email}</span>
-                </span>
+                <span className="truncate">{account.email}</span>
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onSelect={() => void gmailApi.openSettings({ pane: "accounts" })}
-            >
+            <DropdownMenuItem onSelect={() => void gmailApi.openSettings({ pane: "accounts" })}>
               Manage accounts…
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+
+        <button
+          type="button"
+          onClick={onCompose}
+          aria-label="New message"
+          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white text-[#1d1c1d] shadow-sm transition-transform hover:scale-105"
+        >
+          <SquarePenIcon className="size-4" />
+        </button>
       </div>
 
-      {isCombined ? (
-        <SidebarList>
-          {/* Built-in default views (Inbox, Sent) — editable + resettable */}
-          {views
-            .filter((v) => v.kind !== "custom")
-            .map((view) => (
-              <CombinedViewRow
-                key={view.id}
-                view={view}
-                selected={selectedLabelId === view.id}
-                unreadCount={viewUnreadCounts[view.id] ?? 0}
-                onSelect={() => onSelectLabel(view.id)}
-                onDelete={() => void deleteView(view.id)}
-                onReset={() => void resetView(view.id)}
-                onEdit={() => {
-                  void gmailApi.openSettings({ pane: "views", viewId: view.id });
-                }}
-              />
-            ))}
+      {/* Find a conversation… (command palette) */}
+      <div className="px-3 pb-1 pt-3">
+        <button
+          type="button"
+          onClick={onOpenSearch}
+          className="flex h-7 w-full items-center gap-2 rounded-md border border-white/15 px-2 text-[13px] text-white/50 transition-colors hover:border-white/30 hover:text-white/75"
+        >
+          <SearchIcon className="size-3.5 shrink-0" />
+          <span className="truncate">Find a conversation…</span>
+          <span className="ml-auto shrink-0 text-[11px] text-white/35">⌘K</span>
+        </button>
+      </div>
 
-          {/* Custom views */}
-          <SidebarListGroup
-            title="Views"
-            collapsible
-            defaultOpen
-            actions={
-              <Button
-                iconOnly
-                variant="transparent"
-                size="small"
-                aria-label="New view"
-                onClick={() => {
-                  void gmailApi.openSettings({ pane: "views", viewId: "new", mailbox: isCombined ? COMBINED_ACCOUNT_ID : selectedAccountId });
-                }}
-              >
-                <PlusIcon className="size-3.5" />
-              </Button>
-            }
-          >
-            {combinedViews.length === 0 ? (
-              <div className="px-3 py-1.5">
-                <Text variant="mini" color="tertiary">
-                  Tap + to build a view from any labels across your accounts.
-                </Text>
-              </div>
-            ) : (
-              combinedViews.map((view) => (
-                <CombinedViewRow
-                  key={view.id}
-                  view={view}
-                  selected={selectedLabelId === view.id}
-                  unreadCount={viewUnreadCounts[view.id] ?? 0}
-                  onSelect={() => onSelectLabel(view.id)}
-                  onDelete={() => void deleteView(view.id)}
-                  onReset={() => void resetView(view.id)}
-                  onEdit={() => {
-                    void gmailApi.openSettings({ pane: "views", viewId: view.id });
-                  }}
-                />
-              ))
-            )}
-          </SidebarListGroup>
-        </SidebarList>
-      ) : (
-      <SidebarList>
-        {/* System labels */}
-        {systemLabels.length > 0 ? (
-          systemLabels.map((label) => {
-            const meta = SYSTEM_LABEL_MAP[label.id];
-            if (!meta) return null;
-            return (
-              <SidebarListItem
-                key={label.id}
-                selected={selectedLabelId === label.id}
-                className="hover:bg-control-subtle"
-                onClick={() => {
-                  console.log("[AccountsSidebar:selectLabel]", { labelId: label.id });
-                  onSelectLabel(label.id);
-                }}
-                icon={meta.icon}
-                title={meta.name}
-                accessory={
-                  label.unread && label.unread > 0 ? label.unread : undefined
-                }
-              />
-            );
-          })
+      <div className="sk-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-4 pt-2">
+        {isCombined ? (
+          <>
+            {views.filter((v) => v.kind !== "custom").map(viewRow)}
+
+            <Section title="Views">
+              {combinedViews.map(viewRow)}
+              <AddRow label="Add view" onClick={() => openViewEditor("new")} />
+            </Section>
+          </>
         ) : (
           <>
-            {Object.entries(SYSTEM_LABEL_MAP).map(([id, meta]) => (
-              <SidebarListItem
-                key={id}
-                selected={selectedLabelId === id}
-                className="hover:bg-control-subtle"
-                onClick={() => {
-                  console.log("[AccountsSidebar:selectLabel]", { labelId: id });
-                  onSelectLabel(id);
-                }}
-                icon={meta.icon}
-                title={meta.name}
-              />
-            ))}
+            {(systemLabels.length > 0
+              ? systemLabels.map((l) => ({ id: l.id, unread: l.unread ?? 0 }))
+              : Object.keys(SYSTEM_LABEL_MAP).map((id) => ({ id, unread: 0 }))
+            ).map(({ id, unread }) => {
+              const meta = SYSTEM_LABEL_MAP[id];
+              if (!meta) return null;
+              return (
+                <SkRow
+                  key={id}
+                  icon={meta.icon}
+                  title={meta.name}
+                  selected={selectedLabelId === id}
+                  unread={unread > 0}
+                  badge={unread}
+                  onClick={() => {
+                    console.log("[AccountsSidebar:selectLabel]", { labelId: id });
+                    onSelectLabel(id);
+                  }}
+                />
+              );
+            })}
+
+            <Section title="Views">
+              {accountViews.map(viewRow)}
+              <AddRow label="Add view" onClick={() => openViewEditor("new")} />
+            </Section>
+
+            {selectedAccountId ? (
+              <Section title="Labels">
+                {userLabelTree.map((node) => (
+                  <LabelNode
+                    key={node.key}
+                    node={node}
+                    depth={0}
+                    selectedLabelId={selectedLabelId}
+                    onSelectLabel={onSelectLabel}
+                  />
+                ))}
+                <AddRow label="Add label" onClick={() => setCreateLabelOpen(true)} />
+              </Section>
+            ) : null}
+
+            {accounts.length === 0 ? (
+              <AddRow label="Add Gmail account" onClick={() => void handleAddAccount()} />
+            ) : null}
           </>
         )}
-
-        {/* Views with rules for this account render their account slice. */}
-        {accountViews.length > 0 ? (
-          <SidebarListGroup
-            title="Views"
-            collapsible
-            defaultOpen
-            actions={
-              <Button
-                iconOnly
-                variant="transparent"
-                size="small"
-                aria-label="New view"
-                onClick={() => {
-                  void gmailApi.openSettings({ pane: "views", viewId: "new", mailbox: isCombined ? COMBINED_ACCOUNT_ID : selectedAccountId });
-                }}
-              >
-                <PlusIcon className="size-3.5" />
-              </Button>
-            }
-          >
-            {accountViews.map((view) => (
-              <CombinedViewRow
-                key={view.id}
-                view={view}
-                selected={selectedLabelId === view.id}
-                unreadCount={viewUnreadCounts[view.id] ?? 0}
-                onSelect={() => onSelectLabel(view.id)}
-                onDelete={() => void deleteView(view.id)}
-                onReset={() => void resetView(view.id)}
-                onEdit={() => {
-                  void gmailApi.openSettings({ pane: "views", viewId: view.id });
-                }}
-              />
-            ))}
-          </SidebarListGroup>
-        ) : null}
-
-        {/* User labels (rendered as a tree — Gmail nests labels via "/" in the name) */}
-        {selectedAccountId ? (
-          <SidebarListGroup
-            title="Labels"
-            collapsible
-            defaultOpen
-            actions={
-              <Button
-                iconOnly
-                variant="transparent"
-                size="small"
-                aria-label="New label"
-                onClick={() => setCreateLabelOpen(true)}
-              >
-                <PlusIcon className="size-3.5" />
-              </Button>
-            }
-          >
-            {userLabelTree.map((node) => renderLabelTreeNode(node, selectedLabelId, onSelectLabel))}
-          </SidebarListGroup>
-        ) : null}
-
-        {/* Add account fallback if no accounts */}
-        {accounts.length === 0 ? (
-          <SidebarListItem
-            icon={<PlusIcon className="size-4" />}
-            title="Add Gmail account"
-            className="hover:bg-control-subtle"
-            onClick={() => void handleAddAccount()}
-          />
-        ) : null}
-      </SidebarList>
-      )}
+      </div>
 
       <Dialog
         open={createLabelOpen}
@@ -598,6 +546,6 @@ export function AccountsSidebar({
           />
         </Field>
       </Dialog>
-    </Sidebar>
+    </div>
   );
 }

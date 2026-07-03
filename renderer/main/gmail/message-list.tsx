@@ -8,18 +8,9 @@ import {
   ContextMenuCheckboxItem,
   ContextMenuSeparator,
   ContextMenuSub,
-  ScrollArea,
-  Toolbar,
-  ToolbarRow,
-  ToolbarTitle,
-  ToolbarDescription,
-  ToolbarActions,
-  Button,
-  ToggleButton,
-  EmptyState,
-  Text,
 } from "@glaze/core/components";
 import { FlagIcon, ListFilterIcon } from "lucide-react";
+import { IconBtn, HintTooltip } from "./slack-ui";
 import {
   useMessages,
   useCombinedMessages,
@@ -266,12 +257,6 @@ function MessageRow({
   }, [selected]);
 
   const unread = message.threadUnread ?? message.unread;
-  // Selected rows sit on a solid accent block (Apple Mail-style); every text/icon
-  // color below is force-overridden to white via inline style so it stays legible
-  // regardless of the semantic (light/dark) color the row would otherwise use.
-  const onAccent = selected ? { color: "#fff" } : undefined;
-  const onAccentMuted = selected ? { color: "rgba(255,255,255,0.75)" } : undefined;
-  const onAccentFaint = selected ? { color: "rgba(255,255,255,0.65)" } : undefined;
 
   return (
     <div className="px-2">
@@ -282,75 +267,81 @@ function MessageRow({
         type="button"
         onClick={onSelect}
         className={[
-          "group w-full text-left rounded-lg px-3 py-2.5 my-0.5 flex items-start gap-3",
-          selected
-            ? "bg-accent"
-            : unread
-              ? "bg-accent/[0.06] hover:bg-accent/[0.12]"
-              : "hover:bg-control-subtle",
+          "group my-px flex w-full items-start gap-2.5 rounded-lg px-3 py-2 text-left transition-colors",
+          selected ? "bg-(--sk-selblue)" : "hover:bg-(--sk-hover)",
         ].join(" ")}
       >
-        <div className="flex flex-col min-w-0 flex-1 gap-0.5">
+        <div className="flex min-w-0 flex-1 flex-col gap-px">
           <div className="flex items-center justify-between gap-2">
-            <Text
-              variant={unread ? "small-strong" : "small"}
-              color={selected ? undefined : unread ? "primary" : "secondary"}
-              truncate
-              className="flex-1 min-w-0"
-              style={onAccent}
-            >
-              {message.fromName || message.fromEmail}
-            </Text>
-            <div className="flex items-center gap-1 shrink-0">
+            <span className="flex min-w-0 flex-1 items-center gap-1.5">
+              {unread && !selected ? (
+                <span className="size-2 shrink-0 rounded-full bg-(--sk-blue)" aria-hidden />
+              ) : null}
+              <span
+                className={[
+                  "min-w-0 truncate text-[15px] leading-snug",
+                  selected || unread ? "font-bold text-white" : "font-medium text-(--sk-text)",
+                ].join(" ")}
+              >
+                {message.fromName || message.fromEmail}
+              </span>
+            </span>
+            <div className="flex shrink-0 items-center gap-1.5">
               {combinedMeta ? (
-                <span className="flex items-center gap-1">
+                <span className="flex items-center gap-1 text-[11px]">
                   {combinedMeta.mailbox ? (
-                    <Text variant="mini" color={selected ? undefined : "secondary"} style={onAccentMuted}>
+                    <span className={selected ? "text-white/70" : "text-white/40"}>
                       {combinedMeta.mailbox} -
-                    </Text>
+                    </span>
                   ) : null}
-                  <Text
-                    variant="mini"
-                    className="font-medium"
-                    style={{ color: selected ? "rgba(255,255,255,0.95)" : combinedMeta.accountColor }}
+                  <span
+                    className="font-semibold"
+                    style={{
+                      color: selected ? "rgba(255,255,255,0.95)" : combinedMeta.accountColor,
+                    }}
                   >
                     {combinedMeta.accountName}
-                  </Text>
+                  </span>
                 </span>
               ) : null}
               {threadCount > 1 ? (
                 <span
                   className={[
-                    "shrink-0 rounded-pill px-1.5 text-mini tabular-nums",
-                    selected ? "bg-white/20 text-white" : "bg-control text-secondary",
+                    "rounded-full px-1.5 py-px text-[11px] font-semibold tabular-nums",
+                    selected ? "bg-white/25 text-white" : "bg-white/10 text-white/70",
                   ].join(" ")}
                 >
                   {threadCount}
                 </span>
               ) : null}
-              <Text
-                variant="mini"
-                color={selected ? undefined : "secondary"}
-                className="tabular-nums"
-                style={onAccentMuted}
+              <span
+                className={[
+                  "text-[11px] tabular-nums",
+                  selected ? "text-white/75" : "text-white/40",
+                ].join(" ")}
               >
                 {formatRelativeDate(message.date)}
-              </Text>
+              </span>
             </div>
           </div>
-          <Text
-            variant={unread ? "small-strong" : "small"}
-            color={selected ? undefined : unread ? "primary" : "secondary"}
-            truncate
-            style={onAccent}
+          <span
+            className={[
+              "truncate text-[14px] leading-snug",
+              selected ? "text-white/95" : unread ? "font-semibold text-white/90" : "text-white/60",
+            ].join(" ")}
           >
             {message.subject || "(no subject)"}
-          </Text>
-          <Text variant="mini" color={selected ? undefined : "tertiary"} truncate style={onAccentFaint}>
-            {message.snippet || " "}
-          </Text>
+          </span>
+          <span
+            className={[
+              "truncate text-[13px] leading-snug",
+              selected ? "text-white/70" : "text-white/40",
+            ].join(" ")}
+          >
+            {message.snippet || " "}
+          </span>
           {/* Fixed-height single-line chip strip so every row measures the same. */}
-          <div className="flex items-center gap-1 h-5 mt-0.5 overflow-hidden">
+          <div className="mt-0.5 flex h-5 items-center gap-1 overflow-hidden">
             {messageLabels.map((label) => (
               <LabelChip key={label.id} label={label} />
             ))}
@@ -361,13 +352,12 @@ function MessageRow({
           <button
             type="button"
             onClick={handleStarToggle}
-            className={[
-              "shrink-0 mt-0.5 transition-colors",
-              selected ? "text-white" : "text-tertiary hover:text-support-red",
-            ].join(" ")}
+            className="mt-0.5 shrink-0 transition-colors"
             aria-label="Unflag"
           >
-            <FlagIcon className={["size-4 fill-current", selected ? "text-white" : "text-support-red"].join(" ")} />
+            <FlagIcon
+              className={["size-4 fill-current", selected ? "text-white" : "text-(--red)"].join(" ")}
+            />
           </button>
         ) : null}
       </button>
@@ -671,105 +661,88 @@ export function MessageList({
   const isLoading = messagesQuery.isLoading;
 
   return (
-    <>
-    <ScrollArea
-      toolbar={
-        <Toolbar>
-          <ToolbarRow>
-            <div>
-              <ToolbarTitle>{mailboxTitle}</ToolbarTitle>
-              <ToolbarDescription>{formatMailboxSummary(mailboxTotal, mailboxUnread)}</ToolbarDescription>
-            </div>
-            <ToolbarActions>
-              <ToggleButton
-                iconOnly
-                size="small"
-                pressed={unreadOnly}
-                onPressedChange={setUnreadOnly}
-                aria-label={unreadOnly ? "Show all messages" : "Filter unread"}
-              >
-                <ListFilterIcon className="size-4.5" />
-              </ToggleButton>
-            </ToolbarActions>
-          </ToolbarRow>
-        </Toolbar>
-      }
-      className="h-full"
-    >
-      {isLoading ? (
-        <div className="flex flex-col gap-0">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="w-full px-3 py-2.5 flex items-start gap-3">
-              <div className="flex flex-col min-w-0 flex-1 gap-1.5">
-                <div className="h-3.5 w-32 rounded-pill bg-control animate-pulse" />
-                <div className="h-3 w-48 rounded-pill bg-control animate-pulse" />
-                <div className="h-3 w-40 rounded-pill bg-control animate-pulse" />
-              </div>
-            </div>
-          ))}
+    <div className="flex h-full min-w-0 flex-col">
+      {/* Header */}
+      <div className="drag-region flex h-[52px] shrink-0 items-center gap-2 border-b border-(--sk-border) px-4">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[16px] font-extrabold leading-tight text-white">
+            {mailboxTitle}
+          </div>
+          <div className="truncate text-[11px] leading-tight text-white/45">
+            {formatMailboxSummary(mailboxTotal, mailboxUnread)}
+          </div>
         </div>
-      ) : visibleMessages.length === 0 ? (
-        <EmptyState
-          title={unreadOnly ? "No unread messages" : "No messages"}
-          description={
-            unreadOnly
-              ? "Everything here has been read."
-              : searchQuery
-                ? "No messages match your search."
-                : "This label is empty."
-          }
-        />
-      ) : (
-        <>
-          {visibleMessages.map((message, i) => {
-            const isSelected = selectedMessageId === message.id;
-            const next = visibleMessages[i + 1];
-            const nextSelected = next ? selectedMessageId === next.id : false;
-            const hasDivider = i < visibleMessages.length - 1;
-            // Dividers adjacent to the selection go transparent instead of
-            // unmounting — removing the 1px element shifts every row below.
-            const dividerVisible = !isSelected && !nextSelected;
-            return (
-              <div key={`${message.accountId ?? accountId}:${message.id}`}>
-                <MessageRow
-                  message={message}
-                  selected={isSelected}
-                  onSelect={() => {
-                    console.log("[MessageList:selectMessage]", {
-                      messageId: message.id,
-                    });
-                    onSelectMessage(message.id, message.accountId ?? accountId);
-                  }}
-                  accountId={accountId}
-                  resolveLabel={resolveLabel}
-                  combinedMeta={resolveCombinedMeta(message, combined, accounts, resolveLabel)}
-                />
-                {hasDivider ? (
-                  <div
-                    className={[
-                      "h-px mx-5",
-                      dividerVisible ? "bg-separator" : "bg-transparent",
-                    ].join(" ")}
-                  />
-                ) : null}
+        <HintTooltip label={unreadOnly ? "Show all messages" : "Filter unread"}>
+          <IconBtn
+            label={unreadOnly ? "Show all messages" : "Filter unread"}
+            active={unreadOnly}
+            onClick={() => setUnreadOnly((o) => !o)}
+          >
+            <ListFilterIcon className="size-4" />
+          </IconBtn>
+        </HintTooltip>
+      </div>
+
+      <div className="sk-scroll min-h-0 flex-1 overflow-y-auto py-1.5">
+        {isLoading ? (
+          <div className="flex flex-col gap-0">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="flex w-full items-start gap-3 px-5 py-2.5">
+                <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                  <div className="h-3.5 w-32 animate-pulse rounded-full bg-white/10" />
+                  <div className="h-3 w-48 animate-pulse rounded-full bg-white/[0.07]" />
+                  <div className="h-3 w-40 animate-pulse rounded-full bg-white/[0.05]" />
+                </div>
               </div>
-            );
-          })}
-          {hasNextPage ? (
-            <div className="flex justify-center py-3">
-              <Button
-                variant="filled"
-                size="small"
-                onClick={handleLoadMore}
-                disabled={isFetchingNextPage}
-              >
-                {isFetchingNextPage ? "Loading..." : "Load more"}
-              </Button>
-            </div>
-          ) : null}
-        </>
-      )}
-    </ScrollArea>
+            ))}
+          </div>
+        ) : visibleMessages.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
+            <span className="text-[15px] font-bold text-white/80">
+              {unreadOnly ? "No unread messages" : "No messages"}
+            </span>
+            <span className="text-[13px] text-white/45">
+              {unreadOnly
+                ? "Everything here has been read."
+                : searchQuery
+                  ? "No messages match your search."
+                  : "This label is empty."}
+            </span>
+          </div>
+        ) : (
+          <>
+            {visibleMessages.map((message) => (
+              <MessageRow
+                key={`${message.accountId ?? accountId}:${message.id}`}
+                message={message}
+                selected={selectedMessageId === message.id}
+                onSelect={() => {
+                  console.log("[MessageList:selectMessage]", {
+                    messageId: message.id,
+                  });
+                  onSelectMessage(message.id, message.accountId ?? accountId);
+                }}
+                accountId={accountId}
+                resolveLabel={resolveLabel}
+                combinedMeta={resolveCombinedMeta(message, combined, accounts, resolveLabel)}
+              />
+            ))}
+            {hasNextPage ? (
+              <div className="flex justify-center py-3">
+                <button
+                  type="button"
+                  onClick={handleLoadMore}
+                  disabled={isFetchingNextPage}
+                  className="h-7 rounded-md bg-white/10 px-3 text-[13px] font-medium text-white/80 transition-colors hover:bg-white/15 disabled:opacity-50"
+                >
+                  {isFetchingNextPage ? "Loading..." : "Load more"}
+                </button>
+              </div>
+            ) : null}
+          </>
+        )}
+      </div>
+
       <LabelOverlay
         open={labelOverlay != null}
         onOpenChange={(o) => {
@@ -781,6 +754,6 @@ export function MessageList({
         currentLabelId={moveContextLabelId}
         onPick={handleOverlayPick}
       />
-    </>
+    </div>
   );
 }

@@ -22,8 +22,8 @@ export function SenderAvatar({
   return (
     <span
       className={[
-        "shrink-0 rounded-full flex items-center justify-center font-semibold select-none",
-        size === "sm" ? "size-6 text-[11px]" : "size-8 text-[13px]",
+        "shrink-0 rounded-lg flex items-center justify-center font-bold select-none",
+        size === "sm" ? "size-6 text-[11px] rounded-md" : "size-9 text-[15px]",
         className ?? "",
       ].join(" ")}
       style={{ backgroundColor: `hsl(${hue} 48% 52%)`, color: "#fff" }}
