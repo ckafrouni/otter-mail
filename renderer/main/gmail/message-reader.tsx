@@ -642,6 +642,9 @@ export function MessageReader({
 
   useEffect(() => {
     setDetailsOpen(false);
+    // Deselecting clears the auto-read guard so reopening the same message
+    // (e.g. after marking it unread) marks it read again.
+    if (!messageId) hasAutoMarked.current = null;
   }, [messageId]);
 
   // Seed which conversation cards start expanded: the last message, every

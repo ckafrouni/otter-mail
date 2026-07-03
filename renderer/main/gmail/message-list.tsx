@@ -64,6 +64,8 @@ type MessageListProps = {
   accounts: GmailAccount[];
   selectedMessageId: string | null;
   onSelectMessage: (messageId: string, accountId: string) => void;
+  /** Clears the selection (mark-unread returns to the list, Gmail-style). */
+  onDeselect: () => void;
   searchQuery: string;
   syncStatus: SyncStatus | null;
 };
@@ -241,10 +243,12 @@ function MessageRow({
   };
 
   // Keyboard selection (j/k) can land on a row outside the viewport — keep the
-  // selected row visible. "nearest" makes this a no-op for click selection.
+  // selected row visible. "nearest" makes this a no-op for click selection;
+  // "instant" keeps held-down j/k from queueing smooth-scroll animations that
+  // continue after the key is released.
   const rowRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (selected) rowRef.current?.scrollIntoView({ block: "nearest" });
+    if (selected) rowRef.current?.scrollIntoView({ block: "nearest", behavior: "instant" });
   }, [selected]);
 
   const unread = message.threadUnread ?? message.unread;
@@ -567,6 +571,9 @@ export function MessageList({
             messageId: selectedRow.id,
             addLabelIds: ["UNREAD"],
           });
+          // Gmail returns to the list on mark-unread; also keeps the open
+          // reader from immediately re-marking it read.
+          onDeselect();
           break;
         }
         case "I": {

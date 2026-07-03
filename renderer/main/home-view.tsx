@@ -312,6 +312,10 @@ export function HomeView() {
               accounts={accounts}
               selectedMessageId={selectedMessageId}
               onSelectMessage={handleSelectMessage}
+              onDeselect={() => {
+                setSelectedMessageId(null);
+                setReaderAccountId(null);
+              }}
               searchQuery={searchQuery}
               syncStatus={syncStatus}
             />
