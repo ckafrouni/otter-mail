@@ -22,6 +22,7 @@ import {
   ReplyAllIcon,
   SendHorizontalIcon,
   Trash2Icon,
+  XIcon,
 } from "lucide-react";
 import {
   useAccounts,
@@ -617,31 +618,132 @@ function computeReplyAll(
   return { to: to.join(", "), cc: cc.length > 0 ? cc.join(", ") : undefined };
 }
 
-function ReplyBox({
+type InlineMode = "reply" | "replyAll" | "forward";
+
+const INLINE_MODE_LABEL: Record<InlineMode, string> = {
+  reply: "Reply",
+  replyAll: "Reply all",
+  forward: "Forward",
+};
+
+/** Reply-to-sender recipients for the latest message. */
+function computeReply(
+  last: GmailMessageSummary,
+  ownEmail: string,
+): { to: string; cc: string | undefined } {
+  const fromSelf = last.fromEmail.toLowerCase() === ownEmail.toLowerCase();
+  // Replying to your own message targets its recipients instead of yourself.
+  return { to: fromSelf ? last.to : last.fromEmail, cc: undefined };
+}
+
+function quotedReplyText(source: GmailMessageSummary & { bodyText?: string | null }): string {
+  return `\n\n---\nOn ${formatFullDate(source.date)}, ${source.fromName || source.fromEmail} wrote:\n${source.bodyText ?? ""}`;
+}
+
+function forwardBlock(source: GmailMessageSummary & { bodyText?: string | null }): string {
+  const fromDisplay = source.fromName
+    ? `${source.fromName} <${source.fromEmail}>`
+    : source.fromEmail;
+  return `\n\n---------- Forwarded message ----------\nFrom: ${fromDisplay}\nDate: ${formatFullDate(source.date)}\nSubject: ${source.subject}\nTo: ${source.to}\n\n${source.bodyText ?? ""}`;
+}
+
+/**
+ * The in-thread composer: reply, reply-all, or forward the latest message
+ * without leaving the conversation. The pen button lifts the draft into the
+ * full ComposeDialog (Bcc, extra attachments, subject edits).
+ */
+function InlineComposer({
   accountId,
+  mode,
   lastMessage,
-  replySubject,
+  baseSubject,
   threadId,
+  onClose,
   onExpand,
 }: {
   accountId: string;
+  mode: InlineMode;
   lastMessage: GmailMessageSummary;
-  replySubject: string;
+  baseSubject: string;
   threadId: string;
-  onExpand: (draftBody: string) => void;
+  onClose: () => void;
+  onExpand: (state: ComposeState) => void;
 }) {
   const [text, setText] = useState("");
+  const [to, setTo] = useState("");
+  const [cc, setCc] = useState("");
+  const [ccVisible, setCcVisible] = useState(false);
+  const recipientsDirty = useRef(false);
+  // null = still fetching the original files (forward only).
+  const [forwardAttachments, setForwardAttachments] = useState<ComposeAttachment[] | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const toRef = useRef<HTMLInputElement>(null);
   const sendMessage = useSendMessage();
   const accountsQuery = useAccounts();
-  // The latest message's detail carries its Cc line (summaries don't); it is
-  // usually already cached since the last message renders expanded.
+  // The latest message's detail carries its Cc line and body text (summaries
+  // don't); usually already cached since the last message renders expanded.
   const lastDetailQuery = useMessage(accountId, lastMessage.id);
+  const lastDetail = lastDetailQuery.data;
 
-  // Editing state resets when switching conversations.
+  const ownEmail = accountsQuery.data?.find((a) => a.id === accountId)?.email ?? "";
+
+  // Prefill recipients per mode; refine once the detail arrives, unless the
+  // user already edited the fields.
   useEffect(() => {
-    setText("");
-  }, [threadId]);
+    if (recipientsDirty.current) return;
+    const source = lastDetail ?? lastMessage;
+    if (mode === "forward") {
+      setTo("");
+      setCc("");
+      setCcVisible(false);
+      return;
+    }
+    const r = mode === "reply" ? computeReply(source, ownEmail) : computeReplyAll(source, ownEmail);
+    setTo(r.to);
+    setCc(r.cc ?? "");
+    setCcVisible(!!r.cc);
+  }, [mode, lastMessage, lastDetail, ownEmail]);
+
+  // Forward carries the original attachments along.
+  useEffect(() => {
+    if (mode !== "forward" || !lastDetail) {
+      setForwardAttachments(mode === "forward" ? null : []);
+      return;
+    }
+    if (lastDetail.attachments.length === 0) {
+      setForwardAttachments([]);
+      return;
+    }
+    let cancelled = false;
+    setForwardAttachments(null);
+    void (async () => {
+      try {
+        const out: ComposeAttachment[] = [];
+        for (const att of lastDetail.attachments) {
+          const data = await gmailApi.getAttachmentData({
+            accountId,
+            messageId: lastMessage.id,
+            attachmentId: att.id,
+          });
+          out.push({ name: att.filename, mimeType: att.mimeType, size: data.size, base64: data.base64 });
+        }
+        if (!cancelled) setForwardAttachments(out);
+      } catch {
+        if (!cancelled) {
+          setForwardAttachments([]);
+          toast.error("Could not load the original attachments");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, accountId, lastMessage.id, lastDetail]);
+
+  useEffect(() => {
+    if (mode === "forward") toRef.current?.focus();
+    else textareaRef.current?.focus();
+  }, [mode]);
 
   const autoGrow = () => {
     const el = textareaRef.current;
@@ -650,38 +752,132 @@ function ReplyBox({
     el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
   };
 
-  const canSend = text.trim().length > 0 && !sendMessage.isPending;
+  const subject =
+    mode === "forward"
+      ? baseSubject.startsWith("Fwd:")
+        ? baseSubject
+        : `Fwd: ${baseSubject}`
+      : baseSubject.startsWith("Re:")
+        ? baseSubject
+        : `Re: ${baseSubject}`;
+
+  const hasRecipient = splitAddressList(to).some((e) => parseAddressEntry(e).email.includes("@"));
+  const forwardReady = mode !== "forward" || (forwardAttachments != null && lastDetail != null);
+  const canSend =
+    !sendMessage.isPending &&
+    hasRecipient &&
+    forwardReady &&
+    (mode === "forward" || text.trim().length > 0);
 
   const handleSend = () => {
     if (!canSend) return;
-    const ownEmail = accountsQuery.data?.find((a) => a.id === accountId)?.email ?? "";
-    const source = lastDetailQuery.data ?? lastMessage;
-    const { to, cc } = computeReplyAll(source, ownEmail);
-    const body = text;
-    console.log("[MessageReader:inlineReply]", { threadId, to });
-    setText("");
+    const body =
+      mode === "forward" ? `${text}${forwardBlock(lastDetail ?? lastMessage)}` : text;
+    console.log("[MessageReader:inlineSend]", { mode, threadId });
     sendMessage
       .mutateAsync({
         accountId,
         to,
-        cc,
-        subject: replySubject,
+        cc: cc.trim() || undefined,
+        subject,
         body,
-        threadId,
-        replyToMessageId: lastMessage.id,
+        ...(mode === "forward"
+          ? {
+              attachments:
+                forwardAttachments && forwardAttachments.length > 0
+                  ? forwardAttachments
+                  : undefined,
+            }
+          : { threadId, replyToMessageId: lastMessage.id }),
       })
-      .catch(() => {
-        toast.error("Could not send the reply");
-        setText(body);
-      });
+      .then(onClose, () => toast.error("Could not send the message"));
+  };
+
+  const handleExpand = () => {
+    const source = lastDetail ?? lastMessage;
+    const quoted = mode === "forward" ? forwardBlock(source) : quotedReplyText(source);
+    onExpand({
+      title: INLINE_MODE_LABEL[mode],
+      prefill: {
+        to,
+        cc: cc.trim() || undefined,
+        subject,
+        body: `${text}${quoted}`,
+        attachments:
+          mode === "forward" && forwardAttachments && forwardAttachments.length > 0
+            ? forwardAttachments
+            : undefined,
+      },
+      replyTo: mode === "forward" ? undefined : { threadId, messageId: lastMessage.id },
+    });
   };
 
   const senderFirstName =
     (lastMessage.fromName || lastMessage.fromEmail).split(" ")[0] || "thread";
+  const placeholder =
+    mode === "reply"
+      ? `Reply to ${senderFirstName}…`
+      : mode === "replyAll"
+        ? "Reply to everyone…"
+        : "Add a note (optional)…";
+
+  const recipientInput =
+    "min-w-0 flex-1 bg-transparent text-[13px] text-(--sk-strong) outline-none placeholder:text-(--sk-faint)";
 
   return (
-    <div className="shrink-0 px-5 pb-4 pt-1">
-      <div className="rounded-lg border border-(--sk-outline) bg-(--sk-panel) focus-within:border-(--sk-outline-hover)">
+    <div className="shrink-0 px-5 pb-4 pt-1" data-inline-compose="">
+      <div
+        className="rounded-lg border border-(--sk-outline) bg-(--sk-panel) focus-within:border-(--sk-outline-hover)"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            handleSend();
+          }
+        }}
+      >
+        <div className="flex items-center gap-2 border-b border-(--sk-border) px-3 py-1.5">
+          <span className="shrink-0 rounded bg-(--sk-ctl) px-1.5 py-0.5 text-[11px] font-bold text-(--sk-muted)">
+            {INLINE_MODE_LABEL[mode]}
+          </span>
+          <span className="shrink-0 text-[12px] text-(--sk-faint)">To</span>
+          <input
+            ref={toRef}
+            value={to}
+            onChange={(e) => {
+              recipientsDirty.current = true;
+              setTo(e.target.value);
+            }}
+            placeholder="recipient@example.com"
+            aria-label="To"
+            className={recipientInput}
+          />
+          {!ccVisible ? (
+            <button
+              type="button"
+              onClick={() => setCcVisible(true)}
+              className="shrink-0 text-[11px] text-(--sk-faint) hover:text-(--sk-strong)"
+            >
+              Cc
+            </button>
+          ) : null}
+          <IconBtn label="Discard" className="size-6" onClick={onClose}>
+            <XIcon className="size-3.5" />
+          </IconBtn>
+        </div>
+        {ccVisible ? (
+          <div className="flex items-center gap-2 border-b border-(--sk-border) px-3 py-1.5">
+            <span className="shrink-0 text-[12px] text-(--sk-faint)">Cc</span>
+            <input
+              value={cc}
+              onChange={(e) => {
+                recipientsDirty.current = true;
+                setCc(e.target.value);
+              }}
+              aria-label="Cc"
+              className={recipientInput}
+            />
+          </div>
+        ) : null}
         <textarea
           ref={textareaRef}
           value={text}
@@ -690,38 +886,32 @@ function ReplyBox({
             setText(e.target.value);
             autoGrow();
           }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-              e.preventDefault();
-              handleSend();
-            }
-          }}
-          placeholder={`Reply to ${senderFirstName}…`}
-          aria-label="Reply"
+          placeholder={placeholder}
+          aria-label={INLINE_MODE_LABEL[mode]}
           className="sk-scroll max-h-48 w-full resize-none bg-transparent px-3 pt-2.5 text-[15px] leading-relaxed text-(--sk-strong) outline-none placeholder:text-(--sk-faint)"
         />
         <div className="flex items-center gap-1 px-2 pb-1.5">
-          <HintTooltip label="Open full composer" hint="Cc, attachments…">
-            <IconBtn
-              label="Open full composer"
-              className="size-7"
-              onClick={() => {
-                onExpand(text);
-                setText("");
-              }}
-            >
+          <HintTooltip label="Open full composer" hint="Bcc, attachments…">
+            <IconBtn label="Open full composer" className="size-7" onClick={handleExpand}>
               <PenLineIcon className="size-3.5" />
             </IconBtn>
           </HintTooltip>
-          <span className="flex-1" />
-          {text.trim() ? (
-            <span className="pr-1 text-[11px] text-(--sk-faint)">⌘↩ to send</span>
+          {mode === "forward" ? (
+            <span className="pl-1 text-[11px] text-(--sk-faint)">
+              {forwardAttachments == null
+                ? "Loading attachments…"
+                : forwardAttachments.length > 0
+                  ? `${forwardAttachments.length} attachment${forwardAttachments.length === 1 ? "" : "s"} included`
+                  : null}
+            </span>
           ) : null}
+          <span className="flex-1" />
+          {canSend ? <span className="pr-1 text-[11px] text-(--sk-faint)">⌘↩ to send</span> : null}
           <button
             type="button"
             onClick={handleSend}
             disabled={!canSend}
-            aria-label="Send reply"
+            aria-label="Send"
             className="flex h-7 w-9 items-center justify-center rounded-md bg-(--sk-green) text-white hover:brightness-110 disabled:bg-(--sk-ctl) disabled:text-(--sk-faint)"
           >
             <SendHorizontalIcon className="size-4" />
@@ -729,6 +919,31 @@ function ReplyBox({
         </div>
       </div>
     </div>
+  );
+}
+
+/** Gmail-style thread-footer action (shown while the composer is hidden). */
+function ThreadActionButton({
+  icon,
+  label,
+  hint,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  hint: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex h-8 items-center gap-1.5 rounded-lg border border-(--sk-border) px-3 text-[13px] font-medium text-(--sk-muted) hover:bg-(--sk-hover) hover:text-(--sk-strong)"
+    >
+      {icon}
+      {label}
+      <span className="text-[11px] text-(--sk-faint)">{hint}</span>
+    </button>
   );
 }
 
@@ -770,7 +985,6 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
 
   const messageQuery = useMessage(accountId, messageId);
   const labelsQuery = useLabels(accountId);
-  const accountsQuery = useAccounts();
   const modifyMessage = useModifyMessage();
   const trashMessage = useTrashMessage();
   const modifyThread = useModifyThread();
@@ -784,9 +998,31 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
   const isThread = threadMessages.length > 1;
 
   const [compose, setCompose] = useState<ComposeState | null>(null);
-  const [forwardPending, setForwardPending] = useState(false);
+  const [inline, setInline] = useState<InlineMode | null>(null);
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set());
   const seededRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    setInline(null);
+  }, [messageId]);
+
+  // Escape closes the inline composer before anything else: registered in the
+  // capture phase so home-view's Escape-deselects-message listener never fires
+  // while a draft is open (dialogs keep their own Escape handling).
+  const inlineRef = useRef<InlineMode | null>(null);
+  inlineRef.current = inline;
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || !inlineRef.current) return;
+      const el = e.target as Element | null;
+      if (el && typeof el.closest === "function" && el.closest('[role="dialog"]')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setInline(null);
+    };
+    window.addEventListener("keydown", down, true);
+    return () => window.removeEventListener("keydown", down, true);
+  }, []);
 
   // Seed which conversation rows start expanded: the last message, every
   // unread one, and the opened message itself (differs when opened via search).
@@ -912,85 +1148,19 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
     void trashMessage.mutateAsync({ accountId, messageId });
   };
 
-  const replySubject = message.subject.startsWith("Re:")
-    ? message.subject
-    : `Re: ${message.subject}`;
-  const quotedReplyBody = `\n\n---\nOn ${formatFullDate(message.date)}, ${message.fromName || message.fromEmail} wrote:\n${message.bodyText ?? ""}`;
-  const replyTarget = { threadId: message.threadId || message.id, messageId: message.id };
-
   const handleReply = () => {
     console.log("[MessageReader:reply]", { messageId });
-    setCompose({
-      title: "Reply",
-      prefill: { to: message.fromEmail, subject: replySubject, body: quotedReplyBody },
-      replyTo: replyTarget,
-    });
+    setInline("reply");
   };
 
   const handleReplyAll = () => {
     console.log("[MessageReader:replyAll]", { messageId });
-    const ownEmail =
-      accountsQuery.data?.find((a) => a.id === accountId)?.email.toLowerCase() ?? "";
-    const seen = new Set<string>([ownEmail, message.fromEmail.toLowerCase()]);
-    const ccEntries: string[] = [];
-    const recipients = [message.to, message.cc ?? ""].filter(Boolean).join(",");
-    for (const entry of splitAddressList(recipients)) {
-      const email = parseAddressEntry(entry).email.toLowerCase();
-      if (!email || seen.has(email)) continue;
-      seen.add(email);
-      ccEntries.push(entry);
-    }
-    setCompose({
-      title: "Reply All",
-      prefill: {
-        to: message.fromEmail,
-        cc: ccEntries.join(", ") || undefined,
-        subject: replySubject,
-        body: quotedReplyBody,
-      },
-      replyTo: replyTarget,
-    });
+    setInline("replyAll");
   };
 
   const handleForward = () => {
     console.log("[MessageReader:forward]", { messageId });
-    const fromDisplay = message.fromName
-      ? `${message.fromName} <${message.fromEmail}>`
-      : message.fromEmail;
-    const forwardBody = `\n\n---------- Forwarded message ----------\nFrom: ${fromDisplay}\nDate: ${formatFullDate(message.date)}\nSubject: ${message.subject}\nTo: ${message.to}\n\n${message.bodyText ?? ""}`;
-    void (async () => {
-      setForwardPending(true);
-      try {
-        const attachments: ComposeAttachment[] = [];
-        for (const att of message.attachments) {
-          const data = await gmailApi.getAttachmentData({
-            accountId,
-            messageId: message.id,
-            attachmentId: att.id,
-          });
-          attachments.push({
-            name: att.filename,
-            mimeType: att.mimeType,
-            size: data.size,
-            base64: data.base64,
-          });
-        }
-        setCompose({
-          title: "Forward",
-          prefill: {
-            subject: message.subject.startsWith("Fwd:")
-              ? message.subject
-              : `Fwd: ${message.subject}`,
-            body: forwardBody,
-            attachments: attachments.length > 0 ? attachments : undefined,
-          },
-        });
-      } catch {
-        toast.error("Could not load the original attachments");
-      } finally {
-        setForwardPending(false);
-      }
-    })();
+    setInline("forward");
   };
 
   const handleDownloadAttachment: DownloadAttachment = (
@@ -1095,7 +1265,7 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
             </IconBtn>
           </HintTooltip>
           <HintTooltip label="Forward" hint="F">
-            <IconBtn label="Forward" onClick={handleForward} disabled={forwardPending}>
+            <IconBtn label="Forward" onClick={handleForward}>
               <ForwardIcon className="size-4" />
             </IconBtn>
           </HintTooltip>
@@ -1176,25 +1346,44 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
           })}
         </div>
 
-        {/* Slack-style inline reply (sends a reply-all into the thread) */}
+        {/* In-thread composer, hidden until replying/forwarding */}
         {lastRow ? (
-          <ReplyBox
-            accountId={accountId}
-            lastMessage={lastRow}
-            replySubject={replySubject}
-            threadId={message.threadId || message.id}
-            onExpand={(draftBody) => {
-              const ownEmail =
-                accountsQuery.data?.find((a) => a.id === accountId)?.email ?? "";
-              const source = lastRow;
-              const { to, cc } = computeReplyAll(source, ownEmail);
-              setCompose({
-                title: "Reply All",
-                prefill: { to, cc, subject: replySubject, body: draftBody || quotedReplyBody },
-                replyTo: { threadId: message.threadId || message.id, messageId: lastRow.id },
-              });
-            }}
-          />
+          inline ? (
+            <InlineComposer
+              key={inline}
+              accountId={accountId}
+              mode={inline}
+              lastMessage={lastRow}
+              baseSubject={message.subject}
+              threadId={message.threadId || message.id}
+              onClose={() => setInline(null)}
+              onExpand={(state) => {
+                setCompose(state);
+                setInline(null);
+              }}
+            />
+          ) : (
+            <div className="flex shrink-0 items-center gap-2 px-5 pb-4 pt-1">
+              <ThreadActionButton
+                icon={<ReplyIcon className="size-3.5" />}
+                label="Reply"
+                hint="R"
+                onClick={handleReply}
+              />
+              <ThreadActionButton
+                icon={<ReplyAllIcon className="size-3.5" />}
+                label="Reply all"
+                hint="A"
+                onClick={handleReplyAll}
+              />
+              <ThreadActionButton
+                icon={<ForwardIcon className="size-3.5" />}
+                label="Forward"
+                hint="F"
+                onClick={handleForward}
+              />
+            </div>
+          )
         ) : null}
       </div>
 
