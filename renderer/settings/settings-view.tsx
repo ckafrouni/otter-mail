@@ -28,7 +28,6 @@ import {
   SidebarListItemTitle,
   SplitView,
   Toolbar,
-  ToolbarContent,
   ToolbarTitle,
   Field,
   FieldSet,
@@ -42,7 +41,7 @@ import {
 } from "@glaze/core/components";
 import type { NativeThemeInfo } from "@glaze/core/ipc";
 import { gmailApi, type SettingsPane } from "../main/gmail/api";
-import { useAccounts, useUpdateAccount } from "../main/gmail/hooks";
+import { useAccounts, useAddAccount, useRemoveAccount, useUpdateAccount } from "../main/gmail/hooks";
 import { useMailViews } from "../main/gmail/custom-views";
 import { ViewEditorForm } from "../main/gmail/view-editor-form";
 import { ACCOUNT_COLOR_PALETTE, getAccountColor, getAccountDisplayName } from "../main/gmail/account-style";
@@ -82,6 +81,8 @@ type Loc = { pane: SettingsPane; viewId: string | null };
 
 function AccountRow({ account }: { account: GmailAccount }) {
   const updateAccount = useUpdateAccount();
+  const removeAccount = useRemoveAccount();
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [name, setName] = useState(getAccountDisplayName(account));
 
   useEffect(() => {
@@ -129,6 +130,33 @@ function AccountRow({ account }: { account: GmailAccount }) {
             </button>
           ))}
         </div>
+      </div>
+      <div className="shrink-0 pt-1">
+        {confirmingRemove ? (
+          <div className="flex items-center gap-1.5">
+            <Button variant="filled" size="small" onClick={() => setConfirmingRemove(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="filled"
+              size="small"
+              className="text-support-red"
+              disabled={removeAccount.isPending}
+              onClick={() => void removeAccount.mutateAsync(account.id)}
+            >
+              {removeAccount.isPending ? "Removing…" : "Confirm"}
+            </Button>
+          </div>
+        ) : (
+          <Button
+            variant="transparent"
+            size="small"
+            className="text-support-red"
+            onClick={() => setConfirmingRemove(true)}
+          >
+            Remove…
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -233,6 +261,7 @@ export function SettingsView() {
   const { views } = useMailViews();
   const accountsQuery = useAccounts();
   const accounts = accountsQuery.data ?? [];
+  const addAccount = useAddAccount();
 
   const [themeInfo, setThemeInfo] = useState<NativeThemeInfo | null>(null);
 
@@ -442,7 +471,9 @@ export function SettingsView() {
       <ScrollArea
         toolbar={
           <Toolbar>
-            <ToolbarContent>
+            {/* ToolbarContent stacks vertically — a plain row keeps the title
+                beside the navigation buttons, like System Settings. */}
+            <div className="flex items-center gap-3 min-w-0">
               <NavigationButtonGroup
                 canGoBack={nav.index > 0}
                 canGoForward={nav.index < nav.stack.length - 1}
@@ -450,7 +481,7 @@ export function SettingsView() {
                 onGoForward={goForward}
               />
               <ToolbarTitle>{paneTitle}</ToolbarTitle>
-            </ToolbarContent>
+            </div>
           </Toolbar>
         }
       >
@@ -502,17 +533,29 @@ export function SettingsView() {
           ) : null}
 
           {loc.pane === "accounts" ? (
-            <FieldSet title="Accounts">
-              {accounts.length > 0 ? (
-                <div className="flex flex-col divide-y divide-separator">
-                  {accounts.map((account) => (
-                    <AccountRow key={account.id} account={account} />
-                  ))}
-                </div>
-              ) : (
-                <Text color="secondary">Connect an account from the sidebar to manage it here.</Text>
-              )}
-            </FieldSet>
+            <div className="flex flex-col gap-3">
+              <FieldSet title="Accounts">
+                {accounts.length > 0 ? (
+                  <div className="flex flex-col divide-y divide-separator">
+                    {accounts.map((account) => (
+                      <AccountRow key={account.id} account={account} />
+                    ))}
+                  </div>
+                ) : (
+                  <Text color="secondary">No accounts yet — add one to start syncing mail.</Text>
+                )}
+              </FieldSet>
+              <Button
+                variant="filled"
+                size="small"
+                className="self-start"
+                disabled={addAccount.isPending}
+                onClick={() => void addAccount.mutateAsync().catch(() => {})}
+              >
+                <PlusIcon className="size-4" />
+                {addAccount.isPending ? "Waiting for Google…" : "Add account…"}
+              </Button>
+            </div>
           ) : null}
 
           {loc.pane === "views" ? (

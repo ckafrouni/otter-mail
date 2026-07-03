@@ -41,7 +41,6 @@ import {
   useAccounts,
   useLabels,
   useAddAccount,
-  useRemoveAccount,
   useCreateLabel,
   useViewUnreadCounts,
 } from "./hooks";
@@ -204,7 +203,6 @@ export function AccountsSidebar({
   const accountsQuery = useAccounts();
   const labelsQuery = useLabels(isCombined ? null : selectedAccountId);
   const addAccount = useAddAccount();
-  const removeAccount = useRemoveAccount();
   const createLabel = useCreateLabel();
 
   const [createLabelOpen, setCreateLabelOpen] = useState(false);
@@ -229,15 +227,6 @@ export function AccountsSidebar({
       onSelectAccount(account.id);
     } catch {
       // error surfaced by mutation
-    }
-  };
-
-  const handleRemoveAccount = async (accountId: string) => {
-    console.log("[AccountsSidebar:removeAccount]", { accountId });
-    await removeAccount.mutateAsync(accountId);
-    if (accountId === selectedAccountId && accounts.length > 1) {
-      const next = accounts.find((a) => a.id !== accountId);
-      if (next) onSelectAccount(next.id);
     }
   };
 
@@ -344,21 +333,10 @@ export function AccountsSidebar({
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />
-            {accounts.map((account) => (
-              <DropdownMenuItem
-                key={`remove-${account.id}`}
-                color="red"
-                onSelect={() => void handleRemoveAccount(account.id)}
-              >
-                Remove {account.email}
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
             <DropdownMenuItem
-              icon="plus"
-              onSelect={() => void handleAddAccount()}
+              onSelect={() => void gmailApi.openSettings({ pane: "accounts" })}
             >
-              Add account
+              Manage accounts…
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
