@@ -17,6 +17,8 @@ import {
   COMBINED_ACCOUNT_ID,
   INBOX_VIEW_ID,
   SENT_VIEW_ID,
+  STARRED_VIEW_ID,
+  DRAFTS_VIEW_ID,
 } from "./gmail/custom-views";
 
 export function HomeView() {
@@ -80,8 +82,8 @@ export function HomeView() {
         };
         if (e.key === "i") return go(combined ? INBOX_VIEW_ID : "INBOX");
         if (e.key === "t") return go(combined ? SENT_VIEW_ID : "SENT");
-        if (e.key === "s" && !combined) return go("STARRED");
-        if (e.key === "d" && !combined) return go("DRAFT");
+        if (e.key === "s") return go(combined ? STARRED_VIEW_ID : "STARRED");
+        if (e.key === "d") return go(combined ? DRAFTS_VIEW_ID : "DRAFT");
         return;
       }
 

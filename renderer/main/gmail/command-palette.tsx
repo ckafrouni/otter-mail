@@ -14,12 +14,14 @@ import {
   DialogTitle,
 } from "@glaze/core/components";
 import {
+  FileIcon,
   InboxIcon,
   LayersIcon,
   PencilIcon,
   PlusIcon,
   SendIcon,
   SettingsIcon,
+  StarIcon,
 } from "lucide-react";
 import { useDebouncedValue, useSearchMessages } from "./hooks";
 import { gmailApi } from "./api";
@@ -42,7 +44,9 @@ type StaticCommand = { id: string; label: string; icon: ReactNode; run: () => vo
 
 function viewCommandIcon(view: MailView): ReactNode {
   if (view.kind === "inbox") return <InboxIcon />;
+  if (view.kind === "starred") return <StarIcon />;
   if (view.kind === "sent") return <SendIcon />;
+  if (view.kind === "drafts") return <FileIcon />;
   return <LayersIcon />;
 }
 

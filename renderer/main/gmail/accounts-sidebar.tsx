@@ -75,7 +75,9 @@ function labelIcon(label?: GmailLabel): React.ReactNode {
 
 function viewIcon(view: MailView): React.ReactNode {
   if (view.kind === "inbox") return <InboxIcon className="size-4 shrink-0" />;
+  if (view.kind === "starred") return <StarIcon className="size-4 shrink-0" />;
   if (view.kind === "sent") return <SendIcon className="size-4 shrink-0" />;
+  if (view.kind === "drafts") return <FileIcon className="size-4 shrink-0" />;
   return <LayersIcon className="size-4 shrink-0 text-tertiary" />;
 }
 

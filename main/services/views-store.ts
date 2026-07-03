@@ -13,12 +13,24 @@ import { app } from "@glaze/core/backend";
 import type { MailView, ViewRule } from "../gmail/types.js";
 
 export const INBOX_VIEW_ID = "__inbox__";
+export const STARRED_VIEW_ID = "__starred__";
 export const SENT_VIEW_ID = "__sent__";
+export const DRAFTS_VIEW_ID = "__drafts__";
 
 const DEFAULT_VIEWS: MailView[] = [
   { id: INBOX_VIEW_ID, name: "Inbox", kind: "inbox", rules: null },
+  { id: STARRED_VIEW_ID, name: "Starred", kind: "starred", rules: null },
   { id: SENT_VIEW_ID, name: "Sent", kind: "sent", rules: null },
+  { id: DRAFTS_VIEW_ID, name: "Drafts", kind: "drafts", rules: null },
 ];
+
+const BUILTIN_IDS = new Set(DEFAULT_VIEWS.map((v) => v.id));
+const BUILTIN_NAMES: Record<string, string> = {
+  inbox: "Inbox",
+  starred: "Starred",
+  sent: "Sent",
+  drafts: "Drafts",
+};
 
 async function getViewsPath(): Promise<string> {
   const userDataPath = app.getPath("userData");
@@ -27,10 +39,11 @@ async function getViewsPath(): Promise<string> {
 }
 
 function withDefaults(views: MailView[]): MailView[] {
-  const inbox = views.find((v) => v.id === INBOX_VIEW_ID) ?? DEFAULT_VIEWS[0];
-  const sent = views.find((v) => v.id === SENT_VIEW_ID) ?? DEFAULT_VIEWS[1];
-  const custom = views.filter((v) => v.id !== INBOX_VIEW_ID && v.id !== SENT_VIEW_ID);
-  return [inbox, sent, ...custom];
+  const builtins = DEFAULT_VIEWS.map(
+    (fallback) => views.find((v) => v.id === fallback.id) ?? fallback,
+  );
+  const custom = views.filter((v) => !BUILTIN_IDS.has(v.id));
+  return [...builtins, ...custom];
 }
 
 async function readViews(): Promise<MailView[]> {
@@ -86,7 +99,7 @@ export async function saveView(input: { id?: string; name: string; rules: ViewRu
 
 export async function deleteView(id: string): Promise<void> {
   // Built-in views can't be deleted (reset instead).
-  if (id === INBOX_VIEW_ID || id === SENT_VIEW_ID) return;
+  if (BUILTIN_IDS.has(id)) return;
   const views = await readViews();
   await writeViews(views.filter((v) => v.id !== id));
 }
@@ -95,8 +108,8 @@ export async function resetView(id: string): Promise<void> {
   const views = await readViews();
   await writeViews(
     views.map((v) =>
-      v.id === id && (v.kind === "inbox" || v.kind === "sent")
-        ? { ...v, name: v.kind === "inbox" ? "Inbox" : "Sent", rules: null }
+      v.id === id && v.kind !== "custom"
+        ? { ...v, name: BUILTIN_NAMES[v.kind] ?? v.name, rules: null }
         : v,
     ),
   );

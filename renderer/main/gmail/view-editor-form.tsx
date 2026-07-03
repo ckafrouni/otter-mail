@@ -199,7 +199,7 @@ export function ViewEditorForm({ view, accounts, onSave, onDelete, onReset, onDo
   const [name, setName] = useState(view?.name ?? "");
   const [picks, setPicks] = useState<Picks>(() => rulesToPicks(initialRules));
 
-  const isDefault = view?.kind === "inbox" || view?.kind === "sent";
+  const isDefault = view != null && view.kind !== "custom";
 
   const update = (accountId: string, fn: (p: AccountPicks) => AccountPicks) => {
     setPicks((prev) => ({ ...prev, [accountId]: fn(prev[accountId] ?? { allOf: [], noneOf: [] }) }));

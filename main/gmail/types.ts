@@ -98,7 +98,7 @@ export interface ViewRule {
   noneOf: string[];
 }
 
-export type ViewKind = "inbox" | "sent" | "custom";
+export type ViewKind = "inbox" | "starred" | "sent" | "drafts" | "custom";
 
 /** A Combined-mailbox view. null rules = the dynamic built-in default. */
 export interface MailView {

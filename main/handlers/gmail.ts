@@ -398,7 +398,11 @@ export function registerGmailHandlers(): void {
           (v) =>
             typeof v?.id === "string" &&
             typeof v?.name === "string" &&
-            (v.kind === "inbox" || v.kind === "sent" || v.kind === "custom"),
+            (v.kind === "inbox" ||
+              v.kind === "starred" ||
+              v.kind === "sent" ||
+              v.kind === "drafts" ||
+              v.kind === "custom"),
         )
         .map(
           (v): MailView => ({

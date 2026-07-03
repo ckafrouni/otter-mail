@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import {
   ChevronRightIcon,
+  FileIcon,
   InboxIcon,
   KeyRoundIcon,
   LayersIcon,
   PlusIcon,
   SendIcon,
   SettingsIcon,
+  StarIcon,
   Trash2Icon,
   UsersIcon,
 } from "lucide-react";
@@ -172,13 +174,22 @@ function AccountRow({ account }: { account: GmailAccount }) {
 
 function viewIcon(view: MailView) {
   if (view.kind === "inbox") return <InboxIcon className="size-4 text-secondary" />;
+  if (view.kind === "starred") return <StarIcon className="size-4 text-secondary" />;
   if (view.kind === "sent") return <SendIcon className="size-4 text-secondary" />;
+  if (view.kind === "drafts") return <FileIcon className="size-4 text-secondary" />;
   return <LayersIcon className="size-4 text-secondary" />;
 }
 
+const BUILTIN_SUMMARY: Record<string, string> = {
+  inbox: "Default — every account's Inbox",
+  starred: "Default — every account's Starred",
+  sent: "Default — every account's Sent",
+  drafts: "Default — every account's Drafts",
+};
+
 function viewSummary(view: MailView): string {
   if (view.rules === null) {
-    return view.kind === "inbox" ? "Default — every account's Inbox" : "Default — every account's Sent";
+    return BUILTIN_SUMMARY[view.kind] ?? "Default";
   }
   const labels = view.rules.reduce((n, r) => n + r.allOf.length + r.noneOf.length, 0);
   const accounts = view.rules.length;
