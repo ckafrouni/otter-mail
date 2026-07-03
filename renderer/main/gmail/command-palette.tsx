@@ -134,6 +134,22 @@ export function CommandPalette({
             <CommandEmpty>
               {debouncedQuery && searchResults.isLoading ? "Searching…" : "No results found."}
             </CommandEmpty>
+            {/* Commands lead: a matching command is almost always the intent,
+                and cmdk highlights the first item for plain Enter. */}
+            {visibleCommands.length > 0 ? (
+              <CommandGroup heading="Commands">
+                {visibleCommands.map((command) => (
+                  <CommandItem
+                    key={command.id}
+                    value={command.id}
+                    onSelect={() => runAndClose(command.run)}
+                  >
+                    {command.icon}
+                    {command.label}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ) : null}
             {mailResults.length > 0 ? (
               <CommandGroup heading="Mail">
                 {mailResults.map((message) => {
@@ -157,20 +173,6 @@ export function CommandPalette({
                     </CommandItem>
                   );
                 })}
-              </CommandGroup>
-            ) : null}
-            {visibleCommands.length > 0 ? (
-              <CommandGroup heading="Commands">
-                {visibleCommands.map((command) => (
-                  <CommandItem
-                    key={command.id}
-                    value={command.id}
-                    onSelect={() => runAndClose(command.run)}
-                  >
-                    {command.icon}
-                    {command.label}
-                  </CommandItem>
-                ))}
               </CommandGroup>
             ) : null}
           </CommandList>
