@@ -1055,8 +1055,17 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
         {/* Conversation header */}
         <div className="drag-region flex h-[52px] shrink-0 items-center gap-1 border-b border-(--sk-border) px-4">
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[16px] font-extrabold leading-tight text-(--sk-strong)">
-              {message.subject || "(no subject)"}
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-[16px] font-extrabold leading-tight text-(--sk-strong)">
+                {message.subject || "(no subject)"}
+              </span>
+              {messageLabels.length > 0 ? (
+                <span className="flex max-w-[45%] shrink-0 items-center gap-1 overflow-hidden">
+                  {messageLabels.map((label) => (
+                    <LabelChip key={label.id} label={label} />
+                  ))}
+                </span>
+              ) : null}
             </div>
             <div className="truncate text-[11px] leading-tight text-(--sk-muted)">
               {isThread ? `${rows.length} messages` : formatFullDate(message.date)}
@@ -1129,19 +1138,6 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
 
         {/* Conversation */}
         <div className="sk-scroll min-h-0 flex-1 overflow-y-auto pb-2">
-          <div className="px-5 pb-1 pt-5">
-            <h1 className="text-[20px] font-extrabold leading-snug text-(--sk-strong)">
-              {message.subject || "(no subject)"}
-            </h1>
-            {messageLabels.length > 0 ? (
-              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                {messageLabels.map((label) => (
-                  <LabelChip key={label.id} label={label} />
-                ))}
-              </div>
-            ) : null}
-          </div>
-
           {rows.map((m, i) => {
             const prev = rows[i - 1];
             const newDay = !prev || dayKey(prev.date) !== dayKey(m.date);
