@@ -4,6 +4,7 @@ import {
   useImperativeHandle,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
 import {
@@ -150,6 +151,30 @@ export const RichTextArea = forwardRef<
     emitChange();
   };
 
+  // Gmail/Slack formatting shortcuts. stopPropagation keeps app-level
+  // listeners (⌘K palette, ⌘digit account switch) out of the way while typing.
+  const handleKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+    const key = e.key.toLowerCase();
+    const run = (fn: () => void) => {
+      e.preventDefault();
+      e.stopPropagation();
+      fn();
+    };
+    if (!e.shiftKey) {
+      if (key === "b") return run(() => exec("bold"));
+      if (key === "i") return run(() => exec("italic"));
+      if (key === "u") return run(() => exec("underline"));
+      if (key === "k") return run(openLinkInput);
+      if (key === "\\") return run(() => exec("removeFormat"));
+      return;
+    }
+    if (key === "x") return run(() => exec("strikeThrough"));
+    if (e.code === "Digit7") return run(() => exec("insertOrderedList"));
+    if (e.code === "Digit8") return run(() => exec("insertUnorderedList"));
+    if (e.code === "Digit9") return run(() => exec("formatBlock", "blockquote"));
+  };
+
   const openLinkInput = () => {
     const selection = document.getSelection();
     savedRange.current =
@@ -199,25 +224,25 @@ export const RichTextArea = forwardRef<
         >
           <UnderlineIcon className="size-3.5" />
         </ToolBtn>
-        <ToolBtn label="Strikethrough" active={toolbar.strike} onClick={() => exec("strikeThrough")}>
+        <ToolBtn label="Strikethrough (⇧⌘X)" active={toolbar.strike} onClick={() => exec("strikeThrough")}>
           <StrikethroughIcon className="size-3.5" />
         </ToolBtn>
         <span className="mx-1 h-4 w-px shrink-0 bg-(--sk-border)" aria-hidden />
-        <ToolBtn label="Link" onClick={openLinkInput}>
+        <ToolBtn label="Link (⌘K)" onClick={openLinkInput}>
           <Link2Icon className="size-3.5" />
         </ToolBtn>
         <span className="mx-1 h-4 w-px shrink-0 bg-(--sk-border)" aria-hidden />
-        <ToolBtn label="Bulleted list" onClick={() => exec("insertUnorderedList")}>
+        <ToolBtn label="Bulleted list (⇧⌘8)" onClick={() => exec("insertUnorderedList")}>
           <ListIcon className="size-3.5" />
         </ToolBtn>
-        <ToolBtn label="Numbered list" onClick={() => exec("insertOrderedList")}>
+        <ToolBtn label="Numbered list (⇧⌘7)" onClick={() => exec("insertOrderedList")}>
           <ListOrderedIcon className="size-3.5" />
         </ToolBtn>
-        <ToolBtn label="Quote" onClick={() => exec("formatBlock", "blockquote")}>
+        <ToolBtn label="Quote (⇧⌘9)" onClick={() => exec("formatBlock", "blockquote")}>
           <TextQuoteIcon className="size-3.5" />
         </ToolBtn>
         <span className="mx-1 h-4 w-px shrink-0 bg-(--sk-border)" aria-hidden />
-        <ToolBtn label="Clear formatting" onClick={() => exec("removeFormat")}>
+        <ToolBtn label="Clear formatting (⌘\\)" onClick={() => exec("removeFormat")}>
           <RemoveFormattingIcon className="size-3.5" />
         </ToolBtn>
       </div>
@@ -264,6 +289,7 @@ export const RichTextArea = forwardRef<
         data-empty={empty ? "true" : "false"}
         data-placeholder={placeholder}
         onInput={emitChange}
+        onKeyDown={handleKeyDown}
         className={[
           "sk-scroll max-h-56 w-full overflow-y-auto bg-transparent px-3 py-2.5",
           "text-[15px] leading-relaxed text-(--sk-strong) outline-none",
