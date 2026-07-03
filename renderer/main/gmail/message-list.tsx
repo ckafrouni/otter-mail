@@ -512,7 +512,10 @@ export function MessageList({
             const isSelected = selectedMessageId === message.id;
             const next = visibleMessages[i + 1];
             const nextSelected = next ? selectedMessageId === next.id : false;
-            const showDivider = i < visibleMessages.length - 1 && !isSelected && !nextSelected;
+            const hasDivider = i < visibleMessages.length - 1;
+            // Dividers adjacent to the selection go transparent instead of
+            // unmounting — removing the 1px element shifts every row below.
+            const dividerVisible = !isSelected && !nextSelected;
             return (
               <div key={`${message.accountId ?? accountId}:${message.id}`}>
                 <MessageRow
@@ -528,7 +531,14 @@ export function MessageList({
                   resolveLabel={resolveLabel}
                   combinedMeta={resolveCombinedMeta(message, combined, accounts, resolveLabel)}
                 />
-                {showDivider ? <div className="h-px bg-separator ml-[64px] mr-5" /> : null}
+                {hasDivider ? (
+                  <div
+                    className={[
+                      "h-px ml-[64px] mr-5",
+                      dividerVisible ? "bg-separator" : "bg-transparent",
+                    ].join(" ")}
+                  />
+                ) : null}
               </div>
             );
           })}
