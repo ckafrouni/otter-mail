@@ -339,6 +339,26 @@ function recomputeLabelCounts(accountId: string, labelIds: string[]): void {
   }
 }
 
+/** Draft updates mint a new message id — drop stale local draft rows of the
+    same thread so the Drafts view doesn't show duplicates until sync. */
+export function deleteOtherDraftsInThread(
+  accountId: string,
+  threadId: string,
+  keepMessageId: string,
+): void {
+  const d = getDb();
+  const rows = d
+    .prepare(
+      `SELECT m.id FROM messages m
+        WHERE m.accountId = ? AND m.threadId = ? AND m.id != ?
+          AND EXISTS (SELECT 1 FROM message_labels ml
+                       WHERE ml.accountId = m.accountId AND ml.messageId = m.id
+                         AND ml.labelId = 'DRAFT')`,
+    )
+    .all(accountId, threadId, keepMessageId) as unknown as { id: string }[];
+  for (const row of rows) deleteMessage(accountId, row.id);
+}
+
 export function deleteMessage(accountId: string, messageId: string): void {
   const d = getDb();
   const existing = d

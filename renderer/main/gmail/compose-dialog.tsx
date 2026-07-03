@@ -14,7 +14,14 @@ import {
   toast,
 } from "@glaze/core/components";
 import { ChevronDownIcon, PaperclipIcon, Trash2Icon, XIcon } from "lucide-react";
-import { useAccounts, useDebouncedValue, useSendMessage, useSuggestContacts } from "./hooks";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  queryKeys,
+  useAccounts,
+  useDebouncedValue,
+  useSendMessage,
+  useSuggestContacts,
+} from "./hooks";
 import { gmailApi } from "./api";
 import { formatAddressEntry, parseAddressEntry, splitAddressList, type ParsedAddress } from "./address";
 import type { ComposeAttachment, ContactSuggestion } from "./types";
@@ -262,6 +269,13 @@ export function ComposeDialog({
 
   // Autosave to a Gmail draft while writing (debounced). The draft is deleted
   // on send/discard; plain close keeps it, like Gmail.
+  const qc = useQueryClient();
+  const refreshDraftViews = (acct: string) => {
+    void qc.invalidateQueries({ queryKey: ["gmail:messages", acct] });
+    void qc.invalidateQueries({ queryKey: ["gmail:combinedMessages"] });
+    void qc.invalidateQueries({ queryKey: ["gmail:combinedCounts"] });
+    void qc.invalidateQueries({ queryKey: queryKeys.labels(acct) });
+  };
   const [draftState, setDraftState] = useState<"idle" | "saving" | "saved">("idle");
   const draftRef = useRef<{ accountId: string; draftId: string } | null>(null);
   const draftInFlight = useRef(false);
@@ -311,6 +325,7 @@ export function ComposeDialog({
       draftRef.current = { accountId: params.accountId, draftId: res.draftId };
       lastSavedRef.current = snapshot;
       setDraftState("saved");
+      refreshDraftViews(params.accountId);
     } catch {
       setDraftState("idle");
     } finally {
@@ -343,7 +358,10 @@ export function ComposeDialog({
     const draft = draftRef.current;
     if (draft) {
       draftRef.current = null;
-      void gmailApi.deleteDraft(draft.accountId, draft.draftId).catch(() => {});
+      void gmailApi
+        .deleteDraft(draft.accountId, draft.draftId)
+        .then(() => refreshDraftViews(draft.accountId))
+        .catch(() => {});
       toast.success("Draft discarded");
     }
     onOpenChange(false);
@@ -369,7 +387,10 @@ export function ComposeDialog({
       const draft = draftRef.current;
       if (draft) {
         draftRef.current = null;
-        void gmailApi.deleteDraft(draft.accountId, draft.draftId).catch(() => {});
+        void gmailApi
+          .deleteDraft(draft.accountId, draft.draftId)
+          .then(() => refreshDraftViews(draft.accountId))
+          .catch(() => {});
       }
       onOpenChange(false);
     } catch (err) {

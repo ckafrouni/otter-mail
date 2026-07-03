@@ -37,6 +37,7 @@ import {
   saveAttachmentToTemp,
   pickComposeAttachments,
   fetchReplyHeaders,
+  fetchMetadataForIds,
   MAX_ATTACHMENT_TOTAL_BYTES,
 } from "../services/gmail-api.js";
 import * as mailStore from "../services/mail-store.js";
@@ -571,7 +572,7 @@ export function registerGmailHandlers(): void {
     const p = params as Record<string, unknown>;
     try {
       const accountId = assertString(p?.accountId, "accountId");
-      return await saveDraft(accountId, {
+      const res = await saveDraft(accountId, {
         draftId: asString(p?.draftId),
         to: asString(p?.to) ?? "",
         cc: asString(p?.cc),
@@ -581,6 +582,15 @@ export function registerGmailHandlers(): void {
         threadId: asString(p?.threadId),
         attachments: parseAttachments(p?.attachments),
       });
+      // Mirror the draft locally right away — waiting for the next sync tick
+      // leaves the Drafts view stale for up to the whole sync interval.
+      if (res.messageId) {
+        mailStore.upsertMessages(accountId, await fetchMetadataForIds(accountId, [res.messageId]));
+        if (res.threadId) {
+          mailStore.deleteOtherDraftsInThread(accountId, res.threadId, res.messageId);
+        }
+      }
+      return { draftId: res.draftId };
     } catch (err) {
       console.log("[gmail:saveDraft] error", { error: String(err) });
       throw err;
@@ -593,7 +603,9 @@ export function registerGmailHandlers(): void {
     try {
       const accountId = assertString(p?.accountId, "accountId");
       const draftId = assertString(p?.draftId, "draftId");
-      return await deleteDraft(accountId, draftId);
+      const res = await deleteDraft(accountId, draftId);
+      if (res.messageId) mailStore.deleteMessage(accountId, res.messageId);
+      return { ok: true as const };
     } catch (err) {
       console.log("[gmail:deleteDraft] error", { error: String(err) });
       throw err;

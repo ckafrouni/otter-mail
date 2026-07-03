@@ -727,7 +727,7 @@ export async function saveDraft(
     threadId?: string;
     attachments?: ComposeAttachment[];
   },
-): Promise<{ draftId: string }> {
+): Promise<{ draftId: string; messageId?: string; threadId?: string }> {
   const account = await getAccount(accountId);
   const fromAddress = account ? formatAddress(account.name, account.email) : accountId;
 
@@ -746,13 +746,30 @@ export async function saveDraft(
   const res = (await gmailFetch(accountId, params.draftId ? `/drafts/${params.draftId}` : "/drafts", {
     method: params.draftId ? "PUT" : "POST",
     body: JSON.stringify(params.draftId ? { id: params.draftId, message } : { message }),
-  })) as { id: string };
-  return { draftId: res.id };
+  })) as { id: string; message?: { id?: string; threadId?: string } };
+  return {
+    draftId: res.id,
+    messageId: res.message?.id,
+    threadId: res.message?.threadId,
+  };
 }
 
-export async function deleteDraft(accountId: string, draftId: string): Promise<{ ok: true }> {
+export async function deleteDraft(
+  accountId: string,
+  draftId: string,
+): Promise<{ ok: true; messageId?: string }> {
+  // Learn the draft's message id first so the local row can be removed too.
+  let messageId: string | undefined;
+  try {
+    const draft = (await gmailFetch(accountId, `/drafts/${draftId}?format=minimal`)) as {
+      message?: { id?: string };
+    };
+    messageId = draft.message?.id;
+  } catch {
+    // already gone
+  }
   await gmailFetch(accountId, `/drafts/${draftId}`, { method: "DELETE" });
-  return { ok: true };
+  return { ok: true, messageId };
 }
 
 // ── getAttachment ─────────────────────────────────────────────────────────────
