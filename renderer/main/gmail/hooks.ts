@@ -290,6 +290,13 @@ export function useModifyMessage() {
       void qc.invalidateQueries({
         queryKey: ["gmail:messages", params.accountId],
       });
+      // Combined ("All Inboxes") lists are keyed by viewId, not accountId, so the
+      // prefix invalidation above never reaches them — without this, read/unread
+      // and star changes never show up there until the 30s staleTime lapses.
+      void qc.invalidateQueries({ queryKey: ["gmail:combinedMessages"] });
+      // Header "N messages, M unread" reads label counters, which also need a
+      // refresh once a message's UNREAD label changes.
+      void qc.invalidateQueries({ queryKey: queryKeys.labels(params.accountId) });
     },
   });
 }

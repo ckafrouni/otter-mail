@@ -23,3 +23,12 @@
   --theme-accent: #7b85f0;
   --accent: #7b85f0;
 }
+
+/* Remove the vertical fade on the message-list/reader resize handle so the
+   divider runs edge-to-edge. The fade is an inline mask-image set by the SDK's
+   ResizeHandle, so !important is required to win over the inline style. The
+   sidebar-adjacent handle is excluded to keep its stock (transparent) styling. */
+[data-resize-handle]:not(.panel-wrapper:has([data-sidebar]) + [data-resize-handle]) {
+  mask-image: none !important;
+  -webkit-mask-image: none !important;
+}
