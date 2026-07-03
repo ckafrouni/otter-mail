@@ -43,10 +43,11 @@ import {
   useAddAccount,
   useRemoveAccount,
   useCreateLabel,
+  useLabelResolver,
 } from "./hooks";
-import type { GmailLabel, LabelSelection, MailView } from "./types";
+import type { GmailAccount, GmailLabel, LabelSelection, MailView } from "./types";
 import { ViewEditorDialog } from "./view-editor-dialog";
-import { COMBINED_ACCOUNT_ID } from "./custom-views";
+import { COMBINED_ACCOUNT_ID, resolveSelections } from "./custom-views";
 import { buildLabelTree, type LabelTreeNode } from "./label-tree";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
 
@@ -78,11 +79,13 @@ function viewIcon(view: MailView): React.ReactNode {
 function CombinedViewRow({
   view,
   selected,
+  unreadCount,
   onSelect,
   onEdit,
 }: {
   view: MailView;
   selected: boolean;
+  unreadCount: number;
   onSelect: () => void;
   onEdit: () => void;
 }): React.ReactNode {
@@ -97,9 +100,12 @@ function CombinedViewRow({
     >
       {viewIcon(view)}
       <SidebarListItemContent>
-        <SidebarListItemTitle>{view.name}</SidebarListItemTitle>
+        <SidebarListItemTitle className={unreadCount > 0 ? "text-strong" : undefined}>
+          {view.name}
+        </SidebarListItemTitle>
       </SidebarListItemContent>
       <SidebarListItemAccessory>
+        {unreadCount > 0 ? unreadCount : null}
         <button
           type="button"
           aria-label={`Edit ${view.name}`}
@@ -114,6 +120,18 @@ function CombinedViewRow({
       </SidebarListItemAccessory>
     </SidebarListItem>
   );
+}
+
+/** Sums Gmail's own unread counters across a view's resolved (account, label) selections. */
+function getViewUnreadCount(
+  view: MailView,
+  accounts: GmailAccount[],
+  resolveLabel: (accountId: string | undefined, labelId: string) => GmailLabel | undefined,
+): number {
+  return resolveSelections(view, accounts).reduce((sum, sel) => {
+    const label = resolveLabel(sel.accountId, sel.labelId);
+    return sum + (label?.unread ?? 0);
+  }, 0);
 }
 
 function renderLabelTreeNode(
@@ -214,6 +232,7 @@ export function AccountsSidebar({
 
   const accounts = accountsQuery.data ?? [];
   const labels: GmailLabel[] = labelsQuery.data ?? [];
+  const resolveLabel = useLabelResolver(isCombined ? accounts.map((a) => a.id) : []);
 
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId) ?? null;
 
@@ -388,6 +407,7 @@ export function AccountsSidebar({
                 key={view.id}
                 view={view}
                 selected={selectedLabelId === view.id}
+                unreadCount={getViewUnreadCount(view, accounts, resolveLabel)}
                 onSelect={() => onSelectLabel(view.id)}
                 onEdit={() => {
                   setEditingView(view);
@@ -430,6 +450,7 @@ export function AccountsSidebar({
                     key={view.id}
                     view={view}
                     selected={selectedLabelId === view.id}
+                    unreadCount={getViewUnreadCount(view, accounts, resolveLabel)}
                     onSelect={() => onSelectLabel(view.id)}
                     onEdit={() => {
                       setEditingView(view);
