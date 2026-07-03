@@ -168,6 +168,12 @@ export const gmailApi = {
   trashThread: (accountId: string, threadId: string): Promise<{ ok: boolean }> =>
     ipc("gmail:trashThread", { accountId, threadId }),
 
+  untrashThread: (accountId: string, threadId: string): Promise<{ ok: boolean }> =>
+    ipc("gmail:untrashThread", { accountId, threadId }),
+
+  untrashMessage: (accountId: string, messageId: string): Promise<{ ok: boolean }> =>
+    ipc("gmail:untrashMessage", { accountId, messageId }),
+
   sendMessage: (params: SendMessageParams): Promise<{ ok: boolean }> =>
     ipc("gmail:sendMessage", params),
 

@@ -25,6 +25,7 @@ import type {
 } from "./types";
 import type { ListMessagesResult } from "./api";
 import { resolveRules } from "./custom-views";
+import { registerUndo, isPureMarkRead } from "./undo";
 
 const STALE_TIME = 30_000;
 
@@ -496,6 +497,12 @@ export function useModifyMessage() {
     },
     onMutate: async (params) => {
       const { accountId, messageId, addLabelIds = [], removeLabelIds = [] } = params;
+      if (!isPureMarkRead(params.addLabelIds, params.removeLabelIds)) {
+        registerUndo({
+          kind: "modifyMessage",
+          params: { accountId, messageId, addLabelIds: removeLabelIds, removeLabelIds: addLabelIds },
+        });
+      }
       const messageKey = queryKeys.message(accountId, messageId);
       const labelsKey = queryKeys.labels(accountId);
       const threadsKey = ["gmail:thread", accountId];
@@ -609,6 +616,7 @@ export function useTrashMessage() {
       return gmailApi.trashMessage(accountId, messageId);
     },
     onMutate: async ({ accountId, messageId }) => {
+      registerUndo({ kind: "untrashMessage", params: { accountId, messageId } });
       const labelsKey = queryKeys.labels(accountId);
       await Promise.all([
         qc.cancelQueries({ queryKey: ["gmail:messages", accountId] }),
@@ -682,6 +690,12 @@ export function useModifyThread() {
     },
     onMutate: async (params) => {
       const { accountId, threadId, addLabelIds = [], removeLabelIds = [] } = params;
+      if (!isPureMarkRead(params.addLabelIds, params.removeLabelIds)) {
+        registerUndo({
+          kind: "modifyThread",
+          params: { accountId, threadId, addLabelIds: removeLabelIds, removeLabelIds: addLabelIds },
+        });
+      }
       const threadKey = queryKeys.thread(accountId, threadId);
       const labelsKey = queryKeys.labels(accountId);
 
@@ -769,6 +783,7 @@ export function useTrashThread() {
       return gmailApi.trashThread(accountId, threadId);
     },
     onMutate: async ({ accountId, threadId }) => {
+      registerUndo({ kind: "untrashThread", params: { accountId, threadId } });
       const threadKey = queryKeys.thread(accountId, threadId);
       const labelsKey = queryKeys.labels(accountId);
 
@@ -990,6 +1005,40 @@ export function useSyncAccountLabels(accountIds: string[], enabled: boolean): vo
       void qc.invalidateQueries({ queryKey: ["gmail:searchMessages"] });
     }
   }, [progressKey, enabled, accountIdsKey, qc]);
+}
+
+function useUntrashInvalidation() {
+  const qc = useQueryClient();
+  return (accountId: string) => {
+    void qc.invalidateQueries({ queryKey: ["gmail:messages", accountId] });
+    void qc.invalidateQueries({ queryKey: ["gmail:combinedMessages"] });
+    void qc.invalidateQueries({ queryKey: ["gmail:combinedCounts"] });
+    void qc.invalidateQueries({ queryKey: ["gmail:searchMessages"] });
+    void qc.invalidateQueries({ queryKey: ["gmail:thread", accountId] });
+    void qc.invalidateQueries({ queryKey: queryKeys.labels(accountId) });
+  };
+}
+
+export function useUntrashThread() {
+  const invalidate = useUntrashInvalidation();
+  return useMutation({
+    mutationFn: (params: { accountId: string; threadId: string }) => {
+      console.log("[hooks:useUntrashThread]", params);
+      return gmailApi.untrashThread(params.accountId, params.threadId);
+    },
+    onSuccess: (_data, { accountId }) => invalidate(accountId),
+  });
+}
+
+export function useUntrashMessage() {
+  const invalidate = useUntrashInvalidation();
+  return useMutation({
+    mutationFn: (params: { accountId: string; messageId: string }) => {
+      console.log("[hooks:useUntrashMessage]", params);
+      return gmailApi.untrashMessage(params.accountId, params.messageId);
+    },
+    onSuccess: (_data, { accountId }) => invalidate(accountId),
+  });
 }
 
 export function useGetAttachment() {

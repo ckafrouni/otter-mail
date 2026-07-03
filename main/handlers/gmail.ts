@@ -27,6 +27,8 @@ import {
   trashMessage,
   modifyThread,
   trashThread,
+  untrashThread,
+  untrashMessage,
   sendMessage,
   getAttachment,
   getAttachmentData,
@@ -526,6 +528,38 @@ export function registerGmailHandlers(): void {
       return result;
     } catch (err) {
       console.log("[gmail:trashThread] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:untrashThread / gmail:untrashMessage — undo for trash: Gmail restores
+  // the previous labels; the fresh metadata re-seeds the locally-deleted rows.
+  ipcMain.handle("gmail:untrashThread", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:untrashThread]", { accountId: p?.accountId, threadId: p?.threadId });
+    try {
+      const accountId = assertString(p?.accountId, "accountId");
+      const threadId = assertString(p?.threadId, "threadId");
+      mailStore.upsertMessages(accountId, await untrashThread(accountId, threadId));
+      updateDockBadge();
+      return { ok: true as const };
+    } catch (err) {
+      console.log("[gmail:untrashThread] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  ipcMain.handle("gmail:untrashMessage", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:untrashMessage]", { accountId: p?.accountId, messageId: p?.messageId });
+    try {
+      const accountId = assertString(p?.accountId, "accountId");
+      const messageId = assertString(p?.messageId, "messageId");
+      mailStore.upsertMessages(accountId, await untrashMessage(accountId, messageId));
+      updateDockBadge();
+      return { ok: true as const };
+    } catch (err) {
+      console.log("[gmail:untrashMessage] error", { error: String(err) });
       throw err;
     }
   });

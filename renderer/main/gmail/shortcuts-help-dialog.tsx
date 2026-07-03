@@ -29,6 +29,7 @@ const SECTIONS: { title: string; rows: [string, string][] }[] = [
       ["r", "Reply"],
       ["a", "Reply all"],
       ["f", "Forward"],
+      ["z", "Undo last action"],
       ["?", "This help"],
     ],
   },

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { SplitView, EmptyState, Button } from "@glaze/core/components";
+import { SplitView, EmptyState, Button, toast } from "@glaze/core/components";
 import { AccountsSidebar } from "./gmail/accounts-sidebar";
 import { MessageList } from "./gmail/message-list";
 import { MessageReader } from "./gmail/message-reader";
@@ -7,7 +7,17 @@ import { ComposeDialog } from "./gmail/compose-dialog";
 import { CommandPalette } from "./gmail/command-palette";
 import { ShortcutsHelpDialog } from "./gmail/shortcuts-help-dialog";
 import { isTypingTarget } from "./gmail/keyboard";
-import { useCredentials, useAccounts, useAddAccount, useAccountSync } from "./gmail/hooks";
+import {
+  useCredentials,
+  useAccounts,
+  useAddAccount,
+  useAccountSync,
+  useModifyMessage,
+  useModifyThread,
+  useUntrashThread,
+  useUntrashMessage,
+} from "./gmail/hooks";
+import { takeUndo, type UndoAction } from "./gmail/undo";
 import type { GmailMessageSummary } from "./gmail/types";
 import {
   useMailViews,
@@ -56,9 +66,34 @@ export function HomeView() {
     return () => window.removeEventListener("keydown", down);
   }, []);
 
-  // Gmail-style global shortcuts: c compose, u back to list, ? help, and
-  // "g then i/t/s/d" go-to combos. Handlers read the latest state via a ref so
-  // the listener mounts once.
+  const undoModifyMessage = useModifyMessage();
+  const undoModifyThread = useModifyThread();
+  const undoUntrashThread = useUntrashThread();
+  const undoUntrashMessage = useUntrashMessage();
+  const undoRunner = useRef<(action: UndoAction) => void>(() => {});
+  undoRunner.current = (action) => {
+    console.log("[HomeView:undo]", { kind: action.kind });
+    const done = () => toast.success("Undone");
+    const fail = () => toast.error("Could not undo");
+    switch (action.kind) {
+      case "modifyMessage":
+        void undoModifyMessage.mutateAsync(action.params).then(done, fail);
+        break;
+      case "modifyThread":
+        void undoModifyThread.mutateAsync(action.params).then(done, fail);
+        break;
+      case "untrashThread":
+        void undoUntrashThread.mutateAsync(action.params).then(done, fail);
+        break;
+      case "untrashMessage":
+        void undoUntrashMessage.mutateAsync(action.params).then(done, fail);
+        break;
+    }
+  };
+
+  // Gmail-style global shortcuts: c compose, u back to list, ? help, z undo,
+  // and "g then i/t/s/d" go-to combos. Handlers read the latest state via a
+  // ref so the listener mounts once.
   const shortcutCtx = useRef({ isCombined: false });
   shortcutCtx.current = { isCombined };
   const pendingG = useRef(0);
@@ -97,6 +132,12 @@ export function HomeView() {
       } else if (e.key === "?") {
         e.preventDefault();
         setHelpOpen(true);
+      } else if (e.key === "z") {
+        const action = takeUndo();
+        if (action) {
+          e.preventDefault();
+          undoRunner.current(action);
+        }
       }
     };
     window.addEventListener("keydown", down);

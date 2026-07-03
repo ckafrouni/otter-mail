@@ -473,6 +473,27 @@ export async function trashThread(accountId: string, threadId: string): Promise<
   return { ok: true };
 }
 
+/** Restores a trashed thread and returns fresh summaries — trashing deleted the
+    local rows, so the caller re-upserts them. */
+export async function untrashThread(
+  accountId: string,
+  threadId: string,
+): Promise<GmailMessageSummary[]> {
+  const res = (await gmailFetch(accountId, `/threads/${threadId}/untrash`, {
+    method: "POST",
+  })) as { messages?: { id: string }[] };
+  const ids = (res.messages ?? []).map((m) => m.id);
+  return ids.length > 0 ? fetchMetadataForIds(accountId, ids) : [];
+}
+
+export async function untrashMessage(
+  accountId: string,
+  messageId: string,
+): Promise<GmailMessageSummary[]> {
+  await gmailFetch(accountId, `/messages/${messageId}/untrash`, { method: "POST" });
+  return fetchMetadataForIds(accountId, [messageId]);
+}
+
 // ── Reply headers ─────────────────────────────────────────────────────────────
 
 /** Live fetch of the RFC 2822 reply headers for a message not yet cached with them. */
