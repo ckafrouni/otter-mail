@@ -431,6 +431,7 @@ export function MessageList({
   accounts,
   selectedMessageId,
   onSelectMessage,
+  onDeselect,
   searchQuery,
   syncStatus,
 }: MessageListProps) {
