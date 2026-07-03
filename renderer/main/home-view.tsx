@@ -4,7 +4,9 @@ import { AccountsSidebar } from "./gmail/accounts-sidebar";
 import { MessageList } from "./gmail/message-list";
 import { MessageReader } from "./gmail/message-reader";
 import { ComposeDialog } from "./gmail/compose-dialog";
+import { CommandPalette } from "./gmail/command-palette";
 import { useCredentials, useAccounts, useAddAccount, useAccountSync } from "./gmail/hooks";
+import type { GmailMessageSummary } from "./gmail/types";
 import {
   useMailViews,
   resolveRules,
@@ -22,6 +24,7 @@ export function HomeView() {
   const [readerAccountId, setReaderAccountId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [composeOpen, setComposeOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
   const credentialsQuery = useCredentials();
@@ -35,6 +38,17 @@ export function HomeView() {
   const firstRealAccountId = accounts[0]?.id ?? null;
 
   const isCombined = selectedAccountId === COMBINED_ACCOUNT_ID;
+
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", down);
+    return () => window.removeEventListener("keydown", down);
+  }, []);
 
   // Once accounts are known, restore the last location or apply the default
   // (Combined when 2+ accounts, else the first account).
@@ -129,6 +143,29 @@ export function HomeView() {
     setSearchQuery(q);
     setSelectedMessageId(null);
     setReaderAccountId(null);
+  };
+
+  // Palette mail result: jump to the owning account (Combined stays put) and open.
+  const handlePaletteOpenMessage = (message: GmailMessageSummary) => {
+    console.log("[HomeView:paletteOpenMessage]", { messageId: message.id, accountId: message.accountId });
+    const owner = message.accountId ?? firstRealAccountId;
+    if (!owner) return;
+    if (!isCombined && owner !== effectiveAccountId) {
+      setSelectedAccountId(owner);
+      setSelectedLabelId("INBOX");
+      setSearchQuery("");
+    }
+    setSelectedMessageId(message.id);
+    setReaderAccountId(owner);
+  };
+
+  const handlePaletteGoToView = (viewId: string) => {
+    console.log("[HomeView:paletteGoToView]", { viewId });
+    setSelectedAccountId(COMBINED_ACCOUNT_ID);
+    setSelectedLabelId(viewId);
+    setSelectedMessageId(null);
+    setReaderAccountId(null);
+    setSearchQuery("");
   };
 
   const handleOpenSettings = () => {
@@ -251,6 +288,18 @@ export function HomeView() {
           accountId={composeAccountId}
           open={composeOpen}
           onOpenChange={setComposeOpen}
+        />
+      ) : null}
+
+      {accounts.length > 0 ? (
+        <CommandPalette
+          open={paletteOpen}
+          onOpenChange={setPaletteOpen}
+          accounts={accounts}
+          views={views}
+          onOpenMessage={handlePaletteOpenMessage}
+          onGoToView={handlePaletteGoToView}
+          onCompose={() => setComposeOpen(true)}
         />
       ) : null}
     </>

@@ -17,7 +17,6 @@ export type SetCredentialsParams = { clientId: string; clientSecret: string };
 export type ListMessagesParams = {
   accountId: string;
   labelIds?: string[];
-  q?: string;
   pageToken?: string;
   maxResults?: number;
 };
@@ -25,6 +24,14 @@ export type ListMessagesParams = {
 export type ListMessagesResult = {
   messages: GmailMessageSummary[];
   nextPageToken?: string;
+};
+
+export type SearchMessagesParams = {
+  q: string;
+  /** Omit to search every account (Combined mode / command palette). */
+  accountId?: string;
+  pageToken?: string;
+  maxResults?: number;
 };
 
 export type ListCombinedMessagesParams = {
@@ -109,6 +116,9 @@ export const gmailApi = {
   listCombinedMessages: (
     params: ListCombinedMessagesParams,
   ): Promise<ListMessagesResult> => ipc("gmail:listCombinedMessages", params),
+
+  searchMessages: (params: SearchMessagesParams): Promise<ListMessagesResult> =>
+    ipc("gmail:searchMessages", params),
 
   countCombinedMessages: (params: { rules: ViewRule[] }): Promise<CombinedCounts> =>
     ipc("gmail:countCombinedMessages", params),

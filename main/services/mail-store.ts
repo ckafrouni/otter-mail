@@ -82,6 +82,42 @@ function getDb(): DatabaseSync {
   // Legacy rows synced before threading behave as single-message threads.
   handle.exec("UPDATE messages SET threadId = id WHERE threadId = '';");
 
+  // Full-text search: external-content FTS5 over messages, kept in sync via
+  // triggers. On first creation, rebuild indexes every already-cached row.
+  const ftsExists =
+    handle
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'messages_fts'")
+      .get() !== undefined;
+  if (!ftsExists) {
+    handle.exec(`
+      CREATE VIRTUAL TABLE messages_fts USING fts5(
+        subject, fromName, fromEmail, snippet, bodyText,
+        content='messages', content_rowid='rowid'
+      );
+    `);
+  }
+  handle.exec(`
+    CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages BEGIN
+      INSERT INTO messages_fts(rowid, subject, fromName, fromEmail, snippet, bodyText)
+      VALUES (new.rowid, new.subject, new.fromName, new.fromEmail, new.snippet, new.bodyText);
+    END;
+    CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages BEGIN
+      INSERT INTO messages_fts(messages_fts, rowid, subject, fromName, fromEmail, snippet, bodyText)
+      VALUES ('delete', old.rowid, old.subject, old.fromName, old.fromEmail, old.snippet, old.bodyText);
+    END;
+    CREATE TRIGGER IF NOT EXISTS messages_fts_au
+      AFTER UPDATE OF subject, fromName, fromEmail, snippet, bodyText ON messages
+    BEGIN
+      INSERT INTO messages_fts(messages_fts, rowid, subject, fromName, fromEmail, snippet, bodyText)
+      VALUES ('delete', old.rowid, old.subject, old.fromName, old.fromEmail, old.snippet, old.bodyText);
+      INSERT INTO messages_fts(rowid, subject, fromName, fromEmail, snippet, bodyText)
+      VALUES (new.rowid, new.subject, new.fromName, new.fromEmail, new.snippet, new.bodyText);
+    END;
+  `);
+  if (!ftsExists) {
+    handle.exec("INSERT INTO messages_fts(messages_fts) VALUES('rebuild');");
+  }
+
   db = handle;
   return handle;
 }
@@ -544,6 +580,51 @@ export function countCombinedByRules(rules: ViewRule[]): { total: number; unread
     .get(...params) as { total: number; unread: number } | undefined;
 
   return { total: row?.total ?? 0, unread: row?.unread ?? 0 };
+}
+
+// ── Full-text search ──────────────────────────────────────────────────────────
+
+/**
+ * User input → FTS5 MATCH syntax: each whitespace token becomes a quoted phrase
+ * (neutralizing operators like AND/NEAR/parens), the last one prefix-matched
+ * for search-as-you-type.
+ */
+function toFtsMatch(query: string): string | null {
+  const tokens = query
+    .split(/\s+/)
+    .map((t) => t.replace(/"/g, ""))
+    .filter((t) => t.length > 0);
+  if (tokens.length === 0) return null;
+  return tokens.map((t, i) => `"${t}"${i === tokens.length - 1 ? "*" : ""}`).join(" ");
+}
+
+/** Local message-level search; accountId null searches every account. */
+export function searchMessages(
+  queryText: string,
+  accountId: string | null,
+  offset: number,
+  limit: number,
+): { messages: GmailMessageSummary[]; hasMore: boolean } {
+  const match = toFtsMatch(queryText);
+  if (!match) return { messages: [], hasMore: false };
+  const d = getDb();
+  const params: (string | number)[] = [match];
+  let accountClause = "";
+  if (accountId) {
+    accountClause = "AND m.accountId = ?";
+    params.push(accountId);
+  }
+  const rows = d
+    .prepare(`
+      SELECT m.* FROM messages_fts
+      JOIN messages m ON m.rowid = messages_fts.rowid
+      WHERE messages_fts MATCH ? ${accountClause}
+      ORDER BY m.date DESC
+      LIMIT ? OFFSET ?
+    `)
+    .all(...params, limit + 1, offset) as unknown as MessageRow[];
+  const hasMore = rows.length > limit;
+  return { messages: rows.slice(0, limit).map(rowToSummary), hasMore };
 }
 
 // ── Labels ──────────────────────────────────────────────────────────────────

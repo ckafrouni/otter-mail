@@ -201,24 +201,14 @@ export function registerGmailHandlers(): void {
     console.log("[gmail:listMessages]", {
       accountId: p?.accountId,
       labelIds: p?.labelIds,
-      q: p?.q,
       pageToken: p?.pageToken,
       maxResults: p?.maxResults,
     });
     try {
       const accountId = assertString(p?.accountId, "accountId");
       const labelIds = asStringArray(p?.labelIds);
-      const q = asString(p?.q);
       const pageToken = asString(p?.pageToken);
       const maxResults = asNumber(p?.maxResults) ?? LOCAL_PAGE_SIZE;
-
-      // Search hits Gmail live (server-side full-text can't be replicated
-      // locally), but results are still cached for instant re-open.
-      if (q) {
-        const result = await listMessages(accountId, { labelIds, q, pageToken, maxResults });
-        mailStore.upsertMessages(accountId, result.messages);
-        return result;
-      }
 
       const labelId = labelIds?.[0] ?? "INBOX";
       const offset = pageToken ? Number.parseInt(pageToken, 10) || 0 : 0;
@@ -243,6 +233,33 @@ export function registerGmailHandlers(): void {
       };
     } catch (err) {
       console.log("[gmail:listMessages] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:searchMessages — instant local full-text search (FTS5 over the mail
+  // cache). accountId omitted = search every account; message-level rows.
+  ipcMain.handle("gmail:searchMessages", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:searchMessages]", {
+      q: p?.q,
+      accountId: p?.accountId,
+      pageToken: p?.pageToken,
+    });
+    try {
+      const q = assertString(p?.q, "q");
+      const accountId = asString(p?.accountId) ?? null;
+      const pageToken = asString(p?.pageToken);
+      const maxResults = asNumber(p?.maxResults) ?? LOCAL_PAGE_SIZE;
+      const offset = pageToken ? Number.parseInt(pageToken, 10) || 0 : 0;
+
+      const page = mailStore.searchMessages(q, accountId, offset, maxResults);
+      return {
+        messages: page.messages,
+        nextPageToken: page.hasMore ? String(offset + maxResults) : undefined,
+      };
+    } catch (err) {
+      console.log("[gmail:searchMessages] error", { error: String(err) });
       throw err;
     }
   });

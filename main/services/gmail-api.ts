@@ -188,7 +188,7 @@ function mapMessageSummary(msg: RawMessageMetadata): GmailMessageSummary {
 
 /**
  * Fetch metadata-format summaries for a set of message ids, capped at 8
- * concurrent requests. Shared by listMessages (live browse/search) and the
+ * concurrent requests. Shared by listMessages (live cold-cache warm-up) and the
  * background sync engine.
  */
 export async function fetchMetadataForIds(
@@ -220,7 +220,6 @@ export async function listMessages(
   accountId: string,
   params: {
     labelIds?: string[];
-    q?: string;
     pageToken?: string;
     maxResults?: number;
   },
@@ -231,7 +230,6 @@ export async function listMessages(
       query.append("labelIds", lid);
     }
   }
-  if (params.q) query.set("q", params.q);
   if (params.pageToken) query.set("pageToken", params.pageToken);
   query.set("maxResults", String(params.maxResults ?? 25));
 

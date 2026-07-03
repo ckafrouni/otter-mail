@@ -18,6 +18,8 @@ import {
   useMessages,
   useCombinedMessages,
   useCombinedCounts,
+  useSearchMessages,
+  useDebouncedValue,
   useModifyMessage,
   useModifyThread,
   useTrashThread,
@@ -363,14 +365,20 @@ export function MessageList({
   const isCombined = combined != null;
   const [unreadOnly, setUnreadOnly] = useState(false);
 
-  // Both hooks are always called (rules of hooks); the inactive one is disabled.
-  const accountMessages = useMessages(isCombined ? null : accountId, labelId, searchQuery);
+  // Search is local (FTS5 over the mail cache): account-scoped in account mode,
+  // across every account in Combined mode. Results are message-level rows.
+  const debouncedQuery = useDebouncedValue(searchQuery.trim(), 150);
+  const searching = debouncedQuery.length > 0;
+
+  // All hooks are always called (rules of hooks); the inactive ones are disabled.
+  const accountMessages = useMessages(isCombined || searching ? null : accountId, labelId);
   const combinedMessages = useCombinedMessages(
     combined?.rules ?? [],
     combined?.viewId ?? "",
-    isCombined,
+    isCombined && !searching,
   );
-  const messagesQuery = isCombined ? combinedMessages : accountMessages;
+  const searchResults = useSearchMessages(debouncedQuery, isCombined ? null : accountId, searching);
+  const messagesQuery = searching ? searchResults : isCombined ? combinedMessages : accountMessages;
 
   const resolveLabel = useLabelResolver(isCombined ? accountIds : [accountId]);
   // Combined mode has no single "active account" to drive per-account label
@@ -428,18 +436,16 @@ export function MessageList({
               </ToggleButton>
             </ToolbarActions>
           </ToolbarRow>
-          {!isCombined ? (
-            <ToolbarRow>
-              <ToolbarSearchButton
-                value={searchQuery}
-                onChange={(v) => {
-                  console.log("[MessageList:searchChange]", { q: v });
-                  onSearchChange(v);
-                }}
-                size="large"
-              />
-            </ToolbarRow>
-          ) : null}
+          <ToolbarRow>
+            <ToolbarSearchButton
+              value={searchQuery}
+              onChange={(v) => {
+                console.log("[MessageList:searchChange]", { q: v });
+                onSearchChange(v);
+              }}
+              size="large"
+            />
+          </ToolbarRow>
           {syncStatus?.syncing ? (
             <ToolbarRow>
               <div className="flex items-center gap-1.5 px-1 py-0.5">
