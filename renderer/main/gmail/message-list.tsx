@@ -128,17 +128,11 @@ function MessageRow({
         selected ? "bg-control" : "",
       ].join(" ")}
     >
-      {/* Unread dot */}
-      <div className="shrink-0 mt-1.5 size-2 flex items-center justify-center">
-        {message.unread ? (
-          <span className="size-2 rounded-full bg-accent" />
-        ) : null}
-      </div>
-
       <div className="flex flex-col min-w-0 flex-1 gap-0.5">
         <div className="flex items-center justify-between gap-2">
           <Text
             variant={message.unread ? "small-strong" : "small"}
+            color={message.unread ? "primary" : "secondary"}
             truncate
             className="flex-1 min-w-0"
           >
@@ -171,42 +165,44 @@ function MessageRow({
         ) : null}
       </div>
 
-      {/* Hover-revealed quick actions */}
-      <div className="shrink-0 mt-0.5 flex items-center gap-1 max-w-0 opacity-0 overflow-hidden group-hover:max-w-[52px] group-hover:opacity-100 transition-all duration-150">
+      {message.starred ? (
         <button
           type="button"
-          onClick={handleArchive}
-          className="text-tertiary hover:text-primary transition-colors"
-          aria-label="Archive"
+          onClick={handleStarToggle}
+          className="shrink-0 mt-0.5 text-tertiary hover:text-accent transition-colors"
+          aria-label="Unstar"
         >
-          <ArchiveIcon className="size-4" />
-        </button>
-        <button
-          type="button"
-          onClick={handleTrash}
-          className="text-tertiary hover:text-support-red transition-colors"
-          aria-label="Move to trash"
-        >
-          <Trash2Icon className="size-4" />
-        </button>
-      </div>
-
-      {/* Star toggle */}
-      <button
-        type="button"
-        onClick={handleStarToggle}
-        className={[
-          "shrink-0 mt-0.5 text-tertiary hover:text-accent transition-colors",
-          message.starred ? "" : "opacity-0 group-hover:opacity-100",
-        ].join(" ")}
-        aria-label={message.starred ? "Unstar" : "Star"}
-      >
-        {message.starred ? (
           <StarIcon className="size-4 fill-current text-accent" />
-        ) : (
-          <StarOffIcon className="size-4" />
-        )}
-      </button>
+        </button>
+      ) : (
+        /* Hover-revealed quick actions */
+        <div className="shrink-0 mt-0.5 flex items-center gap-1 max-w-0 opacity-0 overflow-hidden group-hover:max-w-[76px] group-hover:opacity-100 transition-all duration-150">
+          <button
+            type="button"
+            onClick={handleStarToggle}
+            className="text-tertiary hover:text-accent transition-colors"
+            aria-label="Star"
+          >
+            <StarOffIcon className="size-4" />
+          </button>
+          <button
+            type="button"
+            onClick={handleArchive}
+            className="text-tertiary hover:text-primary transition-colors"
+            aria-label="Archive"
+          >
+            <ArchiveIcon className="size-4" />
+          </button>
+          <button
+            type="button"
+            onClick={handleTrash}
+            className="text-tertiary hover:text-support-red transition-colors"
+            aria-label="Move to trash"
+          >
+            <Trash2Icon className="size-4" />
+          </button>
+        </div>
+      )}
     </button>
   );
 }
