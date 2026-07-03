@@ -44,13 +44,9 @@ import {
   useRemoveAccount,
   useCreateLabel,
 } from "./hooks";
-import type { GmailLabel, CustomView } from "./types";
+import type { GmailLabel, LabelSelection, MailView } from "./types";
 import { ViewEditorDialog } from "./view-editor-dialog";
-import {
-  COMBINED_ACCOUNT_ID,
-  COMBINED_INBOX_LABEL,
-  VIEW_LABEL_PREFIX,
-} from "./custom-views";
+import { COMBINED_ACCOUNT_ID } from "./custom-views";
 
 const SYSTEM_LABEL_MAP: Record<string, { name: string; icon: React.ReactNode }> = {
   INBOX: { name: "Inbox", icon: <InboxIcon className="size-4" /> },
@@ -110,6 +106,52 @@ function labelIcon(label?: GmailLabel): React.ReactNode {
   return <TagIcon className="size-4 shrink-0 text-tertiary" />;
 }
 
+function viewIcon(view: MailView): React.ReactNode {
+  if (view.kind === "inbox") return <InboxIcon className="size-4 shrink-0" />;
+  if (view.kind === "sent") return <SendIcon className="size-4 shrink-0" />;
+  return <LayersIcon className="size-4 shrink-0 text-tertiary" />;
+}
+
+function CombinedViewRow({
+  view,
+  selected,
+  onSelect,
+  onEdit,
+}: {
+  view: MailView;
+  selected: boolean;
+  onSelect: () => void;
+  onEdit: () => void;
+}): React.ReactNode {
+  return (
+    <SidebarListItem
+      selected={selected}
+      onClick={() => {
+        console.log("[AccountsSidebar:selectView]", { viewId: view.id });
+        onSelect();
+      }}
+    >
+      {viewIcon(view)}
+      <SidebarListItemContent>
+        <SidebarListItemTitle>{view.name}</SidebarListItemTitle>
+      </SidebarListItemContent>
+      <SidebarListItemAccessory>
+        <button
+          type="button"
+          aria-label={`Edit ${view.name}`}
+          className="text-tertiary hover:text-primary transition-colors"
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit();
+          }}
+        >
+          <SettingsIcon className="size-3.5" />
+        </button>
+      </SidebarListItemAccessory>
+    </SidebarListItem>
+  );
+}
+
 function renderLabelTreeNode(
   node: LabelTreeNode,
   selectedLabelId: string,
@@ -166,9 +208,10 @@ type AccountsSidebarProps = {
   selectedLabelId: string;
   onSelectLabel: (labelId: string) => void;
   onCompose: () => void;
-  views: CustomView[];
-  onSaveView: (view: { id?: string; name: string; labelNames: string[] }) => void;
+  views: MailView[];
+  onSaveView: (input: { id?: string; name: string; selections: LabelSelection[] }) => void;
   onDeleteView: (id: string) => void;
+  onResetView: (id: string) => void;
 };
 
 function getInitials(name: string): string {
@@ -188,6 +231,7 @@ export function AccountsSidebar({
   views,
   onSaveView,
   onDeleteView,
+  onResetView,
 }: AccountsSidebarProps) {
   const isCombined = selectedAccountId === COMBINED_ACCOUNT_ID;
 
@@ -200,7 +244,7 @@ export function AccountsSidebar({
   const [createLabelOpen, setCreateLabelOpen] = useState(false);
   const [newLabelName, setNewLabelName] = useState("");
   const [viewEditorOpen, setViewEditorOpen] = useState(false);
-  const [editingView, setEditingView] = useState<CustomView | null>(null);
+  const [editingView, setEditingView] = useState<MailView | null>(null);
 
   const accounts = accountsQuery.data ?? [];
   const labels: GmailLabel[] = labelsQuery.data ?? [];
@@ -364,16 +408,21 @@ export function AccountsSidebar({
 
       {isCombined ? (
         <SidebarList>
-          {/* Combined merged inbox */}
-          <SidebarListItem
-            selected={selectedLabelId === COMBINED_INBOX_LABEL}
-            onClick={() => {
-              console.log("[AccountsSidebar:selectLabel]", { labelId: COMBINED_INBOX_LABEL });
-              onSelectLabel(COMBINED_INBOX_LABEL);
-            }}
-            icon={<InboxIcon className="size-4" />}
-            title="Inbox"
-          />
+          {/* Built-in default views (Inbox, Sent) — editable + resettable */}
+          {views
+            .filter((v) => v.kind !== "custom")
+            .map((view) => (
+              <CombinedViewRow
+                key={view.id}
+                view={view}
+                selected={selectedLabelId === view.id}
+                onSelect={() => onSelectLabel(view.id)}
+                onEdit={() => {
+                  setEditingView(view);
+                  setViewEditorOpen(true);
+                }}
+              />
+            ))}
 
           {/* Custom views */}
           <SidebarListGroup
@@ -395,45 +444,27 @@ export function AccountsSidebar({
               </Button>
             }
           >
-            {views.length === 0 ? (
+            {views.filter((v) => v.kind === "custom").length === 0 ? (
               <div className="px-3 py-1.5">
                 <Text variant="mini" color="tertiary">
-                  Tap + to create a view from your labels.
+                  Tap + to build a view from any labels across your accounts.
                 </Text>
               </div>
             ) : (
-              views.map((view) => {
-                const key = `${VIEW_LABEL_PREFIX}${view.id}`;
-                return (
-                  <SidebarListItem
+              views
+                .filter((v) => v.kind === "custom")
+                .map((view) => (
+                  <CombinedViewRow
                     key={view.id}
-                    selected={selectedLabelId === key}
-                    onClick={() => {
-                      console.log("[AccountsSidebar:selectLabel]", { labelId: key });
-                      onSelectLabel(key);
+                    view={view}
+                    selected={selectedLabelId === view.id}
+                    onSelect={() => onSelectLabel(view.id)}
+                    onEdit={() => {
+                      setEditingView(view);
+                      setViewEditorOpen(true);
                     }}
-                  >
-                    <LayersIcon className="size-4 shrink-0 text-tertiary" />
-                    <SidebarListItemContent>
-                      <SidebarListItemTitle>{view.name}</SidebarListItemTitle>
-                    </SidebarListItemContent>
-                    <SidebarListItemAccessory>
-                      <button
-                        type="button"
-                        aria-label={`Edit ${view.name}`}
-                        className="text-tertiary hover:text-primary transition-colors"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingView(view);
-                          setViewEditorOpen(true);
-                        }}
-                      >
-                        <SettingsIcon className="size-3.5" />
-                      </button>
-                    </SidebarListItemAccessory>
-                  </SidebarListItem>
-                );
-              })
+                  />
+                ))
             )}
           </SidebarListGroup>
         </SidebarList>
@@ -514,8 +545,10 @@ export function AccountsSidebar({
         open={viewEditorOpen}
         onOpenChange={setViewEditorOpen}
         view={editingView}
+        accounts={accounts}
         onSave={onSaveView}
         onDelete={onDeleteView}
+        onReset={onResetView}
       />
 
       <Dialog

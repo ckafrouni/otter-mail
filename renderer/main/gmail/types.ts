@@ -38,18 +38,25 @@ export type GmailMessageDetail = GmailMessageSummary & {
   attachments: { id: string; filename: string; mimeType: string; size: number }[];
 };
 
-/** A distinct user-label name aggregated across all accounts (custom-view picker). */
-export type AggregatedLabel = {
-  name: string;
-  unread: number;
-  color?: { backgroundColor: string; textColor: string };
+/** One picked label, scoped to a specific account (per-account, by exact id). */
+export type LabelSelection = {
+  accountId: string;
+  labelId: string;
 };
 
-/** A user-defined combined view: shows messages carrying any of these label names. */
-export type CustomView = {
+export type ViewKind = "inbox" | "sent" | "custom";
+
+/**
+ * A Combined-mailbox view. Shows the union of messages matching any of its
+ * label `selections`. Built-in "inbox"/"sent" views use dynamic defaults when
+ * `selections` is null (every account's INBOX/SENT) and can be reset back to it.
+ */
+export type MailView = {
   id: string;
   name: string;
-  labelNames: string[];
+  kind: ViewKind;
+  /** null = use the dynamic default for this kind (only for inbox/sent). */
+  selections: LabelSelection[] | null;
 };
 
 /** Per-account local-sync progress, exposed to the renderer for status UI. */

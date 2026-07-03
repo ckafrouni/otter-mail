@@ -3,7 +3,7 @@ import type {
   GmailLabel,
   GmailMessageSummary,
   GmailMessageDetail,
-  AggregatedLabel,
+  LabelSelection,
   SyncStatus,
 } from "./types";
 
@@ -27,8 +27,7 @@ export type ListMessagesResult = {
 };
 
 export type ListCombinedMessagesParams = {
-  labelIds?: string[];
-  labelNames?: string[];
+  selections: LabelSelection[];
   pageToken?: string;
   maxResults?: number;
 };
@@ -84,8 +83,6 @@ export const gmailApi = {
   listCombinedMessages: (
     params: ListCombinedMessagesParams,
   ): Promise<ListMessagesResult> => ipc("gmail:listCombinedMessages", params),
-
-  listAllUserLabels: (): Promise<AggregatedLabel[]> => ipc("gmail:listAllUserLabels"),
 
   getMessage: (accountId: string, messageId: string): Promise<GmailMessageDetail> =>
     ipc("gmail:getMessage", { accountId, messageId }),

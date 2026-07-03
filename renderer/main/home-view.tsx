@@ -1,16 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SplitView, EmptyState, Button } from "@glaze/core/components";
 import { AccountsSidebar } from "./gmail/accounts-sidebar";
 import { MessageList } from "./gmail/message-list";
 import { MessageReader } from "./gmail/message-reader";
 import { ComposeDialog } from "./gmail/compose-dialog";
 import { useCredentials, useAccounts, useAddAccount, useAccountSync } from "./gmail/hooks";
-import type { CombinedQuery } from "./gmail/hooks";
 import {
-  useCustomViews,
+  useMailViews,
+  resolveSelections,
+  loadLastLocation,
+  saveLastLocation,
   COMBINED_ACCOUNT_ID,
-  COMBINED_INBOX_LABEL,
-  VIEW_LABEL_PREFIX,
+  INBOX_VIEW_ID,
 } from "./gmail/custom-views";
 
 export function HomeView() {
@@ -21,11 +22,12 @@ export function HomeView() {
   const [readerAccountId, setReaderAccountId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [composeOpen, setComposeOpen] = useState(false);
+  const [initialized, setInitialized] = useState(false);
 
   const credentialsQuery = useCredentials();
   const accountsQuery = useAccounts();
   const addAccount = useAddAccount();
-  const { views, saveView, deleteView } = useCustomViews();
+  const { views, saveView, deleteView, resetView } = useMailViews();
 
   const accounts = accountsQuery.data ?? [];
   const credentials = credentialsQuery.data;
@@ -34,33 +36,75 @@ export function HomeView() {
 
   const isCombined = selectedAccountId === COMBINED_ACCOUNT_ID;
 
-  // Resolve the effective account: combined sentinel, else selected if present, else first.
+  // Once accounts are known, restore the last location or apply the default
+  // (Combined when 2+ accounts, else the first account).
+  useEffect(() => {
+    if (initialized || accountsQuery.isLoading || accounts.length === 0) return;
+    const canCombined = accounts.length > 1;
+    const saved = loadLastLocation();
+    let acct: string | null = null;
+    let label = "INBOX";
+    if (saved) {
+      if (saved.accountId === COMBINED_ACCOUNT_ID && canCombined) {
+        acct = COMBINED_ACCOUNT_ID;
+        label = saved.labelId;
+      } else if (accounts.some((a) => a.id === saved.accountId)) {
+        acct = saved.accountId;
+        label = saved.labelId;
+      }
+    }
+    if (!acct) {
+      if (canCombined) {
+        acct = COMBINED_ACCOUNT_ID;
+        label = INBOX_VIEW_ID;
+      } else {
+        acct = firstRealAccountId;
+        label = "INBOX";
+      }
+    }
+    setSelectedAccountId(acct);
+    setSelectedLabelId(label);
+    setInitialized(true);
+  }, [initialized, accountsQuery.isLoading, accounts, firstRealAccountId]);
+
+  // Persist where the user is so we can reopen here next launch.
+  useEffect(() => {
+    if (!initialized || !selectedAccountId) return;
+    saveLastLocation({ accountId: selectedAccountId, labelId: selectedLabelId });
+  }, [initialized, selectedAccountId, selectedLabelId]);
+
+  // If the selected combined view disappears (deleted), fall back to Inbox.
+  useEffect(() => {
+    if (!isCombined) return;
+    if (!views.some((v) => v.id === selectedLabelId)) {
+      setSelectedLabelId(INBOX_VIEW_ID);
+    }
+  }, [isCombined, views, selectedLabelId]);
+
   const effectiveAccountId = isCombined
     ? COMBINED_ACCOUNT_ID
     : selectedAccountId && accounts.some((a) => a.id === selectedAccountId)
       ? selectedAccountId
       : firstRealAccountId;
 
-  // Local-first: keep the on-disk cache synced with Gmail in the background.
-  // Combined mode refreshes all accounts via its own list handler, so skip the
-  // per-account driver here (the sentinel isn't a real account).
+  // Local-first: keep the on-disk cache synced in the background. Combined mode
+  // refreshes all accounts via its own list handler (sentinel isn't a real account).
   const syncStatus = useAccountSync(isCombined ? null : effectiveAccountId);
 
-  // Build the cross-account query for the Combined mailbox.
-  const combinedQuery: CombinedQuery | null = (() => {
+  // Resolve the selected combined view to concrete (account, label) selections.
+  const combined = (() => {
     if (!isCombined) return null;
-    if (selectedLabelId.startsWith(VIEW_LABEL_PREFIX)) {
-      const viewId = selectedLabelId.slice(VIEW_LABEL_PREFIX.length);
-      const view = views.find((v) => v.id === viewId);
-      return { kind: "view", viewId, labelNames: view?.labelNames ?? [] };
-    }
-    return { kind: "inbox" };
+    const view = views.find((v) => v.id === selectedLabelId) ?? views[0];
+    return {
+      viewId: view?.id ?? INBOX_VIEW_ID,
+      selections: view ? resolveSelections(view, accounts) : [],
+    };
   })();
 
   const handleSelectAccount = (accountId: string) => {
     console.log("[HomeView:selectAccount]", { accountId });
     setSelectedAccountId(accountId);
-    setSelectedLabelId(accountId === COMBINED_ACCOUNT_ID ? COMBINED_INBOX_LABEL : "INBOX");
+    setSelectedLabelId(accountId === COMBINED_ACCOUNT_ID ? INBOX_VIEW_ID : "INBOX");
     setSelectedMessageId(null);
     setReaderAccountId(null);
     setSearchQuery("");
@@ -167,6 +211,7 @@ export function HomeView() {
             views={views}
             onSaveView={saveView}
             onDeleteView={deleteView}
+            onResetView={resetView}
           />
         }
         sidebarSize={{ default: 220, min: 180, max: 300 }}
@@ -175,7 +220,7 @@ export function HomeView() {
             <MessageList
               accountId={(isCombined ? firstRealAccountId : effectiveAccountId) ?? ""}
               labelId={selectedLabelId}
-              combined={combinedQuery}
+              combined={combined}
               accountIds={accountIds}
               selectedMessageId={selectedMessageId}
               onSelectMessage={handleSelectMessage}

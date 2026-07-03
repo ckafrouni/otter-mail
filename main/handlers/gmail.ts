@@ -212,46 +212,34 @@ export function registerGmailHandlers(): void {
   });
 
   // gmail:listCombinedMessages — cross-account union for the "Combined" mailbox.
-  // Either a shared system label id (combined Inbox → labelIds: ["INBOX"]) or a
-  // set of user-label *names* (custom view). Reads local store; refreshes all
-  // accounts in the background.
+  // `selections` is a list of {accountId, labelId} pairs; a message matches if it
+  // carries any selected label in its own account. Reads the local store and
+  // refreshes all accounts in the background.
   ipcMain.handle("gmail:listCombinedMessages", async (_event, params: unknown) => {
     const p = params as Record<string, unknown>;
     console.log("[gmail:listCombinedMessages]", {
-      labelIds: p?.labelIds,
-      labelNames: p?.labelNames,
+      selectionCount: Array.isArray(p?.selections) ? p.selections.length : 0,
       pageToken: p?.pageToken,
     });
     try {
-      const labelIds = asStringArray(p?.labelIds);
-      const labelNames = asStringArray(p?.labelNames);
+      const rawSelections = Array.isArray(p?.selections) ? p.selections : [];
+      const selections = rawSelections
+        .map((s) => s as Record<string, unknown>)
+        .filter((s) => typeof s?.accountId === "string" && typeof s?.labelId === "string")
+        .map((s) => ({ accountId: s.accountId as string, labelId: s.labelId as string }));
       const pageToken = asString(p?.pageToken);
       const maxResults = asNumber(p?.maxResults) ?? LOCAL_PAGE_SIZE;
       const offset = pageToken ? Number.parseInt(pageToken, 10) || 0 : 0;
 
       void mailSync.syncAllAccounts();
 
-      const page = labelNames
-        ? mailStore.getCombinedMessagesByLabelNames(labelNames, offset, maxResults)
-        : mailStore.getCombinedMessagesByLabelId(labelIds?.[0] ?? "INBOX", offset, maxResults);
+      const page = mailStore.getCombinedMessagesBySelections(selections, offset, maxResults);
       return {
         messages: page.messages,
         nextPageToken: page.hasMore ? String(offset + maxResults) : undefined,
       };
     } catch (err) {
       console.log("[gmail:listCombinedMessages] error", { error: String(err) });
-      throw err;
-    }
-  });
-
-  // gmail:listAllUserLabels — distinct user-label names across all accounts,
-  // for the custom-view label picker.
-  ipcMain.handle("gmail:listAllUserLabels", async (_event) => {
-    console.log("[gmail:listAllUserLabels]", {});
-    try {
-      return mailStore.listAllUserLabels();
-    } catch (err) {
-      console.log("[gmail:listAllUserLabels] error", { error: String(err) });
       throw err;
     }
   });

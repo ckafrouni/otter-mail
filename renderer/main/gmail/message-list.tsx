@@ -15,19 +15,21 @@ import {
   useModifyMessage,
   useTrashMessage,
   useLabelResolver,
-  type CombinedQuery,
 } from "./hooks";
 import { LabelChip } from "./label-chip";
-import type { GmailLabel, GmailMessageSummary, SyncStatus } from "./types";
+import type { GmailLabel, GmailMessageSummary, LabelSelection, SyncStatus } from "./types";
 
 type ResolveLabel = (accountId: string | undefined, labelId: string) => GmailLabel | undefined;
+
+/** Cross-account query descriptor for the Combined mailbox. */
+export type CombinedList = { viewId: string; selections: LabelSelection[] };
 
 type MessageListProps = {
   /** Active account — used for account-mode queries and as a fallback owner id. */
   accountId: string;
   labelId: string;
   /** When set, the list is cross-account (Combined mailbox). */
-  combined: CombinedQuery | null;
+  combined: CombinedList | null;
   /** All connected account ids, for resolving label chips across accounts. */
   accountIds: string[];
   selectedMessageId: string | null;
@@ -235,7 +237,11 @@ export function MessageList({
 
   // Both hooks are always called (rules of hooks); the inactive one is disabled.
   const accountMessages = useMessages(isCombined ? null : accountId, labelId, searchQuery);
-  const combinedMessages = useCombinedMessages(combined ?? { kind: "inbox" }, isCombined);
+  const combinedMessages = useCombinedMessages(
+    combined?.selections ?? [],
+    combined?.viewId ?? "",
+    isCombined,
+  );
   const messagesQuery = isCombined ? combinedMessages : accountMessages;
 
   const resolveLabel = useLabelResolver(isCombined ? accountIds : [accountId]);
