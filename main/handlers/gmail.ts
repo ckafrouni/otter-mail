@@ -407,6 +407,7 @@ export function registerGmailHandlers(): void {
               v.kind === "starred" ||
               v.kind === "sent" ||
               v.kind === "drafts" ||
+              v.kind === "important" ||
               v.kind === "custom"),
         )
         .map(

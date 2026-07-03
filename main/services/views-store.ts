@@ -16,12 +16,14 @@ export const INBOX_VIEW_ID = "__inbox__";
 export const STARRED_VIEW_ID = "__starred__";
 export const SENT_VIEW_ID = "__sent__";
 export const DRAFTS_VIEW_ID = "__drafts__";
+export const IMPORTANT_VIEW_ID = "__important__";
 
 const DEFAULT_VIEWS: MailView[] = [
   { id: INBOX_VIEW_ID, name: "Inbox", kind: "inbox", rules: null },
   { id: STARRED_VIEW_ID, name: "Starred", kind: "starred", rules: null },
   { id: SENT_VIEW_ID, name: "Sent", kind: "sent", rules: null },
   { id: DRAFTS_VIEW_ID, name: "Drafts", kind: "drafts", rules: null },
+  { id: IMPORTANT_VIEW_ID, name: "Important", kind: "important", rules: null },
 ];
 
 const BUILTIN_IDS = new Set(DEFAULT_VIEWS.map((v) => v.id));
@@ -30,6 +32,7 @@ const BUILTIN_NAMES: Record<string, string> = {
   starred: "Starred",
   sent: "Sent",
   drafts: "Drafts",
+  important: "Important",
 };
 
 async function getViewsPath(): Promise<string> {

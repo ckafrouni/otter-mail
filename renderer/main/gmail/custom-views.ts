@@ -20,12 +20,14 @@ export const INBOX_VIEW_ID = "__inbox__";
 export const STARRED_VIEW_ID = "__starred__";
 export const SENT_VIEW_ID = "__sent__";
 export const DRAFTS_VIEW_ID = "__drafts__";
+export const IMPORTANT_VIEW_ID = "__important__";
 
 const DEFAULT_VIEWS: MailView[] = [
   { id: INBOX_VIEW_ID, name: "Inbox", kind: "inbox", rules: null },
   { id: STARRED_VIEW_ID, name: "Starred", kind: "starred", rules: null },
   { id: SENT_VIEW_ID, name: "Sent", kind: "sent", rules: null },
   { id: DRAFTS_VIEW_ID, name: "Drafts", kind: "drafts", rules: null },
+  { id: IMPORTANT_VIEW_ID, name: "Important", kind: "important", rules: null },
 ];
 
 /** The Gmail system-label id a default view aggregates across accounts. */
@@ -34,6 +36,7 @@ function systemLabelForKind(kind: ViewKind): string | null {
   if (kind === "starred") return "STARRED";
   if (kind === "sent") return "SENT";
   if (kind === "drafts") return "DRAFT";
+  if (kind === "important") return "IMPORTANT";
   return null;
 }
 
@@ -100,6 +103,7 @@ function readLegacyViews(): MailView[] | null {
             view.kind === "starred" ||
             view.kind === "sent" ||
             view.kind === "drafts" ||
+            view.kind === "important" ||
             view.kind === "custom")
         );
       })

@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@glaze/core/components";
 import {
+  BookmarkIcon,
   FileIcon,
   InboxIcon,
   LayersIcon,
@@ -47,6 +48,7 @@ function viewCommandIcon(view: MailView): ReactNode {
   if (view.kind === "starred") return <StarIcon />;
   if (view.kind === "sent") return <SendIcon />;
   if (view.kind === "drafts") return <FileIcon />;
+  if (view.kind === "important") return <BookmarkIcon />;
   return <LayersIcon />;
 }
 

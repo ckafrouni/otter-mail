@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  BookmarkIcon,
   ChevronRightIcon,
   FileIcon,
   InboxIcon,
@@ -177,6 +178,7 @@ function viewIcon(view: MailView) {
   if (view.kind === "starred") return <StarIcon className="size-4 text-secondary" />;
   if (view.kind === "sent") return <SendIcon className="size-4 text-secondary" />;
   if (view.kind === "drafts") return <FileIcon className="size-4 text-secondary" />;
+  if (view.kind === "important") return <BookmarkIcon className="size-4 text-secondary" />;
   return <LayersIcon className="size-4 text-secondary" />;
 }
 
@@ -185,6 +187,7 @@ const BUILTIN_SUMMARY: Record<string, string> = {
   starred: "Default — every account's Starred",
   sent: "Default — every account's Sent",
   drafts: "Default — every account's Drafts",
+  important: "Default — every account's Important",
 };
 
 function viewSummary(view: MailView): string {

@@ -69,7 +69,7 @@ export type LabelSelection = {
   labelId: string;
 };
 
-export type ViewKind = "inbox" | "starred" | "sent" | "drafts" | "custom";
+export type ViewKind = "inbox" | "starred" | "sent" | "drafts" | "important" | "custom";
 
 /**
  * One account's filter within a Combined-mailbox view. A message matches when
