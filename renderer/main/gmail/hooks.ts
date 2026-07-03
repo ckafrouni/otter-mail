@@ -12,6 +12,7 @@ import type {
   GmailAccount,
   GmailLabel,
   GmailMessageDetail,
+  GmailMessageSummary,
   LabelSelection,
   SyncStatus,
 } from "./types";
@@ -248,6 +249,106 @@ export function useMessage(accountId: string | null, messageId: string | null) {
   });
 }
 
+// ---- Optimistic update helpers ----
+//
+// Mutations below patch the cache in `onMutate` so the UI reacts instantly
+// (star/read/archive/trash felt laggy waiting on the Gmail round trip),
+// then reconcile with the server-confirmed state in `onSuccess`/`onError`.
+// The label-count delta math mirrors the backend's local-cache recompute in
+// `mail-store.ts`'s `applyLabelChange`/`deleteMessage`, so sidebar/header
+// unread badges move in lockstep with the message list instead of only
+// updating once the next label sync happens.
+
+type LabelCountDelta = { total: number; unread: number };
+
+function computeLabelCountDeltas(
+  priorLabelIds: string[],
+  addLabelIds: string[],
+  removeLabelIds: string[],
+): Map<string, LabelCountDelta> {
+  const priorUnread = priorLabelIds.includes("UNREAD");
+  const labelSet = new Set(priorLabelIds);
+  for (const lid of removeLabelIds) labelSet.delete(lid);
+  for (const lid of addLabelIds) labelSet.add(lid);
+  const newLabelIds = [...labelSet];
+  const newUnread = newLabelIds.includes("UNREAD");
+
+  const deltas = new Map<string, LabelCountDelta>();
+  const bump = (labelId: string, total: number, unread: number) => {
+    const cur = deltas.get(labelId) ?? { total: 0, unread: 0 };
+    deltas.set(labelId, { total: cur.total + total, unread: cur.unread + unread });
+  };
+
+  for (const lid of addLabelIds) {
+    if (!priorLabelIds.includes(lid)) bump(lid, 1, newUnread ? 1 : 0);
+  }
+  for (const lid of removeLabelIds) {
+    if (priorLabelIds.includes(lid)) bump(lid, -1, priorUnread ? -1 : 0);
+  }
+  // Toggling UNREAD itself changes the unread count of every *other* label the
+  // message already carries (Gmail's per-label unread counters aggregate across
+  // all labels on a message), so sweep those separately from the add/remove diff.
+  if (priorUnread !== newUnread) {
+    const sign = newUnread ? 1 : -1;
+    for (const lid of newLabelIds) {
+      if (lid === "UNREAD" || addLabelIds.includes(lid) || removeLabelIds.includes(lid)) continue;
+      bump(lid, 0, sign);
+    }
+  }
+  return deltas;
+}
+
+function applyLabelCountDeltas(
+  labels: GmailLabel[] | undefined,
+  deltas: Map<string, LabelCountDelta>,
+): GmailLabel[] | undefined {
+  if (!labels || deltas.size === 0) return labels;
+  return labels.map((l) => {
+    const delta = deltas.get(l.id);
+    if (!delta) return l;
+    return {
+      ...l,
+      total: Math.max(0, (l.total ?? 0) + delta.total),
+      unread: Math.max(0, (l.unread ?? 0) + delta.unread),
+    };
+  });
+}
+
+function messagesFromInfiniteData(
+  data: InfiniteData<ListMessagesResult> | undefined,
+): GmailMessageSummary[] {
+  return data?.pages.flatMap((p) => p.messages) ?? [];
+}
+
+function patchMessageInInfiniteData(
+  data: InfiniteData<ListMessagesResult> | undefined,
+  messageId: string,
+  patch: (m: GmailMessageSummary) => GmailMessageSummary,
+): InfiniteData<ListMessagesResult> | undefined {
+  if (!data) return data;
+  return {
+    ...data,
+    pages: data.pages.map((page) => ({
+      ...page,
+      messages: page.messages.map((m) => (m.id === messageId ? patch(m) : m)),
+    })),
+  };
+}
+
+function removeMessageFromInfiniteData(
+  data: InfiniteData<ListMessagesResult> | undefined,
+  messageId: string,
+): InfiniteData<ListMessagesResult> | undefined {
+  if (!data) return data;
+  return {
+    ...data,
+    pages: data.pages.map((page) => ({
+      ...page,
+      messages: page.messages.filter((m) => m.id !== messageId),
+    })),
+  };
+}
+
 // ---- Mutations ----
 
 export function useAddAccount() {
@@ -283,6 +384,72 @@ export function useModifyMessage() {
       console.log("[hooks:useModifyMessage] modifying message", params);
       return gmailApi.modifyMessage(params);
     },
+    onMutate: async (params) => {
+      const { accountId, messageId, addLabelIds = [], removeLabelIds = [] } = params;
+      const messageKey = queryKeys.message(accountId, messageId);
+      const labelsKey = queryKeys.labels(accountId);
+
+      await Promise.all([
+        qc.cancelQueries({ queryKey: messageKey }),
+        qc.cancelQueries({ queryKey: ["gmail:messages", accountId] }),
+        qc.cancelQueries({ queryKey: ["gmail:combinedMessages"] }),
+        qc.cancelQueries({ queryKey: labelsKey }),
+      ]);
+
+      const prevMessage = qc.getQueryData<GmailMessageDetail>(messageKey);
+      const prevMessagesQueries = qc.getQueriesData<InfiniteData<ListMessagesResult>>({
+        queryKey: ["gmail:messages", accountId],
+      });
+      const prevCombinedQueries = qc.getQueriesData<InfiniteData<ListMessagesResult>>({
+        queryKey: ["gmail:combinedMessages"],
+      });
+      const prevLabels = qc.getQueryData<GmailLabel[]>(labelsKey);
+
+      const priorLabelIds =
+        prevMessage?.labelIds ??
+        prevMessagesQueries.flatMap(([, data]) => messagesFromInfiniteData(data)).find((m) => m.id === messageId)
+          ?.labelIds ??
+        prevCombinedQueries.flatMap(([, data]) => messagesFromInfiniteData(data)).find((m) => m.id === messageId)
+          ?.labelIds ??
+        [];
+
+      const applyPatch = (m: GmailMessageSummary): GmailMessageSummary => {
+        const labelSet = new Set(m.labelIds);
+        for (const lid of removeLabelIds) labelSet.delete(lid);
+        for (const lid of addLabelIds) labelSet.add(lid);
+        const labelIds = [...labelSet];
+        return {
+          ...m,
+          labelIds,
+          unread: labelIds.includes("UNREAD"),
+          starred: labelIds.includes("STARRED"),
+        };
+      };
+
+      if (prevMessage) qc.setQueryData(messageKey, applyPatch(prevMessage));
+      qc.setQueriesData(
+        { queryKey: ["gmail:messages", accountId] },
+        (old: InfiniteData<ListMessagesResult> | undefined) =>
+          patchMessageInInfiniteData(old, messageId, applyPatch),
+      );
+      qc.setQueriesData(
+        { queryKey: ["gmail:combinedMessages"] },
+        (old: InfiniteData<ListMessagesResult> | undefined) =>
+          patchMessageInInfiniteData(old, messageId, applyPatch),
+      );
+
+      const deltas = computeLabelCountDeltas(priorLabelIds, addLabelIds, removeLabelIds);
+      qc.setQueryData<GmailLabel[]>(labelsKey, (old) => applyLabelCountDeltas(old, deltas));
+
+      return { messageKey, labelsKey, prevMessage, prevMessagesQueries, prevCombinedQueries, prevLabels };
+    },
+    onError: (_err, _params, context) => {
+      if (!context) return;
+      if (context.prevMessage) qc.setQueryData(context.messageKey, context.prevMessage);
+      for (const [key, data] of context.prevMessagesQueries) qc.setQueryData(key, data);
+      for (const [key, data] of context.prevCombinedQueries) qc.setQueryData(key, data);
+      if (context.prevLabels) qc.setQueryData(context.labelsKey, context.prevLabels);
+    },
     onSuccess: (_data, params) => {
       void qc.invalidateQueries({
         queryKey: queryKeys.message(params.accountId, params.messageId),
@@ -294,8 +461,8 @@ export function useModifyMessage() {
       // prefix invalidation above never reaches them — without this, read/unread
       // and star changes never show up there until the 30s staleTime lapses.
       void qc.invalidateQueries({ queryKey: ["gmail:combinedMessages"] });
-      // Header "N messages, M unread" reads label counters, which also need a
-      // refresh once a message's UNREAD label changes.
+      // Reconcile the optimistic label-count patch with the backend's own
+      // recompute (mail-store.ts), which is the source of truth.
       void qc.invalidateQueries({ queryKey: queryKeys.labels(params.accountId) });
     },
   });
@@ -317,10 +484,54 @@ export function useTrashMessage() {
       });
       return gmailApi.trashMessage(accountId, messageId);
     },
-    onSuccess: (_data, { accountId }) => {
-      void qc.invalidateQueries({
+    onMutate: async ({ accountId, messageId }) => {
+      const labelsKey = queryKeys.labels(accountId);
+      await Promise.all([
+        qc.cancelQueries({ queryKey: ["gmail:messages", accountId] }),
+        qc.cancelQueries({ queryKey: ["gmail:combinedMessages"] }),
+        qc.cancelQueries({ queryKey: labelsKey }),
+      ]);
+
+      const prevMessagesQueries = qc.getQueriesData<InfiniteData<ListMessagesResult>>({
         queryKey: ["gmail:messages", accountId],
       });
+      const prevCombinedQueries = qc.getQueriesData<InfiniteData<ListMessagesResult>>({
+        queryKey: ["gmail:combinedMessages"],
+      });
+      const prevLabels = qc.getQueryData<GmailLabel[]>(labelsKey);
+
+      const priorMessage =
+        prevMessagesQueries.flatMap(([, data]) => messagesFromInfiniteData(data)).find((m) => m.id === messageId) ??
+        prevCombinedQueries.flatMap(([, data]) => messagesFromInfiniteData(data)).find((m) => m.id === messageId);
+
+      qc.setQueriesData(
+        { queryKey: ["gmail:messages", accountId] },
+        (old: InfiniteData<ListMessagesResult> | undefined) => removeMessageFromInfiniteData(old, messageId),
+      );
+      qc.setQueriesData(
+        { queryKey: ["gmail:combinedMessages"] },
+        (old: InfiniteData<ListMessagesResult> | undefined) => removeMessageFromInfiniteData(old, messageId),
+      );
+
+      if (priorMessage) {
+        const deltas = new Map<string, LabelCountDelta>(
+          priorMessage.labelIds.map((lid) => [lid, { total: -1, unread: priorMessage.unread ? -1 : 0 }]),
+        );
+        qc.setQueryData<GmailLabel[]>(labelsKey, (old) => applyLabelCountDeltas(old, deltas));
+      }
+
+      return { labelsKey, prevMessagesQueries, prevCombinedQueries, prevLabels };
+    },
+    onError: (_err, _vars, context) => {
+      if (!context) return;
+      for (const [key, data] of context.prevMessagesQueries) qc.setQueryData(key, data);
+      for (const [key, data] of context.prevCombinedQueries) qc.setQueryData(key, data);
+      if (context.prevLabels) qc.setQueryData(context.labelsKey, context.prevLabels);
+    },
+    onSuccess: (_data, { accountId }) => {
+      void qc.invalidateQueries({ queryKey: ["gmail:messages", accountId] });
+      void qc.invalidateQueries({ queryKey: ["gmail:combinedMessages"] });
+      void qc.invalidateQueries({ queryKey: queryKeys.labels(accountId) });
     },
   });
 }

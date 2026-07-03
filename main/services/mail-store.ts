@@ -227,8 +227,43 @@ export function upsertMessageDetail(accountId: string, detail: GmailMessageDetai
   );
 }
 
+/**
+ * Recomputes and persists `labels.unread`/`total` for the given label ids from
+ * the local message cache. This is the only place besides a Gmail label sync
+ * (`upsertLabels`) that writes those counters — without it, a local mutation
+ * (mark read/unread, star, archive, trash) updates the message rows but leaves
+ * the cached label counters stale until the next full/incremental sync, which
+ * is why sidebar/header unread badges could disagree with what the message
+ * list actually showed until the app was relaunched.
+ */
+function recomputeLabelCounts(accountId: string, labelIds: string[]): void {
+  if (labelIds.length === 0) return;
+  const d = getDb();
+  const placeholders = labelIds.map(() => "?").join(", ");
+  const rows = d
+    .prepare(`
+      SELECT ml.labelId AS labelId, COUNT(*) AS total, SUM(m.unread) AS unread
+        FROM message_labels ml
+        JOIN messages m ON m.accountId = ml.accountId AND m.id = ml.messageId
+       WHERE ml.accountId = ? AND ml.labelId IN (${placeholders})
+       GROUP BY ml.labelId
+    `)
+    .all(accountId, ...labelIds) as unknown as { labelId: string; total: number; unread: number | null }[];
+  const counts = new Map(rows.map((r) => [r.labelId, { total: r.total, unread: r.unread ?? 0 }]));
+  const update = d.prepare("UPDATE labels SET unread = ?, total = ? WHERE accountId = ? AND id = ?");
+  for (const labelId of labelIds) {
+    const c = counts.get(labelId) ?? { total: 0, unread: 0 };
+    update.run(c.unread, c.total, accountId, labelId);
+  }
+}
+
 export function deleteMessage(accountId: string, messageId: string): void {
   const d = getDb();
+  const existing = d
+    .prepare("SELECT labelIds FROM messages WHERE accountId = ? AND id = ?")
+    .get(accountId, messageId) as unknown as { labelIds: string } | undefined;
+  const priorLabelIds = existing ? parseLabelIds(existing.labelIds) : [];
+
   d.exec("BEGIN");
   try {
     d.prepare("DELETE FROM messages WHERE accountId = ? AND id = ?").run(accountId, messageId);
@@ -241,6 +276,8 @@ export function deleteMessage(accountId: string, messageId: string): void {
     d.exec("ROLLBACK");
     throw err;
   }
+
+  recomputeLabelCounts(accountId, priorLabelIds);
 }
 
 /** Apply an optimistic label add/remove to a locally-cached message. */
@@ -251,11 +288,13 @@ export function applyLabelChange(
   removeLabelIds: string[],
 ): void {
   const d = getDb();
-  const exists = d
-    .prepare("SELECT 1 FROM messages WHERE accountId = ? AND id = ?")
-    .get(accountId, messageId);
-  if (!exists) return;
+  const existing = d
+    .prepare("SELECT labelIds FROM messages WHERE accountId = ? AND id = ?")
+    .get(accountId, messageId) as unknown as { labelIds: string } | undefined;
+  if (!existing) return;
+  const priorLabelIds = parseLabelIds(existing.labelIds);
 
+  let newLabelIds: string[] = priorLabelIds;
   d.exec("BEGIN");
   try {
     for (const lid of removeLabelIds) {
@@ -271,13 +310,13 @@ export function applyLabelChange(
     const labelRows = d
       .prepare("SELECT labelId FROM message_labels WHERE accountId = ? AND messageId = ?")
       .all(accountId, messageId) as unknown as { labelId: string }[];
-    const labelIds = labelRows.map((r) => r.labelId);
+    newLabelIds = labelRows.map((r) => r.labelId);
     d.prepare(
       "UPDATE messages SET labelIds = ?, unread = ?, starred = ? WHERE accountId = ? AND id = ?",
     ).run(
-      JSON.stringify(labelIds),
-      labelIds.includes("UNREAD") ? 1 : 0,
-      labelIds.includes("STARRED") ? 1 : 0,
+      JSON.stringify(newLabelIds),
+      newLabelIds.includes("UNREAD") ? 1 : 0,
+      newLabelIds.includes("STARRED") ? 1 : 0,
       accountId,
       messageId,
     );
@@ -286,6 +325,8 @@ export function applyLabelChange(
     d.exec("ROLLBACK");
     throw err;
   }
+
+  recomputeLabelCounts(accountId, [...new Set([...priorLabelIds, ...newLabelIds])]);
 }
 
 // ── Messages: reads ───────────────────────────────────────────────────────────
