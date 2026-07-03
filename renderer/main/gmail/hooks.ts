@@ -92,6 +92,25 @@ export function useUpdateAccount() {
       console.log("[hooks:useUpdateAccount] updating account", params);
       return gmailApi.updateAccount(params);
     },
+    onMutate: async (params) => {
+      await qc.cancelQueries({ queryKey: queryKeys.accounts() });
+      const prev = qc.getQueryData<GmailAccount[]>(queryKeys.accounts());
+      qc.setQueryData<GmailAccount[]>(queryKeys.accounts(), (accounts) =>
+        (accounts ?? []).map((a) =>
+          a.id === params.accountId
+            ? {
+                ...a,
+                displayName: params.displayName !== undefined ? params.displayName : a.displayName,
+                color: params.color !== undefined ? params.color : a.color,
+              }
+            : a,
+        ),
+      );
+      return { prev };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.prev) qc.setQueryData(queryKeys.accounts(), context.prev);
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.accounts() });
     },
@@ -481,6 +500,17 @@ export function useRemoveAccount() {
     mutationFn: (accountId: string) => {
       console.log("[hooks:useRemoveAccount] removing account", { accountId });
       return gmailApi.removeAccount(accountId);
+    },
+    onMutate: async (accountId) => {
+      await qc.cancelQueries({ queryKey: queryKeys.accounts() });
+      const prev = qc.getQueryData<GmailAccount[]>(queryKeys.accounts());
+      qc.setQueryData<GmailAccount[]>(queryKeys.accounts(), (accounts) =>
+        (accounts ?? []).filter((a) => a.id !== accountId),
+      );
+      return { prev };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.prev) qc.setQueryData(queryKeys.accounts(), context.prev);
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.accounts() });
@@ -872,7 +902,9 @@ export function useSendMessage() {
       // Replies land inside existing threads/views, so refresh those caches too.
       void qc.invalidateQueries({ queryKey: ["gmail:thread", params.accountId] });
       void qc.invalidateQueries({ queryKey: ["gmail:combinedMessages"] });
+      void qc.invalidateQueries({ queryKey: ["gmail:combinedCounts"] });
       void qc.invalidateQueries({ queryKey: ["gmail:searchMessages"] });
+      void qc.invalidateQueries({ queryKey: queryKeys.labels(params.accountId) });
     },
   });
 }

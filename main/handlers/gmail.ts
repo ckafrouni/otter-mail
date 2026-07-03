@@ -668,7 +668,7 @@ export function registerGmailHandlers(): void {
         }
       }
 
-      return await sendMessage(accountId, {
+      const result = await sendMessage(accountId, {
         to,
         cc: asString(p?.cc),
         bcc: asString(p?.bcc),
@@ -679,6 +679,15 @@ export function registerGmailHandlers(): void {
         references,
         attachments,
       });
+      // Mirror the sent message locally right away so it shows in Sent and in
+      // its conversation without waiting for the next sync tick.
+      if (result.messageId) {
+        mailStore.upsertMessages(
+          accountId,
+          await fetchMetadataForIds(accountId, [result.messageId]),
+        );
+      }
+      return { ok: true as const };
     } catch (err) {
       console.log("[gmail:sendMessage] error", { error: String(err) });
       throw err;

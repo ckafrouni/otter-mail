@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect } from "react";
+import { toast } from "@glaze/core/components";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { gmailApi, type SaveViewParams } from "./api";
 import type { GmailAccount, MailView, ViewKind, ViewRule } from "./types";
@@ -149,17 +150,61 @@ export function useMailViews() {
     [qc],
   );
 
+  // Optimistic: patch the views cache immediately, reconcile on settle.
+  const patchViews = useCallback(
+    async (patch: (views: MailView[]) => MailView[]) => {
+      await qc.cancelQueries({ queryKey: VIEWS_QUERY_KEY });
+      const prev = qc.getQueryData<MailView[]>(VIEWS_QUERY_KEY);
+      qc.setQueryData<MailView[]>(VIEWS_QUERY_KEY, (views) => patch(views ?? DEFAULT_VIEWS));
+      return { prev };
+    },
+    [qc],
+  );
+  const rollback = (context?: { prev?: MailView[] }) => {
+    if (context?.prev) qc.setQueryData(VIEWS_QUERY_KEY, context.prev);
+  };
+
   const saveMutation = useMutation({
     mutationFn: (input: SaveViewParams) => gmailApi.saveView(input),
-    onSuccess: invalidate,
+    onMutate: (input) =>
+      patchViews((views) =>
+        input.id
+          ? views.map((v) => (v.id === input.id ? { ...v, name: input.name, rules: input.rules } : v))
+          : [
+              ...views,
+              { id: `pending:${input.name}`, name: input.name, kind: "custom", rules: input.rules },
+            ],
+      ),
+    onError: (_err, _vars, context) => {
+      rollback(context);
+      toast.error("Could not save the view");
+    },
+    onSettled: invalidate,
   });
   const deleteMutation = useMutation({
     mutationFn: (id: string) => gmailApi.deleteView(id),
-    onSuccess: invalidate,
+    onMutate: (id) => patchViews((views) => views.filter((v) => v.id !== id)),
+    onError: (_err, _vars, context) => {
+      rollback(context);
+      toast.error("Could not delete the view");
+    },
+    onSettled: invalidate,
   });
   const resetMutation = useMutation({
     mutationFn: (id: string) => gmailApi.resetView(id),
-    onSuccess: invalidate,
+    onMutate: (id) =>
+      patchViews((views) =>
+        views.map((v) =>
+          v.id === id && v.kind !== "custom"
+            ? { ...v, name: DEFAULT_VIEWS.find((d) => d.id === id)?.name ?? v.name, rules: null }
+            : v,
+        ),
+      ),
+    onError: (_err, _vars, context) => {
+      rollback(context);
+      toast.error("Could not reset the view");
+    },
+    onSettled: invalidate,
   });
 
   const saveView = useCallback(

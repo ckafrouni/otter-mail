@@ -210,9 +210,11 @@ export function ViewEditorForm({ view, accounts, onSave, onDelete, onReset, onDo
 
   const canSave = name.trim().length > 0 && rules.length > 0;
 
+  // Mutations are optimistic — close immediately, errors roll back + toast.
   const handleSave = () => {
     if (!canSave) return;
-    void onSave({ id: view?.id, name: name.trim(), rules }).then(onDone);
+    void onSave({ id: view?.id, name: name.trim(), rules });
+    onDone();
   };
 
   if (accounts.length === 0) {
@@ -310,13 +312,13 @@ export function ViewEditorForm({ view, accounts, onSave, onDelete, onReset, onDo
             variant="filled"
             size="small"
             className="text-support-red"
-            onClick={() => void onDelete(view.id).then(onDone)}
+            onClick={() => { void onDelete(view.id); onDone(); }}
           >
             Delete
           </Button>
         ) : null}
         {view && isDefault ? (
-          <Button variant="filled" size="small" onClick={() => void onReset(view.id).then(onDone)}>
+          <Button variant="filled" size="small" onClick={() => { void onReset(view.id); onDone(); }}>
             Reset to default
           </Button>
         ) : null}

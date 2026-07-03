@@ -687,7 +687,7 @@ export async function sendMessage(
     references?: string;
     attachments?: ComposeAttachment[];
   },
-): Promise<{ ok: true }> {
+): Promise<{ ok: true; messageId?: string }> {
   const account = await getAccount(accountId);
   const fromAddress = account ? formatAddress(account.name, account.email) : accountId;
 
@@ -706,12 +706,12 @@ export async function sendMessage(
   const payload: { raw: string; threadId?: string } = { raw: encodeBase64url(raw) };
   if (params.threadId) payload.threadId = params.threadId;
 
-  await gmailFetch(accountId, "/messages/send", {
+  const sent = (await gmailFetch(accountId, "/messages/send", {
     method: "POST",
     body: JSON.stringify(payload),
-  });
+  })) as { id?: string };
 
-  return { ok: true };
+  return { ok: true, messageId: sent.id };
 }
 
 /** Creates or updates a Gmail draft with the same MIME builder as sends. */
