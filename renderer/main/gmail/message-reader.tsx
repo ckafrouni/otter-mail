@@ -113,6 +113,28 @@ function dayKey(timestamp: number): string {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
 
+/**
+ * The email canvas is always light (HTML mail is designed for white), but in
+ * a dark-appearance window the iframe document inherits dark UA defaults —
+ * default text renders WHITE on our white card. This prelude pins the
+ * document to light rendering and sane typography; email-supplied CSS comes
+ * after it and still wins.
+ */
+const MESSAGE_BODY_PRELUDE = `<style>
+:root { color-scheme: light; }
+body {
+  margin: 10px;
+  background: #ffffff;
+  color: #1f1f1f;
+  font-family: -apple-system, system-ui, Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+a { color: #1264a3; }
+blockquote { border-left: 3px solid #d6d6d6; padding-left: 12px; margin: 4px 0; color: #555555; }
+</style>`;
+
 function MessageBody({
   bodyHtml,
   bodyText,
@@ -126,7 +148,7 @@ function MessageBody({
     return (
       <iframe
         sandbox="allow-same-origin"
-        srcDoc={bodyHtml}
+        srcDoc={MESSAGE_BODY_PRELUDE + bodyHtml}
         className="w-full rounded-lg border border-(--sk-border) bg-white"
         title="Message body"
         onLoad={(e) => {
