@@ -83,6 +83,11 @@ function getDb(): DatabaseSync {
       fullSyncDone INTEGER NOT NULL DEFAULT 0,
       lastSyncAt   INTEGER
     );
+
+    CREATE TABLE IF NOT EXISTS kv (
+      key   TEXT PRIMARY KEY,
+      value TEXT
+    );
   `);
 
   // Legacy rows synced before threading behave as single-message threads.
@@ -465,6 +470,9 @@ function threadPageQuery(matchedSql: string): string {
   `;
 }
 
+const NOT_SPAM_TRASH =
+  "NOT EXISTS (SELECT 1 FROM message_labels mlx WHERE mlx.accountId = m.accountId AND mlx.messageId = m.id AND mlx.labelId IN ('SPAM', 'TRASH'))";
+
 export function getThreadsPage(
   accountId: string,
   labelId: string,
@@ -472,6 +480,8 @@ export function getThreadsPage(
   limit: number,
 ): { messages: GmailMessageSummary[]; hasMore: boolean } {
   const d = getDb();
+  // Gmail semantics: spam/trash stay out of every view except their own.
+  const exclusion = labelId === "SPAM" || labelId === "TRASH" ? "" : `AND ${NOT_SPAM_TRASH}`;
   const rows = d
     .prepare(
       threadPageQuery(`
@@ -479,7 +489,7 @@ export function getThreadsPage(
           FROM messages m
           JOIN message_labels ml
             ON ml.accountId = m.accountId AND ml.messageId = m.id
-         WHERE m.accountId = ? AND ml.labelId = ?
+         WHERE m.accountId = ? AND ml.labelId = ? ${exclusion}
       `),
     )
     .all(accountId, labelId, limit + 1, offset) as unknown as ThreadRow[];
@@ -612,6 +622,10 @@ function rulesWhere(rules: ViewRule[]): { clause: string; params: string[] } {
       sub.push(HAS_LABEL);
       params.push(labelId);
     }
+    // Gmail semantics: spam/trash only surface when a rule asks for them.
+    if (!rule.allOf.includes("SPAM") && !rule.allOf.includes("TRASH")) {
+      sub.push(NOT_SPAM_TRASH);
+    }
     if (rule.noneOf.length > 0) {
       sub.push(
         `NOT EXISTS (SELECT 1 FROM message_labels ml WHERE ml.accountId = m.accountId AND ml.messageId = m.id AND ml.labelId IN (${rule.noneOf.map(() => "?").join(", ")}))`,
@@ -707,7 +721,7 @@ export function searchMessages(
     .prepare(`
       SELECT m.* FROM messages_fts
       JOIN messages m ON m.rowid = messages_fts.rowid
-      WHERE messages_fts MATCH ? ${accountClause}
+      WHERE messages_fts MATCH ? ${accountClause} AND ${NOT_SPAM_TRASH}
       ORDER BY m.date DESC
       LIMIT ? OFFSET ?
     `)
@@ -887,6 +901,21 @@ export function getSyncState(accountId: string): SyncStateRow {
     fullSyncDone: row.fullSyncDone === 1,
     lastSyncAt: row.lastSyncAt,
   };
+}
+
+export function getKv(key: string): string | null {
+  const d = getDb();
+  const row = d.prepare("SELECT value FROM kv WHERE key = ?").get(key) as unknown as
+    | { value: string }
+    | undefined;
+  return row?.value ?? null;
+}
+
+export function setKv(key: string, value: string): void {
+  const d = getDb();
+  d.prepare(
+    "INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+  ).run(key, value);
 }
 
 export function setSyncState(

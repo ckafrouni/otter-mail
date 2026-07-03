@@ -33,6 +33,8 @@ import {
   SendIcon,
   FileIcon,
   BookmarkIcon,
+  ArchiveXIcon,
+  Trash2Icon,
   TagIcon,
   SettingsIcon,
   PlusIcon,
@@ -53,7 +55,7 @@ import { COMBINED_ACCOUNT_ID, useMailViews } from "./custom-views";
 import { buildLabelTree, type LabelTreeNode } from "./label-tree";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
 
-const SIDEBAR_SYSTEM_ORDER = ["INBOX", "STARRED", "SENT", "DRAFT", "IMPORTANT"];
+const SIDEBAR_SYSTEM_ORDER = ["INBOX", "STARRED", "SENT", "DRAFT", "IMPORTANT", "SPAM", "TRASH"];
 
 const SYSTEM_LABEL_MAP: Record<string, { name: string; icon: React.ReactNode }> = {
   INBOX: { name: "Inbox", icon: <InboxIcon className="size-4" /> },
@@ -61,6 +63,8 @@ const SYSTEM_LABEL_MAP: Record<string, { name: string; icon: React.ReactNode }> 
   SENT: { name: "Sent", icon: <SendIcon className="size-4" /> },
   DRAFT: { name: "Drafts", icon: <FileIcon className="size-4" /> },
   IMPORTANT: { name: "Important", icon: <BookmarkIcon className="size-4" /> },
+  SPAM: { name: "Junk", icon: <ArchiveXIcon className="size-4" /> },
+  TRASH: { name: "Trash", icon: <Trash2Icon className="size-4" /> },
 };
 
 // Gmail's own label icon is a solid filled tag — colored per label when Gmail
@@ -80,6 +84,8 @@ function viewIcon(view: MailView): React.ReactNode {
   if (view.kind === "sent") return <SendIcon className="size-4 shrink-0" />;
   if (view.kind === "drafts") return <FileIcon className="size-4 shrink-0" />;
   if (view.kind === "important") return <BookmarkIcon className="size-4 shrink-0" />;
+  if (view.kind === "junk") return <ArchiveXIcon className="size-4 shrink-0" />;
+  if (view.kind === "trash") return <Trash2Icon className="size-4 shrink-0" />;
   return <LayersIcon className="size-4 shrink-0 text-tertiary" />;
 }
 

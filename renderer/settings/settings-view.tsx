@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  ArchiveXIcon,
   BookmarkIcon,
   ChevronRightIcon,
   FileIcon,
@@ -179,6 +180,8 @@ function viewIcon(view: MailView) {
   if (view.kind === "sent") return <SendIcon className="size-4 text-secondary" />;
   if (view.kind === "drafts") return <FileIcon className="size-4 text-secondary" />;
   if (view.kind === "important") return <BookmarkIcon className="size-4 text-secondary" />;
+  if (view.kind === "junk") return <ArchiveXIcon className="size-4 text-secondary" />;
+  if (view.kind === "trash") return <Trash2Icon className="size-4 text-secondary" />;
   return <LayersIcon className="size-4 text-secondary" />;
 }
 
@@ -188,6 +191,8 @@ const BUILTIN_SUMMARY: Record<string, string> = {
   sent: "Default — every account's Sent",
   drafts: "Default — every account's Drafts",
   important: "Default — every account's Important",
+  junk: "Default — every account's Junk",
+  trash: "Default — every account's Trash",
 };
 
 function viewSummary(view: MailView): string {

@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@glaze/core/components";
 import {
+  ArchiveXIcon,
   BookmarkIcon,
   FileIcon,
   InboxIcon,
@@ -23,6 +24,7 @@ import {
   SendIcon,
   SettingsIcon,
   StarIcon,
+  Trash2Icon,
 } from "lucide-react";
 import { useDebouncedValue, useSearchMessages } from "./hooks";
 import { gmailApi } from "./api";
@@ -49,6 +51,8 @@ function viewCommandIcon(view: MailView): ReactNode {
   if (view.kind === "sent") return <SendIcon />;
   if (view.kind === "drafts") return <FileIcon />;
   if (view.kind === "important") return <BookmarkIcon />;
+  if (view.kind === "junk") return <ArchiveXIcon />;
+  if (view.kind === "trash") return <Trash2Icon />;
   return <LayersIcon />;
 }
 

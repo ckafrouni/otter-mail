@@ -112,6 +112,11 @@ async function runSync(accountId: string): Promise<void> {
     if (state.fullSyncDone && state.historyId) {
       const added = await incrementalSync(accountId, state.historyId);
       await notifyNewMail(accountId, added, state.lastSyncAt);
+      // Accounts fully synced before spam/trash were included need a one-time
+      // backfill; new accounts get them in the full sync itself.
+      if (store.getKv(`spamTrashBackfilled:${accountId}`) !== "1") {
+        await backfillSpamTrash(accountId);
+      }
     } else {
       await fullSync(accountId);
     }
@@ -168,6 +173,22 @@ async function fullSync(accountId: string): Promise<void> {
   } while (pageToken);
 
   store.setSyncState(accountId, { fullSyncDone: true, historyId: seedHistoryId });
+  store.setKv(`spamTrashBackfilled:${accountId}`, "1");
+}
+
+async function backfillSpamTrash(accountId: string): Promise<void> {
+  for (const labelId of ["SPAM", "TRASH"]) {
+    let pageToken: string | undefined;
+    do {
+      const page = await listMessageIdsPage(accountId, { pageToken, labelIds: [labelId] });
+      if (page.ids.length > 0) {
+        store.upsertMessages(accountId, await fetchMetadataForIds(accountId, page.ids));
+      }
+      pageToken = page.nextPageToken;
+    } while (pageToken);
+  }
+  store.setKv(`spamTrashBackfilled:${accountId}`, "1");
+  logger.info("mail-sync", `spam/trash backfill done for ${accountId}`);
 }
 
 /**

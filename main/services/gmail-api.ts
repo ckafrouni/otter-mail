@@ -284,11 +284,13 @@ export async function getProfile(
 /** A single page of message ids (no metadata) for full-mailbox sync. */
 export async function listMessageIdsPage(
   accountId: string,
-  params: { pageToken?: string; maxResults?: number },
+  params: { pageToken?: string; maxResults?: number; labelIds?: string[] },
 ): Promise<{ ids: string[]; nextPageToken?: string; resultSizeEstimate: number }> {
   const query = new URLSearchParams();
   query.set("maxResults", String(params.maxResults ?? 500));
-  query.set("includeSpamTrash", "false");
+  // Spam/Trash are synced too — the Junk and Trash views read the local cache.
+  query.set("includeSpamTrash", "true");
+  for (const lid of params.labelIds ?? []) query.append("labelIds", lid);
   if (params.pageToken) query.set("pageToken", params.pageToken);
 
   const list = (await gmailFetch(accountId, `/messages?${query.toString()}`)) as {

@@ -408,6 +408,8 @@ export function registerGmailHandlers(): void {
               v.kind === "sent" ||
               v.kind === "drafts" ||
               v.kind === "important" ||
+              v.kind === "junk" ||
+              v.kind === "trash" ||
               v.kind === "custom"),
         )
         .map(
@@ -477,7 +479,7 @@ export function registerGmailHandlers(): void {
       const accountId = assertString(p?.accountId, "accountId");
       const messageId = assertString(p?.messageId, "messageId");
       const result = await trashMessage(accountId, messageId);
-      mailStore.deleteMessage(accountId, messageId);
+      mailStore.upsertMessages(accountId, await fetchMetadataForIds(accountId, [messageId]));
       updateDockBadge();
       return result;
     } catch (err) {
@@ -527,7 +529,12 @@ export function registerGmailHandlers(): void {
       const accountId = assertString(p?.accountId, "accountId");
       const threadId = assertString(p?.threadId, "threadId");
       const result = await trashThread(accountId, threadId);
-      mailStore.deleteThread(accountId, threadId);
+      // Keep the rows, refreshed with their new TRASH labels, so the Trash
+      // view serves them from the local cache.
+      const ids = mailStore.getThreadMessages(accountId, threadId).map((m) => m.id);
+      if (ids.length > 0) {
+        mailStore.upsertMessages(accountId, await fetchMetadataForIds(accountId, ids));
+      }
       updateDockBadge();
       return result;
     } catch (err) {
