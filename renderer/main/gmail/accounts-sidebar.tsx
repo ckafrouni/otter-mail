@@ -53,6 +53,8 @@ import { COMBINED_ACCOUNT_ID, useMailViews } from "./custom-views";
 import { buildLabelTree, type LabelTreeNode } from "./label-tree";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
 
+const SIDEBAR_SYSTEM_ORDER = ["INBOX", "STARRED", "SENT", "DRAFT", "IMPORTANT"];
+
 const SYSTEM_LABEL_MAP: Record<string, { name: string; icon: React.ReactNode }> = {
   INBOX: { name: "Inbox", icon: <InboxIcon className="size-4" /> },
   STARRED: { name: "Starred", icon: <StarIcon className="size-4" /> },
@@ -242,9 +244,12 @@ export function AccountsSidebar({
 
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId) ?? null;
 
-  const systemLabels = labels.filter(
-    (l) => l.type === "system" && l.id in SYSTEM_LABEL_MAP,
-  );
+  // Same order as the Combined built-in views, Important appended.
+  const systemLabels = labels
+    .filter((l) => l.type === "system" && l.id in SYSTEM_LABEL_MAP)
+    .sort(
+      (a, b) => SIDEBAR_SYSTEM_ORDER.indexOf(a.id) - SIDEBAR_SYSTEM_ORDER.indexOf(b.id),
+    );
   const userLabels = labels.filter((l) => l.type === "user");
   const userLabelTree = buildLabelTree(userLabels);
 
@@ -314,9 +319,11 @@ export function AccountsSidebar({
               aria-label="Switch account"
             >
               {isCombined ? (
-                <div className="size-6 shrink-0 rounded-full bg-control flex items-center justify-center">
-                  <LayersIcon className="size-3.5 text-secondary" />
-                </div>
+                <Avatar size="small">
+                  <AvatarFallback>
+                    <LayersIcon className="size-4" />
+                  </AvatarFallback>
+                </Avatar>
               ) : (
                 <Avatar size="small">
                   {selectedAccount?.picture ? (
