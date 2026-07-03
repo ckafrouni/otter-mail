@@ -44,7 +44,6 @@ import {
 } from "./custom-views";
 import { buildLabelTree } from "./label-tree";
 import { isTypingTarget } from "./keyboard";
-import { SenderAvatar } from "./sender-avatar";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
 import { SYSTEM_LABEL_NAMES, labelDisplayName } from "./label-names";
 import type { GmailAccount, GmailLabel, GmailMessageSummary, ViewRule } from "./types";
@@ -283,13 +282,6 @@ function MessageRow({
               : "hover:bg-control-subtle",
         ].join(" ")}
       >
-        <span className="mt-0.5">
-          <SenderAvatar
-            name={message.fromName}
-            email={message.fromEmail}
-            className={selected ? "ring-2 ring-white/90" : ""}
-          />
-        </span>
         <div className="flex flex-col min-w-0 flex-1 gap-0.5">
           <div className="flex items-center justify-between gap-2">
             <Text
@@ -747,7 +739,7 @@ export function MessageList({
                 {hasDivider ? (
                   <div
                     className={[
-                      "h-px ml-[64px] mr-5",
+                      "h-px mx-5",
                       dividerVisible ? "bg-separator" : "bg-transparent",
                     ].join(" ")}
                   />
