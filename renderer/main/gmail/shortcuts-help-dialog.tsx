@@ -11,6 +11,8 @@ const SECTIONS: { title: string; rows: [string, string][] }[] = [
       ["g then s", "Go to Starred"],
       ["g then d", "Go to Drafts"],
       ["/", "Search"],
+      ["⌘1", "Combined mailbox"],
+      ["⌘2–9", "Switch account"],
       ["⌘K", "Command palette"],
     ],
   },

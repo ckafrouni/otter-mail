@@ -66,6 +66,31 @@ export function HomeView() {
     return () => window.removeEventListener("keydown", down);
   }, []);
 
+  // ⌘1 = Combined mailbox, ⌘2…⌘9 = accounts in sidebar order. The ref is
+  // populated below once handleSelectAccount exists.
+  const accountSwitchRef = useRef<{ ids: string[]; select: (id: string) => void }>({
+    ids: [],
+    select: () => {},
+  });
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
+      const digit = Number(e.key);
+      if (!Number.isInteger(digit) || digit < 1 || digit > 9) return;
+      const { ids, select } = accountSwitchRef.current;
+      if (ids.length === 0) return;
+      e.preventDefault();
+      if (digit === 1) {
+        select(ids.length > 1 ? COMBINED_ACCOUNT_ID : ids[0]);
+      } else {
+        const target = ids[digit - 2];
+        if (target) select(target);
+      }
+    };
+    window.addEventListener("keydown", down);
+    return () => window.removeEventListener("keydown", down);
+  }, []);
+
   const undoModifyMessage = useModifyMessage();
   const undoModifyThread = useModifyThread();
   const undoUntrashThread = useUntrashThread();
@@ -218,6 +243,7 @@ export function HomeView() {
     setReaderAccountId(null);
     setSearchQuery("");
   };
+  accountSwitchRef.current = { ids: accountIds, select: handleSelectAccount };
 
   const handleSelectLabel = (labelId: string) => {
     console.log("[HomeView:selectLabel]", { labelId });
