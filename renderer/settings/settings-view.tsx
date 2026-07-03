@@ -28,7 +28,6 @@ import {
   SidebarListItemTitle,
   SplitView,
   Toolbar,
-  ToolbarRow,
   ToolbarContent,
   ToolbarTitle,
   Field,
@@ -443,17 +442,15 @@ export function SettingsView() {
       <ScrollArea
         toolbar={
           <Toolbar>
-            <ToolbarRow>
+            <ToolbarContent>
               <NavigationButtonGroup
                 canGoBack={nav.index > 0}
                 canGoForward={nav.index < nav.stack.length - 1}
                 onGoBack={goBack}
                 onGoForward={goForward}
               />
-              <ToolbarContent>
-                <ToolbarTitle>{paneTitle}</ToolbarTitle>
-              </ToolbarContent>
-            </ToolbarRow>
+              <ToolbarTitle>{paneTitle}</ToolbarTitle>
+            </ToolbarContent>
           </Toolbar>
         }
       >

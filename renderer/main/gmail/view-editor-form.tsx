@@ -311,7 +311,9 @@ export function ViewEditorForm({ view, accounts, onSave, onDelete, onReset, onDo
             description="Connect an account to pick labels."
           />
         ) : (
-          <div className="flex flex-col gap-2">
+          // Own scroll region so the recap and Save stay reachable while
+          // browsing long label lists.
+          <div className="flex flex-col gap-2 max-h-[46vh] overflow-y-auto pr-0.5">
             {sortedByAccount.map((entry) => {
               const accountPicks = picks[entry.accountId] ?? {};
               const activeCount = Object.keys(accountPicks).length;
