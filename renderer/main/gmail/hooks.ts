@@ -939,6 +939,47 @@ export function useAccountSync(accountId: string | null): SyncStatus | null {
   return statusQuery.data ?? null;
 }
 
+export function syncLabel(status: SyncStatus): string {
+  if (status.phase === "full" && status.total) {
+    return `Syncing ${status.synced.toLocaleString()} of ~${status.total.toLocaleString()}`;
+  }
+  if (status.phase === "bodies" && status.total) {
+    return `Downloading messages ${status.synced.toLocaleString()} of ${status.total.toLocaleString()}`;
+  }
+  if (status.phase === "incremental") return "Checking for new mail…";
+  return "Syncing…";
+}
+
+/** Aggregated sync activity across every account, for the sidebar footer. */
+export function useGlobalSyncStatus(accountIds: string[]): { syncing: boolean; label: string } {
+  const qc = useQueryClient();
+  // The backend broadcasts when any sync starts so idle 10s polls don't miss
+  // short syncs (menu-triggered "Synchronize All Mailboxes", the auto timer).
+  useEffect(() => {
+    const unsubscribe = window.glazeAPI.glaze.ipc.onNotification("gmail:sync-started", () => {
+      void qc.invalidateQueries({ queryKey: ["gmail:syncStatus"] });
+    });
+    return unsubscribe;
+  }, [qc]);
+
+  const results = useQueries({
+    queries: accountIds.map((id) => ({
+      queryKey: ["gmail:syncStatus", id],
+      queryFn: () => gmailApi.getSyncStatus(id),
+      refetchInterval: (query: { state: { data?: SyncStatus } }) =>
+        query.state.data?.syncing ? 1500 : 10_000,
+    })),
+  });
+  const active = results
+    .map((r) => r.data as SyncStatus | undefined)
+    .filter((s): s is SyncStatus => s?.syncing === true);
+  if (active.length === 0) return { syncing: false, label: "" };
+  return {
+    syncing: true,
+    label: active.length === 1 ? syncLabel(active[0]) : `Syncing ${active.length} accounts…`,
+  };
+}
+
 /**
  * Same as `useAccountSync` but for every account at once — the Combined mailbox
  * has no single "active account" to drive `useAccountSync`, so its per-account

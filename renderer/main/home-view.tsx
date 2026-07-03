@@ -197,7 +197,7 @@ export function HomeView() {
 
   // Local-first: keep the on-disk cache synced in the background. Combined mode
   // refreshes all accounts via its own list handler (sentinel isn't a real account).
-  const syncStatus = useAccountSync(isCombined ? null : effectiveAccountId);
+  useAccountSync(isCombined ? null : effectiveAccountId);
 
   // Resolve the selected combined view to concrete per-account rules.
   const combined = (() => {
@@ -358,7 +358,6 @@ export function HomeView() {
                 setReaderAccountId(null);
               }}
               searchQuery={searchQuery}
-              syncStatus={syncStatus}
             />
           ) : undefined
         }

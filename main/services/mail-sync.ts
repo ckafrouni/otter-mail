@@ -10,7 +10,7 @@
  * progress and refresh its views as the local store fills in.
  */
 
-import { logger } from "@glaze/core/backend";
+import { ipcMain, logger } from "@glaze/core/backend";
 import {
   listLabels,
   getProfile,
@@ -58,6 +58,8 @@ export function getSyncStatus(accountId: string): SyncStatus {
 export function syncAccount(accountId: string): void {
   if (running.has(accountId)) return;
   running.add(accountId);
+  // Wake the renderer's idle status polls so even short syncs show up.
+  ipcMain.broadcast("gmail:sync-started");
   void runSync(accountId).finally(() => running.delete(accountId));
 }
 

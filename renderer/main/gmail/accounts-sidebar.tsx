@@ -47,6 +47,7 @@ import {
   useAddAccount,
   useCreateLabel,
   useViewUnreadCounts,
+  useGlobalSyncStatus,
 } from "./hooks";
 import type { GmailLabel, MailView } from "./types";
 import { gmailApi } from "./api";
@@ -233,6 +234,7 @@ export function AccountsSidebar({
   const accounts = accountsQuery.data ?? [];
   const labels: GmailLabel[] = labelsQuery.data ?? [];
   const viewUnreadCounts = useViewUnreadCounts(views, accounts, isCombined);
+  const globalSync = useGlobalSyncStatus(accounts.map((a) => a.id));
   const { deleteView, resetView } = useMailViews();
 
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId) ?? null;
@@ -276,15 +278,27 @@ export function AccountsSidebar({
     <Sidebar
       footer={
         <SidebarFooter>
-          <Button
-            variant="transparent"
-            size="small"
-            iconOnly
-            onClick={handleOpenSettings}
-            aria-label="Open Settings"
-          >
-            <SettingsIcon className="size-4" />
-          </Button>
+          <div className="flex w-full items-center justify-between gap-2">
+            {globalSync.syncing ? (
+              <div className="flex min-w-0 items-center gap-1.5 px-1">
+                <span className="size-3 shrink-0 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+                <Text variant="mini" color="tertiary" truncate>
+                  {globalSync.label}
+                </Text>
+              </div>
+            ) : (
+              <span />
+            )}
+            <Button
+              variant="transparent"
+              size="small"
+              iconOnly
+              onClick={handleOpenSettings}
+              aria-label="Open Settings"
+            >
+              <SettingsIcon className="size-4" />
+            </Button>
+          </div>
         </SidebarFooter>
       }
     >

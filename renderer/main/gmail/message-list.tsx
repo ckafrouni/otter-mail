@@ -47,7 +47,7 @@ import { isTypingTarget } from "./keyboard";
 import { SenderAvatar } from "./sender-avatar";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
 import { SYSTEM_LABEL_NAMES, labelDisplayName } from "./label-names";
-import type { GmailAccount, GmailLabel, GmailMessageSummary, SyncStatus, ViewRule } from "./types";
+import type { GmailAccount, GmailLabel, GmailMessageSummary, ViewRule } from "./types";
 
 type ResolveLabel = (accountId: string | undefined, labelId: string) => GmailLabel | undefined;
 
@@ -73,8 +73,8 @@ type MessageListProps = {
   onSelectMessage: (messageId: string, accountId: string) => void;
   /** Clears the selection (mark-unread returns to the list, Gmail-style). */
   onDeselect: () => void;
+
   searchQuery: string;
-  syncStatus: SyncStatus | null;
 };
 
 function ruleMailboxName(rule: ViewRule, resolveLabel: ResolveLabel): string | null {
@@ -419,17 +419,6 @@ function formatMailboxSummary(total: number, unread: number): string {
   return unread > 0 ? `${messages} · ${unread.toLocaleString()} unread` : messages;
 }
 
-function syncLabel(status: SyncStatus): string {
-  if (status.phase === "full" && status.total) {
-    return `Syncing ${status.synced.toLocaleString()} of ~${status.total.toLocaleString()}`;
-  }
-  if (status.phase === "bodies" && status.total) {
-    return `Downloading messages ${status.synced.toLocaleString()} of ${status.total.toLocaleString()}`;
-  }
-  if (status.phase === "incremental") return "Checking for new mail…";
-  return "Syncing…";
-}
-
 export function MessageList({
   accountId,
   labelId,
@@ -440,7 +429,6 @@ export function MessageList({
   onSelectMessage,
   onDeselect,
   searchQuery,
-  syncStatus,
 }: MessageListProps) {
   const isCombined = combined != null;
   const [unreadOnly, setUnreadOnly] = useState(false);
@@ -704,16 +692,6 @@ export function MessageList({
               </ToggleButton>
             </ToolbarActions>
           </ToolbarRow>
-          {syncStatus?.syncing ? (
-            <ToolbarRow>
-              <div className="flex items-center gap-1.5 px-1 py-0.5">
-                <span className="size-3 rounded-full border-2 border-accent border-t-transparent animate-spin" />
-                <Text variant="mini" color="tertiary">
-                  {syncLabel(syncStatus)}
-                </Text>
-              </div>
-            </ToolbarRow>
-          ) : null}
         </Toolbar>
       }
       className="h-full"
