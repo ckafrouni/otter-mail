@@ -125,7 +125,7 @@ export function HomeView() {
       if (e.key === "c") {
         e.preventDefault();
         setComposeOpen(true);
-      } else if (e.key === "u") {
+      } else if (e.key === "u" || e.key === "Escape") {
         e.preventDefault();
         setSelectedMessageId(null);
         setReaderAccountId(null);

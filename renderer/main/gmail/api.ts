@@ -72,6 +72,18 @@ export type SendMessageParams = {
   attachments?: ComposeAttachment[];
 };
 
+export type SaveDraftParams = {
+  accountId: string;
+  draftId?: string;
+  to: string;
+  cc?: string;
+  bcc?: string;
+  subject: string;
+  body: string;
+  threadId?: string;
+  attachments?: ComposeAttachment[];
+};
+
 export type GetAttachmentParams = {
   accountId: string;
   messageId: string;
@@ -176,6 +188,12 @@ export const gmailApi = {
 
   sendMessage: (params: SendMessageParams): Promise<{ ok: boolean }> =>
     ipc("gmail:sendMessage", params),
+
+  saveDraft: (params: SaveDraftParams): Promise<{ draftId: string }> =>
+    ipc("gmail:saveDraft", params),
+
+  deleteDraft: (accountId: string, draftId: string): Promise<{ ok: boolean }> =>
+    ipc("gmail:deleteDraft", { accountId, draftId }),
 
   getAttachment: (params: GetAttachmentParams): Promise<GetAttachmentResult> =>
     ipc("gmail:getAttachment", params),

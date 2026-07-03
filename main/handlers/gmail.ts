@@ -29,6 +29,8 @@ import {
   trashThread,
   untrashThread,
   untrashMessage,
+  saveDraft,
+  deleteDraft,
   sendMessage,
   getAttachment,
   getAttachmentData,
@@ -560,6 +562,40 @@ export function registerGmailHandlers(): void {
       return { ok: true as const };
     } catch (err) {
       console.log("[gmail:untrashMessage] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:saveDraft — composer autosave; creates or updates a Gmail draft.
+  ipcMain.handle("gmail:saveDraft", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    try {
+      const accountId = assertString(p?.accountId, "accountId");
+      return await saveDraft(accountId, {
+        draftId: asString(p?.draftId),
+        to: asString(p?.to) ?? "",
+        cc: asString(p?.cc),
+        bcc: asString(p?.bcc),
+        subject: asString(p?.subject) ?? "",
+        body: asString(p?.body) ?? "",
+        threadId: asString(p?.threadId),
+        attachments: parseAttachments(p?.attachments),
+      });
+    } catch (err) {
+      console.log("[gmail:saveDraft] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  ipcMain.handle("gmail:deleteDraft", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:deleteDraft]", { accountId: p?.accountId, draftId: p?.draftId });
+    try {
+      const accountId = assertString(p?.accountId, "accountId");
+      const draftId = assertString(p?.draftId, "draftId");
+      return await deleteDraft(accountId, draftId);
+    } catch (err) {
+      console.log("[gmail:deleteDraft] error", { error: String(err) });
       throw err;
     }
   });

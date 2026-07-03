@@ -64,7 +64,9 @@ async function gmailFetch(
     );
   }
 
-  return response.json();
+  // DELETE endpoints (drafts) return an empty 204 body.
+  const text = await response.text();
+  return text ? JSON.parse(text) : {};
 }
 
 // ── listLabels ────────────────────────────────────────────────────────────────
@@ -624,7 +626,9 @@ interface OutgoingMessage {
 }
 
 function buildMime(params: OutgoingMessage): string {
-  const headers: string[] = [`From: ${params.from}`, `To: ${encodeAddressList(params.to)}`];
+  // Drafts may not have recipients yet.
+  const headers: string[] = [`From: ${params.from}`];
+  if (params.to) headers.push(`To: ${encodeAddressList(params.to)}`);
   if (params.cc) headers.push(`Cc: ${encodeAddressList(params.cc)}`);
   if (params.bcc) headers.push(`Bcc: ${encodeAddressList(params.bcc)}`);
   headers.push(`Subject: ${encodeHeaderValue(params.subject)}`);
@@ -707,6 +711,47 @@ export async function sendMessage(
     body: JSON.stringify(payload),
   });
 
+  return { ok: true };
+}
+
+/** Creates or updates a Gmail draft with the same MIME builder as sends. */
+export async function saveDraft(
+  accountId: string,
+  params: {
+    draftId?: string;
+    to: string;
+    cc?: string;
+    bcc?: string;
+    subject: string;
+    body: string;
+    threadId?: string;
+    attachments?: ComposeAttachment[];
+  },
+): Promise<{ draftId: string }> {
+  const account = await getAccount(accountId);
+  const fromAddress = account ? formatAddress(account.name, account.email) : accountId;
+
+  const raw = buildMime({
+    from: fromAddress,
+    to: params.to,
+    cc: params.cc,
+    bcc: params.bcc,
+    subject: params.subject,
+    body: params.body,
+    attachments: params.attachments,
+  });
+  const message: { raw: string; threadId?: string } = { raw: encodeBase64url(raw) };
+  if (params.threadId) message.threadId = params.threadId;
+
+  const res = (await gmailFetch(accountId, params.draftId ? `/drafts/${params.draftId}` : "/drafts", {
+    method: params.draftId ? "PUT" : "POST",
+    body: JSON.stringify(params.draftId ? { id: params.draftId, message } : { message }),
+  })) as { id: string };
+  return { draftId: res.id };
+}
+
+export async function deleteDraft(accountId: string, draftId: string): Promise<{ ok: true }> {
+  await gmailFetch(accountId, `/drafts/${draftId}`, { method: "DELETE" });
   return { ok: true };
 }
 

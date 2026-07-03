@@ -260,6 +260,95 @@ export function ComposeDialog({
   const totalAttachmentBytes = attachments.reduce((sum, a) => sum + a.size, 0);
   const canSend = to.length > 0 && !sendMessage.isPending;
 
+  // Autosave to a Gmail draft while writing (debounced). The draft is deleted
+  // on send/discard; plain close keeps it, like Gmail.
+  const [draftState, setDraftState] = useState<"idle" | "saving" | "saved">("idle");
+  const draftRef = useRef<{ accountId: string; draftId: string } | null>(null);
+  const draftInFlight = useRef(false);
+  const closedCleanRef = useRef(false);
+
+  const draftParams = {
+    accountId: fromAccountId,
+    to: joinAddresses(to),
+    cc: cc.length > 0 ? joinAddresses(cc) : undefined,
+    bcc: bcc.length > 0 ? joinAddresses(bcc) : undefined,
+    subject,
+    body,
+    threadId: replyTo?.threadId,
+    attachments: attachments.length > 0 ? attachments : undefined,
+  };
+  const hasContent =
+    to.length > 0 || subject.trim().length > 0 || body.trim().length > 0 || attachments.length > 0;
+  const serialized = JSON.stringify([
+    fromAccountId,
+    draftParams.to,
+    draftParams.cc ?? "",
+    draftParams.bcc ?? "",
+    subject,
+    body,
+    attachments.map((a) => `${a.name}:${a.size}`),
+  ]);
+  const initialSerializedRef = useRef(serialized);
+  const lastSavedRef = useRef<string | null>(null);
+  const latestRef = useRef({ serialized, draftParams, hasContent });
+  latestRef.current = { serialized, draftParams, hasContent };
+
+  const persistDraft = async (params: typeof draftParams, snapshot: string) => {
+    if (draftInFlight.current) return;
+    // Switching From moves the draft to the other account.
+    if (draftRef.current && draftRef.current.accountId !== params.accountId) {
+      const stale = draftRef.current;
+      draftRef.current = null;
+      void gmailApi.deleteDraft(stale.accountId, stale.draftId).catch(() => {});
+    }
+    draftInFlight.current = true;
+    setDraftState("saving");
+    try {
+      const res = await gmailApi.saveDraft({
+        ...params,
+        draftId: draftRef.current?.draftId,
+      });
+      draftRef.current = { accountId: params.accountId, draftId: res.draftId };
+      lastSavedRef.current = snapshot;
+      setDraftState("saved");
+    } catch {
+      setDraftState("idle");
+    } finally {
+      draftInFlight.current = false;
+    }
+  };
+
+  const debouncedSerialized = useDebouncedValue(serialized, 2000);
+  useEffect(() => {
+    if (debouncedSerialized === initialSerializedRef.current) return;
+    if (debouncedSerialized === lastSavedRef.current) return;
+    if (!latestRef.current.hasContent) return;
+    void persistDraft(latestRef.current.draftParams, latestRef.current.serialized);
+  }, [debouncedSerialized]);
+
+  // Closing mid-typing (inside the debounce window) still saves.
+  useEffect(() => {
+    return () => {
+      const { serialized: latest, draftParams: params, hasContent: filled } = latestRef.current;
+      if (closedCleanRef.current || !filled) return;
+      if (latest === initialSerializedRef.current || latest === lastSavedRef.current) return;
+      void gmailApi
+        .saveDraft({ ...params, draftId: draftRef.current?.draftId })
+        .catch(() => {});
+    };
+  }, []);
+
+  const discardDraft = () => {
+    closedCleanRef.current = true;
+    const draft = draftRef.current;
+    if (draft) {
+      draftRef.current = null;
+      void gmailApi.deleteDraft(draft.accountId, draft.draftId).catch(() => {});
+      toast.success("Draft discarded");
+    }
+    onOpenChange(false);
+  };
+
   const handleSend = async () => {
     if (!canSend) return;
     console.log("[ComposeDialog:send]", { to: to.length, subject, replyTo, from: fromAccountId });
@@ -276,6 +365,12 @@ export function ComposeDialog({
         attachments: attachments.length > 0 ? attachments : undefined,
       });
       toast.success("Message sent");
+      closedCleanRef.current = true;
+      const draft = draftRef.current;
+      if (draft) {
+        draftRef.current = null;
+        void gmailApi.deleteDraft(draft.accountId, draft.draftId).catch(() => {});
+      }
       onOpenChange(false);
     } catch (err) {
       console.log("[ComposeDialog:send] error", { error: String(err) });
@@ -493,13 +588,18 @@ export function ComposeDialog({
               ⌘↵ to send
             </Text>
             <div className="flex-1" />
+            {draftState !== "idle" ? (
+              <Text variant="mini" color="tertiary" className="select-none">
+                {draftState === "saving" ? "Saving…" : "Draft saved"}
+              </Text>
+            ) : null}
             <Button
               variant="transparent"
               size="small"
               iconOnly
               aria-label="Discard draft"
               className="text-tertiary hover:text-support-red"
-              onClick={() => onOpenChange(false)}
+              onClick={discardDraft}
             >
               <Trash2Icon className="size-4" />
             </Button>
