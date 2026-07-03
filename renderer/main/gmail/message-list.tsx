@@ -1,6 +1,13 @@
 import type React from "react";
 import { useState } from "react";
 import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuCheckboxItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
   ScrollArea,
   Toolbar,
   ToolbarRow,
@@ -12,13 +19,14 @@ import {
   EmptyState,
   Text,
 } from "@glaze/core/components";
-import { ArchiveIcon, FlagIcon, FolderIcon, ListFilterIcon, Trash2Icon } from "lucide-react";
+import { FlagIcon, ListFilterIcon } from "lucide-react";
 import {
   useMessages,
   useCombinedMessages,
   useCombinedCounts,
   useSearchMessages,
   useDebouncedValue,
+  useLabels,
   useModifyMessage,
   useModifyThread,
   useTrashThread,
@@ -26,7 +34,8 @@ import {
   useSyncAccountLabels,
 } from "./hooks";
 import { LabelChip } from "./label-chip";
-import { LabelPickerMenu } from "./label-picker-menu";
+import { renderLabelMenuNodes } from "./label-picker-menu";
+import { buildLabelTree } from "./label-tree";
 import { SenderAvatar } from "./sender-avatar";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
 import { SYSTEM_LABEL_NAMES, labelDisplayName } from "./label-names";
@@ -151,8 +160,50 @@ function MessageRow({
     .map((id) => resolveLabel(ownerAccountId, id))
     .filter((l): l is GmailLabel => l != null && l.type === "user");
 
-  const handleStarToggle = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const ownerLabels = useLabels(ownerAccountId);
+  const labelTree = buildLabelTree((ownerLabels.data ?? []).filter((l) => l.type === "user"));
+  const appliedLabels = new Set(message.labelIds);
+
+  const handleLabelToggle = (labelId: string, checked: boolean) => {
+    console.log("[MessageList:labelToggle]", { messageId: message.id, labelId, checked });
+    void modifyMessage.mutateAsync({
+      accountId: ownerAccountId,
+      messageId: message.id,
+      addLabelIds: checked ? [labelId] : undefined,
+      removeLabelIds: checked ? undefined : [labelId],
+    });
+  };
+
+  const handleToggleRead = () => {
+    const isUnread = message.threadUnread ?? message.unread;
+    console.log("[MessageList:toggleRead]", { threadId, isUnread });
+    if (isUnread) {
+      void modifyThread.mutateAsync({
+        accountId: ownerAccountId,
+        threadId,
+        removeLabelIds: ["UNREAD"],
+      });
+    } else {
+      void modifyMessage.mutateAsync({
+        accountId: ownerAccountId,
+        messageId: message.id,
+        addLabelIds: ["UNREAD"],
+      });
+    }
+  };
+
+  const handleJunk = () => {
+    console.log("[MessageList:junk]", { threadId });
+    void modifyThread.mutateAsync({
+      accountId: ownerAccountId,
+      threadId,
+      addLabelIds: ["SPAM"],
+      removeLabelIds: ["INBOX"],
+    });
+  };
+
+  const handleStarToggle = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     console.log("[MessageList:starToggle]", {
       messageId: message.id,
       starred: message.starred,
@@ -172,8 +223,8 @@ function MessageRow({
     }
   };
 
-  const handleArchive = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleArchive = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     console.log("[MessageList:archive]", { threadId });
     void modifyThread.mutateAsync({
       accountId: ownerAccountId,
@@ -182,8 +233,8 @@ function MessageRow({
     });
   };
 
-  const handleTrash = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleTrash = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     console.log("[MessageList:trash]", { threadId });
     void trashThread.mutateAsync({ accountId: ownerAccountId, threadId });
   };
@@ -198,6 +249,8 @@ function MessageRow({
 
   return (
     <div className="px-2">
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
       <button
         type="button"
         onClick={onSelect}
@@ -211,7 +264,11 @@ function MessageRow({
         ].join(" ")}
       >
         <span className="mt-0.5">
-          <SenderAvatar name={message.fromName} email={message.fromEmail} />
+          <SenderAvatar
+            name={message.fromName}
+            email={message.fromEmail}
+            className={selected ? "ring-2 ring-white/90" : ""}
+          />
         </span>
         <div className="flex flex-col min-w-0 flex-1 gap-0.5">
           <div className="flex items-center justify-between gap-2">
@@ -293,63 +350,46 @@ function MessageRow({
           >
             <FlagIcon className={["size-4 fill-current", selected ? "text-white" : "text-support-red"].join(" ")} />
           </button>
-        ) : (
-          /* Hover-revealed quick actions */
-          <div className="shrink-0 mt-0.5 flex items-center gap-1 max-w-0 opacity-0 overflow-hidden group-hover:max-w-[100px] group-hover:opacity-100 transition-all duration-150">
-            <button
-              type="button"
-              onClick={handleStarToggle}
-              className={[
-                "transition-colors",
-                selected ? "text-white/90 hover:text-white" : "text-tertiary hover:text-support-red",
-              ].join(" ")}
-              aria-label="Flag"
-            >
-              <FlagIcon className="size-4" />
-            </button>
-            <LabelPickerMenu
-              accountId={ownerAccountId}
-              messageId={message.id}
-              labelIds={message.labelIds}
-            >
-              <button
-                type="button"
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
-                className={[
-                  "transition-colors",
-                  selected ? "text-white/90 hover:text-white" : "text-tertiary hover:text-primary",
-                ].join(" ")}
-                aria-label="Move to label"
-              >
-                <FolderIcon className="size-4" />
-              </button>
-            </LabelPickerMenu>
-            <button
-              type="button"
-              onClick={handleArchive}
-              className={[
-                "transition-colors",
-                selected ? "text-white/90 hover:text-white" : "text-tertiary hover:text-primary",
-              ].join(" ")}
-              aria-label="Archive"
-            >
-              <ArchiveIcon className="size-4" />
-            </button>
-            <button
-              type="button"
-              onClick={handleTrash}
-              className={[
-                "transition-colors",
-                selected ? "text-white/90 hover:text-white" : "text-tertiary hover:text-support-red",
-              ].join(" ")}
-              aria-label="Move to trash"
-            >
-              <Trash2Icon className="size-4" />
-            </button>
-          </div>
-        )}
+        ) : null}
       </button>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem
+            icon={unread ? "envelope.open" : "envelope.badge"}
+            onSelect={handleToggleRead}
+          >
+            {unread ? "Mark as Read" : "Mark as Unread"}
+          </ContextMenuItem>
+          <ContextMenuItem
+            icon={message.starred ? "flag.slash" : "flag"}
+            onSelect={() => handleStarToggle()}
+          >
+            {message.starred ? "Unflag" : "Flag"}
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuSub label="Move to Label">
+            {labelTree.length === 0 ? (
+              <ContextMenuItem disabled>No labels</ContextMenuItem>
+            ) : (
+              renderLabelMenuNodes(labelTree, appliedLabels, handleLabelToggle, {
+                CheckboxItem: ContextMenuCheckboxItem,
+                Sub: ContextMenuSub,
+                Separator: ContextMenuSeparator,
+              })
+            )}
+          </ContextMenuSub>
+          <ContextMenuSeparator />
+          <ContextMenuItem icon="archivebox" onSelect={() => handleArchive()}>
+            Archive
+          </ContextMenuItem>
+          <ContextMenuItem icon="xmark.bin" onSelect={handleJunk}>
+            Move to Junk
+          </ContextMenuItem>
+          <ContextMenuItem icon="trash" color="red" onSelect={() => handleTrash()}>
+            Move to Trash
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
     </div>
   );
 }

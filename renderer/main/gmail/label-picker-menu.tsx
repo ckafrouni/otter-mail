@@ -20,11 +20,63 @@ type LabelPickerMenuProps = {
   children: React.ReactNode;
 };
 
+/** Menu-component set: DropdownMenu* and ContextMenu* both satisfy this shape. */
+export type LabelMenuKit = {
+  CheckboxItem: React.ComponentType<{
+    checked: boolean;
+    onCheckedChange: (checked: boolean) => void;
+    children: React.ReactNode;
+  }>;
+  Sub: React.ComponentType<{ label: string; children: React.ReactNode }>;
+  Separator: React.ComponentType;
+};
+
 /**
- * Native menu of the account's user labels with checked membership; nested
- * labels become submenus (first item = the parent itself, so it stays
- * selectable), siblings alphabetical at every depth via buildLabelTree.
+ * Renders a label tree as menu items: nested labels become submenus whose
+ * first item is the parent itself (so it stays selectable), siblings
+ * alphabetical at every depth via buildLabelTree.
  */
+export function renderLabelMenuNodes(
+  nodes: LabelTreeNode[],
+  applied: Set<string>,
+  onToggle: (labelId: string, checked: boolean) => void,
+  kit: LabelMenuKit,
+): React.ReactNode {
+  const renderNode = (node: LabelTreeNode): React.ReactNode => {
+    if (node.children.length === 0) {
+      if (!node.label) return null;
+      const id = node.label.id;
+      return (
+        <kit.CheckboxItem
+          key={node.key}
+          checked={applied.has(id)}
+          onCheckedChange={(checked) => onToggle(id, checked)}
+        >
+          {node.segment}
+        </kit.CheckboxItem>
+      );
+    }
+    const selfId = node.label?.id;
+    return (
+      <kit.Sub key={node.key} label={node.segment}>
+        {selfId ? (
+          <>
+            <kit.CheckboxItem
+              checked={applied.has(selfId)}
+              onCheckedChange={(checked) => onToggle(selfId, checked)}
+            >
+              {node.segment}
+            </kit.CheckboxItem>
+            <kit.Separator />
+          </>
+        ) : null}
+        {node.children.map(renderNode)}
+      </kit.Sub>
+    );
+  };
+  return nodes.map(renderNode);
+}
+
 export function LabelPickerMenu({
   accountId,
   messageId,
@@ -47,39 +99,6 @@ export function LabelPickerMenu({
     });
   };
 
-  const renderNode = (node: LabelTreeNode): React.ReactNode => {
-    if (node.children.length === 0) {
-      if (!node.label) return null;
-      const id = node.label.id;
-      return (
-        <DropdownMenuCheckboxItem
-          key={node.key}
-          checked={applied.has(id)}
-          onCheckedChange={(checked) => handleToggle(id, checked)}
-        >
-          {node.segment}
-        </DropdownMenuCheckboxItem>
-      );
-    }
-    const selfId = node.label?.id;
-    return (
-      <DropdownMenuSub key={node.key} label={node.segment}>
-        {selfId ? (
-          <>
-            <DropdownMenuCheckboxItem
-              checked={applied.has(selfId)}
-              onCheckedChange={(checked) => handleToggle(selfId, checked)}
-            >
-              {node.segment}
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuSeparator />
-          </>
-        ) : null}
-        {node.children.map(renderNode)}
-      </DropdownMenuSub>
-    );
-  };
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
@@ -87,7 +106,11 @@ export function LabelPickerMenu({
         {tree.length === 0 ? (
           <DropdownMenuItem disabled>No labels</DropdownMenuItem>
         ) : (
-          tree.map(renderNode)
+          renderLabelMenuNodes(tree, applied, handleToggle, {
+            CheckboxItem: DropdownMenuCheckboxItem,
+            Sub: DropdownMenuSub,
+            Separator: DropdownMenuSeparator,
+          })
         )}
       </DropdownMenuContent>
     </DropdownMenu>

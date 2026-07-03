@@ -1,6 +1,11 @@
 import { useState } from "react";
 import type React from "react";
 import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
   Sidebar,
   SidebarList,
   SidebarListItem,
@@ -45,7 +50,7 @@ import {
 } from "./hooks";
 import type { GmailLabel, MailView } from "./types";
 import { gmailApi } from "./api";
-import { COMBINED_ACCOUNT_ID } from "./custom-views";
+import { COMBINED_ACCOUNT_ID, useMailViews } from "./custom-views";
 import { buildLabelTree, type LabelTreeNode } from "./label-tree";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
 
@@ -80,43 +85,66 @@ function CombinedViewRow({
   unreadCount,
   onSelect,
   onEdit,
+  onDelete,
+  onReset,
 }: {
   view: MailView;
   selected: boolean;
   unreadCount: number;
   onSelect: () => void;
   onEdit: () => void;
+  onDelete: () => void;
+  onReset: () => void;
 }): React.ReactNode {
   return (
-    <SidebarListItem
-      selected={selected}
-      className="group hover:bg-control-subtle"
-      onClick={() => {
-        console.log("[AccountsSidebar:selectView]", { viewId: view.id });
-        onSelect();
-      }}
-    >
-      {viewIcon(view)}
-      <SidebarListItemContent>
-        <SidebarListItemTitle className={unreadCount > 0 ? "text-strong" : undefined}>
-          {view.name}
-        </SidebarListItemTitle>
-      </SidebarListItemContent>
-      <SidebarListItemAccessory>
-        {unreadCount > 0 ? unreadCount : null}
-        <button
-          type="button"
-          aria-label={`Edit ${view.name}`}
-          className="text-tertiary hover:text-primary opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-          onClick={(e) => {
-            e.stopPropagation();
-            onEdit();
+    <ContextMenu>
+      <ContextMenuTrigger>
+        <SidebarListItem
+          selected={selected}
+          className="group hover:bg-control-subtle"
+          onClick={() => {
+            console.log("[AccountsSidebar:selectView]", { viewId: view.id });
+            onSelect();
           }}
         >
-          <SettingsIcon className="size-3.5" />
-        </button>
-      </SidebarListItemAccessory>
-    </SidebarListItem>
+          {viewIcon(view)}
+          <SidebarListItemContent>
+            <SidebarListItemTitle className={unreadCount > 0 ? "text-strong" : undefined}>
+              {view.name}
+            </SidebarListItemTitle>
+          </SidebarListItemContent>
+          <SidebarListItemAccessory>
+            {unreadCount > 0 ? unreadCount : null}
+            <button
+              type="button"
+              aria-label={`Edit ${view.name}`}
+              className="text-tertiary hover:text-primary opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit();
+              }}
+            >
+              <SettingsIcon className="size-3.5" />
+            </button>
+          </SidebarListItemAccessory>
+        </SidebarListItem>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem icon="pencil" onSelect={onEdit}>
+          Edit View…
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        {view.kind === "custom" ? (
+          <ContextMenuItem icon="trash" color="red" onSelect={onDelete}>
+            Delete View
+          </ContextMenuItem>
+        ) : (
+          <ContextMenuItem icon="arrow.counterclockwise" onSelect={onReset}>
+            Reset to Default
+          </ContextMenuItem>
+        )}
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
@@ -208,6 +236,7 @@ export function AccountsSidebar({
   const accounts = accountsQuery.data ?? [];
   const labels: GmailLabel[] = labelsQuery.data ?? [];
   const viewUnreadCounts = useViewUnreadCounts(views, accounts, isCombined);
+  const { deleteView, resetView } = useMailViews();
 
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId) ?? null;
 
@@ -351,6 +380,8 @@ export function AccountsSidebar({
                 selected={selectedLabelId === view.id}
                 unreadCount={viewUnreadCounts[view.id] ?? 0}
                 onSelect={() => onSelectLabel(view.id)}
+                onDelete={() => void deleteView(view.id)}
+                onReset={() => void resetView(view.id)}
                 onEdit={() => {
                   void gmailApi.openSettings({ pane: "views", viewId: view.id });
                 }}
@@ -392,6 +423,8 @@ export function AccountsSidebar({
                     selected={selectedLabelId === view.id}
                     unreadCount={viewUnreadCounts[view.id] ?? 0}
                     onSelect={() => onSelectLabel(view.id)}
+                    onDelete={() => void deleteView(view.id)}
+                    onReset={() => void resetView(view.id)}
                     onEdit={() => {
                       void gmailApi.openSettings({ pane: "views", viewId: view.id });
                     }}

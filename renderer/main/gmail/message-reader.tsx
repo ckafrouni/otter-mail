@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
   ScrollArea,
   Toolbar,
   ToolbarTitle,
@@ -272,6 +276,8 @@ function ImageAttachmentTile({
   }, [accountId, messageId, attachment.id, attachment.mimeType]);
 
   return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
     <div className="group relative w-36 select-none">
       <div
         role="button"
@@ -311,6 +317,21 @@ function ImageAttachmentTile({
         {attachment.filename}
       </Text>
     </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem icon="arrow.up.forward.app" onSelect={handleOpen}>
+          Open
+        </ContextMenuItem>
+        <ContextMenuItem
+          icon="square.and.arrow.down"
+          onSelect={() =>
+            onDownload(messageId, attachment.id, attachment.filename, attachment.mimeType)
+          }
+        >
+          Save…
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
@@ -331,6 +352,8 @@ function FileAttachmentRow({
     attachment,
   );
   return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
     <div
       role="button"
       aria-label={`Open ${attachment.filename}`}
@@ -360,6 +383,21 @@ function FileAttachmentRow({
         <DownloadIcon className="size-4" />
       </Button>
     </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem icon="arrow.up.forward.app" onSelect={handleOpen}>
+          Open
+        </ContextMenuItem>
+        <ContextMenuItem
+          icon="square.and.arrow.down"
+          onSelect={() =>
+            onDownload(messageId, attachment.id, attachment.filename, attachment.mimeType)
+          }
+        >
+          Save…
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
