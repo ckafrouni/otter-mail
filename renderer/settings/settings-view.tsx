@@ -250,15 +250,32 @@ function ViewsPane({
     );
   }
 
-  // One section per mailbox: Combined first (it's a mailbox too), then accounts.
-  const sections: { id: string; title: string; subtitle: string; views: MailView[] }[] = [
+  // One section per mailbox: Combined first (it's a mailbox too), then
+  // accounts. Built-ins are system MAILBOXES (editable defaults), not views —
+  // only custom views live under "Views".
+  type Group = { label: string; views: MailView[]; canAdd: boolean; emptyHint?: string };
+  const sections: { id: string; title: string; subtitle: string; groups: Group[] }[] = [
     ...(accounts.length > 1
       ? [
           {
             id: COMBINED_MAILBOX,
             title: "Combined",
             subtitle: "All mailboxes",
-            views: views.filter((v) => (v.mailbox ?? COMBINED_MAILBOX) === COMBINED_MAILBOX),
+            groups: [
+              {
+                label: "Mailboxes",
+                views: views.filter((v) => v.kind !== "custom"),
+                canAdd: false,
+              },
+              {
+                label: "Views",
+                views: views.filter(
+                  (v) => v.kind === "custom" && (v.mailbox ?? COMBINED_MAILBOX) === COMBINED_MAILBOX,
+                ),
+                canAdd: true,
+                emptyHint: "No views yet.",
+              },
+            ],
           },
         ]
       : []),
@@ -266,55 +283,73 @@ function ViewsPane({
       id: a.id,
       title: getAccountDisplayName(a),
       subtitle: a.email,
-      views: views.filter((v) => v.kind === "custom" && v.mailbox === a.id),
+      groups: [
+        {
+          label: "Views",
+          views: views.filter((v) => v.kind === "custom" && v.mailbox === a.id),
+          canAdd: true,
+          emptyHint: "No views yet.",
+        },
+      ],
     })),
   ];
 
   return (
     <div className="flex flex-col gap-5">
       {sections.map((section) => (
-        <div key={section.id} className="flex flex-col gap-2">
+        <div key={section.id} className="flex flex-col gap-2.5">
           <div className="flex items-baseline gap-2">
             <Text variant="small-strong">{section.title}</Text>
             <Text variant="mini" color="tertiary">
               {section.subtitle}
             </Text>
           </div>
-          {section.views.length > 0 ? (
-            <div className="rounded-control bg-control-subtle p-1">
-              <List.Root items={section.views} getItemKey={(v: MailView) => v.id}>
-                {section.views.map((view) => (
-                  <List.Item
-                    key={view.id}
-                    item={view}
-                    onClick={() => onOpenView(view.id, section.id)}
-                  >
-                    <List.ItemIcon>{viewIcon(view)}</List.ItemIcon>
-                    <List.ItemContent>
-                      <List.ItemTitle>{view.name}</List.ItemTitle>
-                      <List.ItemDescription>{viewSummary(view)}</List.ItemDescription>
-                    </List.ItemContent>
-                    <List.ItemAccessory>
-                      <ChevronRightIcon className="size-4 text-tertiary" />
-                    </List.ItemAccessory>
-                  </List.Item>
-                ))}
-              </List.Root>
+          {section.groups.map((group) => (
+            <div key={group.label} className="flex flex-col gap-1.5">
+              {section.groups.length > 1 ? (
+                <Text variant="mini" color="secondary">
+                  {group.label}
+                </Text>
+              ) : null}
+              {group.views.length > 0 ? (
+                <div className="rounded-control bg-control-subtle p-1">
+                  <List.Root items={group.views} getItemKey={(v: MailView) => v.id}>
+                    {group.views.map((view) => (
+                      <List.Item
+                        key={view.id}
+                        item={view}
+                        onClick={() => onOpenView(view.id, section.id)}
+                      >
+                        <List.ItemIcon>{viewIcon(view)}</List.ItemIcon>
+                        <List.ItemContent>
+                          <List.ItemTitle>{view.name}</List.ItemTitle>
+                          <List.ItemDescription>{viewSummary(view)}</List.ItemDescription>
+                        </List.ItemContent>
+                        <List.ItemAccessory>
+                          <ChevronRightIcon className="size-4 text-tertiary" />
+                        </List.ItemAccessory>
+                      </List.Item>
+                    ))}
+                  </List.Root>
+                </div>
+              ) : group.emptyHint ? (
+                <Text variant="mini" color="tertiary">
+                  {group.emptyHint}
+                </Text>
+              ) : null}
+              {group.canAdd ? (
+                <Button
+                  variant="filled"
+                  size="small"
+                  className="self-start"
+                  onClick={() => onOpenView("new", section.id)}
+                >
+                  <PlusIcon className="size-4" />
+                  New view
+                </Button>
+              ) : null}
             </div>
-          ) : (
-            <Text variant="mini" color="tertiary">
-              No views yet.
-            </Text>
-          )}
-          <Button
-            variant="filled"
-            size="small"
-            className="self-start"
-            onClick={() => onOpenView("new", section.id)}
-          >
-            <PlusIcon className="size-4" />
-            New view
-          </Button>
+          ))}
         </div>
       ))}
     </div>
