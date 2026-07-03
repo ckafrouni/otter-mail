@@ -7,13 +7,12 @@ import {
   ToolbarTitle,
   ToolbarDescription,
   ToolbarActions,
-  ToolbarSearchButton,
   Button,
   ToggleButton,
   EmptyState,
   Text,
 } from "@glaze/core/components";
-import { ArchiveIcon, CircleDotIcon, StarIcon, StarOffIcon, TagIcon, Trash2Icon } from "lucide-react";
+import { ArchiveIcon, FlagIcon, FolderIcon, ListFilterIcon, Trash2Icon } from "lucide-react";
 import {
   useMessages,
   useCombinedMessages,
@@ -56,7 +55,6 @@ type MessageListProps = {
   selectedMessageId: string | null;
   onSelectMessage: (messageId: string, accountId: string) => void;
   searchQuery: string;
-  onSearchChange: (q: string) => void;
   syncStatus: SyncStatus | null;
 };
 
@@ -289,11 +287,11 @@ function MessageRow({
             onClick={handleStarToggle}
             className={[
               "shrink-0 mt-0.5 transition-colors",
-              selected ? "text-white" : "text-tertiary hover:text-accent",
+              selected ? "text-white" : "text-tertiary hover:text-support-red",
             ].join(" ")}
-            aria-label="Unstar"
+            aria-label="Unflag"
           >
-            <StarIcon className={["size-4 fill-current", selected ? "text-white" : "text-accent"].join(" ")} />
+            <FlagIcon className={["size-4 fill-current", selected ? "text-white" : "text-support-red"].join(" ")} />
           </button>
         ) : (
           /* Hover-revealed quick actions */
@@ -303,11 +301,11 @@ function MessageRow({
               onClick={handleStarToggle}
               className={[
                 "transition-colors",
-                selected ? "text-white/90 hover:text-white" : "text-tertiary hover:text-accent",
+                selected ? "text-white/90 hover:text-white" : "text-tertiary hover:text-support-red",
               ].join(" ")}
-              aria-label="Star"
+              aria-label="Flag"
             >
-              <StarOffIcon className="size-4" />
+              <FlagIcon className="size-4" />
             </button>
             <LabelPickerMenu
               accountId={ownerAccountId}
@@ -322,9 +320,9 @@ function MessageRow({
                   "transition-colors",
                   selected ? "text-white/90 hover:text-white" : "text-tertiary hover:text-primary",
                 ].join(" ")}
-                aria-label="Labels"
+                aria-label="Move to label"
               >
-                <TagIcon className="size-4" />
+                <FolderIcon className="size-4" />
               </button>
             </LabelPickerMenu>
             <button
@@ -359,7 +357,7 @@ function MessageRow({
 /** "260 messages, 7 unread" — omits the unread clause when nothing is unread. */
 function formatMailboxSummary(total: number, unread: number): string {
   const messages = `${total.toLocaleString()} message${total === 1 ? "" : "s"}`;
-  return unread > 0 ? `${messages}, ${unread.toLocaleString()} unread` : messages;
+  return unread > 0 ? `${messages} · ${unread.toLocaleString()} unread` : messages;
 }
 
 function syncLabel(status: SyncStatus): string {
@@ -382,7 +380,6 @@ export function MessageList({
   selectedMessageId,
   onSelectMessage,
   searchQuery,
-  onSearchChange,
   syncStatus,
 }: MessageListProps) {
   const isCombined = combined != null;
@@ -453,21 +450,11 @@ export function MessageList({
                 size="small"
                 pressed={unreadOnly}
                 onPressedChange={setUnreadOnly}
-                aria-label={unreadOnly ? "Show all messages" : "Show unread only"}
+                aria-label={unreadOnly ? "Show all messages" : "Filter unread"}
               >
-                <CircleDotIcon className="size-4.5" />
+                <ListFilterIcon className="size-4.5" />
               </ToggleButton>
             </ToolbarActions>
-          </ToolbarRow>
-          <ToolbarRow>
-            <ToolbarSearchButton
-              value={searchQuery}
-              onChange={(v) => {
-                console.log("[MessageList:searchChange]", { q: v });
-                onSearchChange(v);
-              }}
-              size="large"
-            />
           </ToolbarRow>
           {syncStatus?.syncing ? (
             <ToolbarRow>

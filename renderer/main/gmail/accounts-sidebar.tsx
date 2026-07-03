@@ -25,7 +25,6 @@ import {
   toast,
 } from "@glaze/core/components";
 import {
-  PencilIcon,
   InboxIcon,
   StarIcon,
   SendIcon,
@@ -178,7 +177,6 @@ type AccountsSidebarProps = {
   onSelectAccount: (accountId: string) => void;
   selectedLabelId: string;
   onSelectLabel: (labelId: string) => void;
-  onCompose: () => void;
   views: MailView[];
 };
 
@@ -195,7 +193,6 @@ export function AccountsSidebar({
   onSelectAccount,
   selectedLabelId,
   onSelectLabel,
-  onCompose,
   views,
 }: AccountsSidebarProps) {
   const isCombined = selectedAccountId === COMBINED_ACCOUNT_ID;
@@ -340,19 +337,6 @@ export function AccountsSidebar({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
-
-      {/* Compose button */}
-      <div className="px-3 pb-2">
-        <Button
-          variant="filled"
-          size="small"
-          className="w-full"
-          onClick={onCompose}
-        >
-          <PencilIcon className="size-4" />
-          Compose
-        </Button>
       </div>
 
       {isCombined ? (

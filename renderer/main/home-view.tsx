@@ -245,7 +245,6 @@ export function HomeView() {
             onSelectAccount={handleSelectAccount}
             selectedLabelId={selectedLabelId}
             onSelectLabel={handleSelectLabel}
-            onCompose={() => setComposeOpen(true)}
             views={views}
           />
         }
@@ -261,7 +260,6 @@ export function HomeView() {
               selectedMessageId={selectedMessageId}
               onSelectMessage={handleSelectMessage}
               searchQuery={searchQuery}
-              onSearchChange={handleSearchChange}
               syncStatus={syncStatus}
             />
           ) : undefined
@@ -272,7 +270,13 @@ export function HomeView() {
       >
         {/* Primary pane */}
         {readerAccount ? (
-          <MessageReader accountId={readerAccount} messageId={selectedMessageId} />
+          <MessageReader
+            accountId={readerAccount}
+            messageId={selectedMessageId}
+            onCompose={() => setComposeOpen(true)}
+            searchQuery={searchQuery}
+            onSearchChange={handleSearchChange}
+          />
         ) : (
           <div className="h-full flex items-center justify-center">
             <EmptyState

@@ -2,9 +2,9 @@ import { useEffect, useRef, useState, type PointerEvent } from "react";
 import {
   ScrollArea,
   Toolbar,
-  ToolbarContent,
   ToolbarTitle,
   ToolbarActions,
+  ToolbarSearchButton,
   Button,
   EmptyState,
   Text,
@@ -16,6 +16,10 @@ import {
 } from "@glaze/core/components";
 import {
   ArchiveIcon,
+  ArchiveXIcon,
+  ChevronDownIcon,
+  FlagIcon,
+  FolderIcon,
   Trash2Icon,
   MailOpenIcon,
   MailIcon,
@@ -24,7 +28,7 @@ import {
   ForwardIcon,
   DownloadIcon,
   ImageIcon,
-  TagIcon,
+  SquarePenIcon,
 } from "lucide-react";
 import {
   useAccounts,
@@ -53,6 +57,9 @@ import type {
 type MessageReaderProps = {
   accountId: string;
   messageId: string | null;
+  onCompose: () => void;
+  searchQuery: string;
+  onSearchChange: (q: string) => void;
 };
 
 type ComposeState = {
@@ -518,7 +525,23 @@ function ExpandedMessageCard({
   );
 }
 
-export function MessageReader({ accountId, messageId }: MessageReaderProps) {
+export function MessageReader({
+  accountId,
+  messageId,
+  onCompose,
+  searchQuery,
+  onSearchChange,
+}: MessageReaderProps) {
+  // Apple Mail chrome: compose at the toolbar's left, search at the top right,
+  // in every reader state (empty, loading, message open).
+  const composeButton = (
+    <Button variant="glass" size="large" iconOnly onClick={onCompose} aria-label="New message">
+      <SquarePenIcon className="size-4.5" />
+    </Button>
+  );
+  const searchField = (
+    <ToolbarSearchButton value={searchQuery} onChange={onSearchChange} size="large" />
+  );
   const messageQuery = useMessage(accountId, messageId);
   const labelsQuery = useLabels(accountId);
   const accountsQuery = useAccounts();
@@ -582,9 +605,8 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
     return (
       <div className="h-full flex flex-col">
         <Toolbar>
-          <ToolbarContent>
-            <ToolbarTitle>Gmail</ToolbarTitle>
-          </ToolbarContent>
+          <div className="flex items-center gap-3 min-w-0">{composeButton}</div>
+          <ToolbarActions>{searchField}</ToolbarActions>
         </Toolbar>
         <div className="relative flex-1">
           <EmptyState
@@ -600,9 +622,8 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
     return (
       <div className="h-full flex flex-col">
         <Toolbar>
-          <ToolbarContent>
-            <ToolbarTitle>Loading...</ToolbarTitle>
-          </ToolbarContent>
+          <div className="flex items-center gap-3 min-w-0">{composeButton}</div>
+          <ToolbarActions>{searchField}</ToolbarActions>
         </Toolbar>
         <div className="flex flex-col gap-3 p-4">
           <div className="h-5 w-64 rounded-pill bg-control animate-pulse" />
@@ -617,9 +638,8 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
     return (
       <div className="h-full flex flex-col">
         <Toolbar>
-          <ToolbarContent>
-            <ToolbarTitle>Error</ToolbarTitle>
-          </ToolbarContent>
+          <div className="flex items-center gap-3 min-w-0">{composeButton}</div>
+          <ToolbarActions>{searchField}</ToolbarActions>
         </Toolbar>
         <div className="relative flex-1">
           <EmptyState
@@ -808,28 +828,47 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
     })();
   };
 
+  const isFlagged = message.labelIds.includes("STARRED");
+
+  const handleToggleFlag = () => {
+    console.log("[MessageReader:toggleFlag]", { messageId, isFlagged });
+    void modifyMessage.mutateAsync({
+      accountId,
+      messageId: message.id,
+      ...(isFlagged ? { removeLabelIds: ["STARRED"] } : { addLabelIds: ["STARRED"] }),
+    });
+  };
+
+  const handleJunk = () => {
+    console.log("[MessageReader:junk]", { messageId, isThread });
+    if (isThread && threadId) {
+      void modifyThread.mutateAsync({
+        accountId,
+        threadId,
+        addLabelIds: ["SPAM"],
+        removeLabelIds: ["INBOX"],
+      });
+      return;
+    }
+    void modifyMessage.mutateAsync({
+      accountId,
+      messageId: message.id,
+      addLabelIds: ["SPAM"],
+      removeLabelIds: ["INBOX"],
+    });
+  };
+
   const toolbar = (
     <Toolbar>
-      <ToolbarContent>
-        <ToolbarTitle>{message.subject || "(no subject)"}</ToolbarTitle>
-      </ToolbarContent>
+      <div className="flex items-center gap-3 min-w-0">
+        {composeButton}
+        <ToolbarTitle className="truncate">{message.subject || "(no subject)"}</ToolbarTitle>
+      </div>
       <ToolbarActions>
-        <Button
-          variant="glass"
-          size="large"
-          iconOnly
-          onClick={handleReply}
-          aria-label="Reply"
-        >
+        <Button variant="glass" size="large" iconOnly onClick={handleReply} aria-label="Reply">
           <ReplyIcon className="size-4.5" />
         </Button>
-        <Button
-          variant="glass"
-          size="large"
-          iconOnly
-          onClick={handleReplyAll}
-          aria-label="Reply all"
-        >
+        <Button variant="glass" size="large" iconOnly onClick={handleReplyAll} aria-label="Reply all">
           <ReplyAllIcon className="size-4.5" />
         </Button>
         <Button
@@ -841,28 +880,6 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
           aria-label="Forward"
         >
           <ForwardIcon className="size-4.5" />
-        </Button>
-        <LabelPickerMenu
-          accountId={accountId}
-          messageId={message.id}
-          labelIds={message.labelIds}
-        >
-          <Button variant="glass" size="large" iconOnly aria-label="Labels">
-            <TagIcon className="size-4.5" />
-          </Button>
-        </LabelPickerMenu>
-        <Button
-          variant="glass"
-          size="large"
-          iconOnly
-          onClick={handleToggleRead}
-          aria-label={isUnread ? "Mark as read" : "Mark as unread"}
-        >
-          {isUnread ? (
-            <MailOpenIcon className="size-4.5" />
-          ) : (
-            <MailIcon className="size-4.5" />
-          )}
         </Button>
         <Button
           variant="glass"
@@ -882,6 +899,52 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
         >
           <Trash2Icon className="size-4.5" />
         </Button>
+        <Button
+          variant="glass"
+          size="large"
+          iconOnly
+          onClick={handleJunk}
+          aria-label={isThread ? "Move conversation to junk" : "Move to junk"}
+        >
+          <ArchiveXIcon className="size-4.5" />
+        </Button>
+        <LabelPickerMenu
+          accountId={accountId}
+          messageId={message.id}
+          labelIds={message.labelIds}
+        >
+          <Button variant="glass" size="large" iconOnly aria-label="Move to label">
+            <span className="flex items-center gap-0.5">
+              <FolderIcon className="size-4.5" />
+              <ChevronDownIcon className="size-3" />
+            </span>
+          </Button>
+        </LabelPickerMenu>
+        <Button
+          variant="glass"
+          size="large"
+          iconOnly
+          onClick={handleToggleFlag}
+          aria-label={isFlagged ? "Unflag" : "Flag"}
+        >
+          <FlagIcon
+            className={["size-4.5", isFlagged ? "fill-current text-support-red" : ""].join(" ")}
+          />
+        </Button>
+        <Button
+          variant="glass"
+          size="large"
+          iconOnly
+          onClick={handleToggleRead}
+          aria-label={isUnread ? "Mark as read" : "Mark as unread"}
+        >
+          {isUnread ? (
+            <MailOpenIcon className="size-4.5" />
+          ) : (
+            <MailIcon className="size-4.5" />
+          )}
+        </Button>
+        {searchField}
       </ToolbarActions>
     </Toolbar>
   );
