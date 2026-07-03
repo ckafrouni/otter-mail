@@ -165,23 +165,18 @@ function renderLabelTreeNode(
     : undefined;
 
   if (children.length === 0) {
+    // Props mode (not children mode): only it auto-reserves the chevron gutter,
+    // so leaf icons line up in one column with collapsible parents, like Gmail.
     return (
       <SidebarListItem
         key={node.key}
         selected={label ? selectedLabelId === label.id : false}
         className="hover:bg-control-subtle"
         onClick={handleSelect}
-      >
-        {labelIcon(label)}
-        <SidebarListItemContent>
-          <SidebarListItemTitle className={unreadCount ? "text-strong" : undefined}>
-            {node.segment}
-          </SidebarListItemTitle>
-        </SidebarListItemContent>
-        {unreadCount !== undefined ? (
-          <SidebarListItemAccessory>{unreadCount}</SidebarListItemAccessory>
-        ) : null}
-      </SidebarListItem>
+        icon={labelIcon(label)}
+        title={unreadCount ? <span className="text-strong">{node.segment}</span> : node.segment}
+        accessory={unreadCount}
+      />
     );
   }
 
