@@ -17,12 +17,17 @@ import {
   useLabelResolver,
 } from "./hooks";
 import { LabelChip } from "./label-chip";
-import type { GmailLabel, GmailMessageSummary, LabelSelection, SyncStatus } from "./types";
+import { getAccountColor, getAccountDisplayName } from "./account-style";
+import { SYSTEM_LABEL_NAMES, labelDisplayName } from "./label-names";
+import type { GmailAccount, GmailLabel, GmailMessageSummary, LabelSelection, SyncStatus } from "./types";
 
 type ResolveLabel = (accountId: string | undefined, labelId: string) => GmailLabel | undefined;
 
 /** Cross-account query descriptor for the Combined mailbox. */
 export type CombinedList = { viewId: string; selections: LabelSelection[] };
+
+/** Mailbox + account identity shown next to the date in Combined view rows. */
+type CombinedMeta = { mailbox: string; accountName: string; accountColor: string };
 
 type MessageListProps = {
   /** Active account — used for account-mode queries and as a fallback owner id. */
@@ -32,12 +37,36 @@ type MessageListProps = {
   combined: CombinedList | null;
   /** All connected account ids, for resolving label chips across accounts. */
   accountIds: string[];
+  /** Connected accounts (name/color), for the Combined view's mailbox-account line. */
+  accounts: GmailAccount[];
   selectedMessageId: string | null;
   onSelectMessage: (messageId: string, accountId: string) => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
   syncStatus: SyncStatus | null;
 };
+
+function resolveCombinedMeta(
+  message: GmailMessageSummary,
+  combined: CombinedList | null,
+  accounts: GmailAccount[],
+  resolveLabel: ResolveLabel,
+): CombinedMeta | null {
+  if (!combined || !message.accountId) return null;
+  const account = accounts.find((a) => a.id === message.accountId);
+  if (!account) return null;
+  const matched = combined.selections.find(
+    (s) => s.accountId === message.accountId && message.labelIds.includes(s.labelId),
+  );
+  if (!matched) return null;
+  const label = resolveLabel(message.accountId, matched.labelId);
+  const mailbox = label ? labelDisplayName(label) : (SYSTEM_LABEL_NAMES[matched.labelId] ?? matched.labelId);
+  return {
+    mailbox,
+    accountName: getAccountDisplayName(account),
+    accountColor: getAccountColor(account),
+  };
+}
 
 function formatRelativeDate(timestamp: number): string {
   const date = new Date(timestamp);
@@ -63,6 +92,8 @@ type MessageRowProps = {
   /** Fallback owner id when a summary has no accountId (e.g. live search results). */
   accountId: string;
   resolveLabel: ResolveLabel;
+  /** Mailbox + account line shown next to the date, only in Combined view. */
+  combinedMeta: CombinedMeta | null;
 };
 
 function MessageRow({
@@ -71,6 +102,7 @@ function MessageRow({
   onSelect,
   accountId,
   resolveLabel,
+  combinedMeta,
 }: MessageRowProps) {
   const modifyMessage = useModifyMessage();
   const trashMessage = useTrashMessage();
@@ -118,92 +150,136 @@ function MessageRow({
     void trashMessage.mutateAsync({ accountId: ownerAccountId, messageId: message.id });
   };
 
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={[
-        "group w-full text-left px-3 py-2.5 flex items-start gap-3 border-b border-separator",
-        "hover:bg-control-subtle",
-        selected ? "bg-control" : "",
-      ].join(" ")}
-    >
-      <div className="flex flex-col min-w-0 flex-1 gap-0.5">
-        <div className="flex items-center justify-between gap-2">
-          <Text
-            variant={message.unread ? "small-strong" : "small"}
-            color={message.unread ? "primary" : "secondary"}
-            truncate
-            className="flex-1 min-w-0"
-          >
-            {message.fromName || message.fromEmail}
-          </Text>
-          <Text
-            variant="mini"
-            color="secondary"
-            className="shrink-0 tabular-nums"
-          >
-            {formatRelativeDate(message.date)}
-          </Text>
-        </div>
-        <Text
-          variant={message.unread ? "small-strong" : "small"}
-          color={message.unread ? "primary" : "secondary"}
-          truncate
-        >
-          {message.subject || "(no subject)"}
-        </Text>
-        <Text variant="mini" color="tertiary" truncate>
-          {message.snippet}
-        </Text>
-        {messageLabels.length > 0 ? (
-          <div className="flex items-center gap-1 flex-wrap pt-0.5">
-            {messageLabels.map((label) => (
-              <LabelChip key={label.id} label={label} />
-            ))}
-          </div>
-        ) : null}
-      </div>
+  const unread = message.unread;
+  // Selected rows sit on a solid accent block (Apple Mail-style); every text/icon
+  // color below is force-overridden to white via inline style so it stays legible
+  // regardless of the semantic (light/dark) color the row would otherwise use.
+  const onAccent = selected ? { color: "#fff" } : undefined;
+  const onAccentMuted = selected ? { color: "rgba(255,255,255,0.75)" } : undefined;
+  const onAccentFaint = selected ? { color: "rgba(255,255,255,0.65)" } : undefined;
 
-      {message.starred ? (
-        <button
-          type="button"
-          onClick={handleStarToggle}
-          className="shrink-0 mt-0.5 text-tertiary hover:text-accent transition-colors"
-          aria-label="Unstar"
-        >
-          <StarIcon className="size-4 fill-current text-accent" />
-        </button>
-      ) : (
-        /* Hover-revealed quick actions */
-        <div className="shrink-0 mt-0.5 flex items-center gap-1 max-w-0 opacity-0 overflow-hidden group-hover:max-w-[76px] group-hover:opacity-100 transition-all duration-150">
+  return (
+    <div className="px-2">
+      <button
+        type="button"
+        onClick={onSelect}
+        className={[
+          "group w-full text-left rounded-lg px-3 py-2 my-0.5 flex items-start gap-3",
+          selected
+            ? "bg-accent"
+            : unread
+              ? "bg-accent/[0.06] hover:bg-accent/[0.12]"
+              : "hover:bg-control-subtle",
+        ].join(" ")}
+      >
+        <div className="flex flex-col min-w-0 flex-1 gap-0.5">
+          <div className="flex items-center justify-between gap-2">
+            <Text
+              variant={unread ? "small-strong" : "small"}
+              color={selected ? undefined : unread ? "primary" : "secondary"}
+              truncate
+              className="flex-1 min-w-0"
+              style={onAccent}
+            >
+              {message.fromName || message.fromEmail}
+            </Text>
+            <div className="flex items-center gap-1 shrink-0">
+              {combinedMeta ? (
+                <span className="flex items-center gap-1">
+                  <Text variant="mini" color={selected ? undefined : "secondary"} style={onAccentMuted}>
+                    {combinedMeta.mailbox} -
+                  </Text>
+                  <Text
+                    variant="mini"
+                    className="font-medium"
+                    style={{ color: selected ? "rgba(255,255,255,0.95)" : combinedMeta.accountColor }}
+                  >
+                    {combinedMeta.accountName}
+                  </Text>
+                </span>
+              ) : null}
+              <Text
+                variant="mini"
+                color={selected ? undefined : "secondary"}
+                className="tabular-nums"
+                style={onAccentMuted}
+              >
+                {formatRelativeDate(message.date)}
+              </Text>
+            </div>
+          </div>
+          <Text
+            variant={unread ? "small-strong" : "small"}
+            color={selected ? undefined : unread ? "primary" : "secondary"}
+            truncate
+            style={onAccent}
+          >
+            {message.subject || "(no subject)"}
+          </Text>
+          <Text variant="mini" color={selected ? undefined : "tertiary"} truncate style={onAccentFaint}>
+            {message.snippet}
+          </Text>
+          {messageLabels.length > 0 ? (
+            <div className="flex items-center gap-1 flex-wrap pt-0.5">
+              {messageLabels.map((label) => (
+                <LabelChip key={label.id} label={label} />
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        {message.starred ? (
           <button
             type="button"
             onClick={handleStarToggle}
-            className="text-tertiary hover:text-accent transition-colors"
-            aria-label="Star"
+            className={[
+              "shrink-0 mt-0.5 transition-colors",
+              selected ? "text-white" : "text-tertiary hover:text-accent",
+            ].join(" ")}
+            aria-label="Unstar"
           >
-            <StarOffIcon className="size-4" />
+            <StarIcon className={["size-4 fill-current", selected ? "text-white" : "text-accent"].join(" ")} />
           </button>
-          <button
-            type="button"
-            onClick={handleArchive}
-            className="text-tertiary hover:text-primary transition-colors"
-            aria-label="Archive"
-          >
-            <ArchiveIcon className="size-4" />
-          </button>
-          <button
-            type="button"
-            onClick={handleTrash}
-            className="text-tertiary hover:text-support-red transition-colors"
-            aria-label="Move to trash"
-          >
-            <Trash2Icon className="size-4" />
-          </button>
-        </div>
-      )}
-    </button>
+        ) : (
+          /* Hover-revealed quick actions */
+          <div className="shrink-0 mt-0.5 flex items-center gap-1 max-w-0 opacity-0 overflow-hidden group-hover:max-w-[76px] group-hover:opacity-100 transition-all duration-150">
+            <button
+              type="button"
+              onClick={handleStarToggle}
+              className={[
+                "transition-colors",
+                selected ? "text-white/90 hover:text-white" : "text-tertiary hover:text-accent",
+              ].join(" ")}
+              aria-label="Star"
+            >
+              <StarOffIcon className="size-4" />
+            </button>
+            <button
+              type="button"
+              onClick={handleArchive}
+              className={[
+                "transition-colors",
+                selected ? "text-white/90 hover:text-white" : "text-tertiary hover:text-primary",
+              ].join(" ")}
+              aria-label="Archive"
+            >
+              <ArchiveIcon className="size-4" />
+            </button>
+            <button
+              type="button"
+              onClick={handleTrash}
+              className={[
+                "transition-colors",
+                selected ? "text-white/90 hover:text-white" : "text-tertiary hover:text-support-red",
+              ].join(" ")}
+              aria-label="Move to trash"
+            >
+              <Trash2Icon className="size-4" />
+            </button>
+          </div>
+        )}
+      </button>
+    </div>
   );
 }
 
@@ -223,6 +299,7 @@ export function MessageList({
   labelId,
   combined,
   accountIds,
+  accounts,
   selectedMessageId,
   onSelectMessage,
   searchQuery,
@@ -287,11 +364,7 @@ export function MessageList({
       {isLoading ? (
         <div className="flex flex-col gap-0">
           {Array.from({ length: 8 }).map((_, i) => (
-            <div
-              key={i}
-              className="w-full px-3 py-2.5 flex items-start gap-3 border-b border-separator"
-            >
-              <div className="shrink-0 mt-1.5 size-2" />
+            <div key={i} className="w-full px-3 py-2.5 flex items-start gap-3">
               <div className="flex flex-col min-w-0 flex-1 gap-1.5">
                 <div className="h-3.5 w-32 rounded-pill bg-control animate-pulse" />
                 <div className="h-3 w-48 rounded-pill bg-control animate-pulse" />
@@ -311,21 +384,30 @@ export function MessageList({
         />
       ) : (
         <>
-          {allMessages.map((message) => (
-            <MessageRow
-              key={`${message.accountId ?? accountId}:${message.id}`}
-              message={message}
-              selected={selectedMessageId === message.id}
-              onSelect={() => {
-                console.log("[MessageList:selectMessage]", {
-                  messageId: message.id,
-                });
-                onSelectMessage(message.id, message.accountId ?? accountId);
-              }}
-              accountId={accountId}
-              resolveLabel={resolveLabel}
-            />
-          ))}
+          {allMessages.map((message, i) => {
+            const isSelected = selectedMessageId === message.id;
+            const next = allMessages[i + 1];
+            const nextSelected = next ? selectedMessageId === next.id : false;
+            const showDivider = i < allMessages.length - 1 && !isSelected && !nextSelected;
+            return (
+              <div key={`${message.accountId ?? accountId}:${message.id}`}>
+                <MessageRow
+                  message={message}
+                  selected={isSelected}
+                  onSelect={() => {
+                    console.log("[MessageList:selectMessage]", {
+                      messageId: message.id,
+                    });
+                    onSelectMessage(message.id, message.accountId ?? accountId);
+                  }}
+                  accountId={accountId}
+                  resolveLabel={resolveLabel}
+                  combinedMeta={resolveCombinedMeta(message, combined, accounts, resolveLabel)}
+                />
+                {showDivider ? <div className="h-px bg-separator mx-5" /> : null}
+              </div>
+            );
+          })}
           {hasNextPage ? (
             <div className="flex justify-center py-3">
               <Button

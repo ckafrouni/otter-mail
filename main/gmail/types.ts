@@ -8,6 +8,10 @@ export interface GmailAccount {
   email: string;
   name: string;
   picture?: string;
+  /** User-set override for the Google profile name, edited in Settings. */
+  displayName?: string;
+  /** User-set accent color (hex) for this account, edited in Settings. */
+  color?: string;
 }
 
 export interface GmailLabel {

@@ -46,6 +46,20 @@ export function useCredentials() {
 
 // ---- Accounts ----
 export function useAccounts() {
+  const qc = useQueryClient();
+
+  // Account edits (name/color) can happen in the Settings window, which has its
+  // own QueryClient — listen for the backend broadcast so every window refreshes.
+  useEffect(() => {
+    const unsubscribe = window.glazeAPI.glaze.ipc.onNotification(
+      "gmail:accounts-changed",
+      () => {
+        void qc.invalidateQueries({ queryKey: queryKeys.accounts() });
+      },
+    );
+    return unsubscribe;
+  }, [qc]);
+
   return useQuery<GmailAccount[]>({
     queryKey: queryKeys.accounts(),
     queryFn: () => {
@@ -53,6 +67,19 @@ export function useAccounts() {
       return gmailApi.listAccounts();
     },
     staleTime: STALE_TIME,
+  });
+}
+
+export function useUpdateAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { accountId: string; displayName?: string; color?: string }) => {
+      console.log("[hooks:useUpdateAccount] updating account", params);
+      return gmailApi.updateAccount(params);
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.accounts() });
+    },
   });
 }
 

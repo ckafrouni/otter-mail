@@ -56,3 +56,23 @@ export async function getAccount(accountId: string): Promise<GmailAccount | null
   const accounts = await readAccounts();
   return accounts.find((a) => a.id === accountId) ?? null;
 }
+
+export async function updateAccount(
+  accountId: string,
+  patch: { displayName?: string; color?: string },
+): Promise<GmailAccount> {
+  const accounts = await readAccounts();
+  const index = accounts.findIndex((a) => a.id === accountId);
+  if (index < 0) {
+    throw new Error(`Account not found: ${accountId}`);
+  }
+  const current = accounts[index];
+  const updated: GmailAccount = {
+    ...current,
+    displayName: patch.displayName !== undefined ? patch.displayName || undefined : current.displayName,
+    color: patch.color !== undefined ? patch.color : current.color,
+  };
+  accounts[index] = updated;
+  await writeAccounts(accounts);
+  return updated;
+}

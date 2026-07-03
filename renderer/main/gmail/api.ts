@@ -58,6 +58,12 @@ export type GetAttachmentParams = {
 
 export type GetAttachmentResult = { saved: boolean; path?: string };
 
+export type UpdateAccountParams = {
+  accountId: string;
+  displayName?: string;
+  color?: string;
+};
+
 export const gmailApi = {
   getCredentials: (): Promise<CredentialsResult> => ipc("gmail:getCredentials"),
 
@@ -70,6 +76,9 @@ export const gmailApi = {
 
   removeAccount: (accountId: string): Promise<{ ok: boolean }> =>
     ipc("gmail:removeAccount", { accountId }),
+
+  updateAccount: (params: UpdateAccountParams): Promise<GmailAccount> =>
+    ipc("gmail:updateAccount", params),
 
   listLabels: (accountId: string): Promise<GmailLabel[]> =>
     ipc("gmail:listLabels", { accountId }),

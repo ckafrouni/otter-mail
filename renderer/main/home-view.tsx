@@ -222,6 +222,7 @@ export function HomeView() {
               labelId={selectedLabelId}
               combined={combined}
               accountIds={accountIds}
+              accounts={accounts}
               selectedMessageId={selectedMessageId}
               onSelectMessage={handleSelectMessage}
               searchQuery={searchQuery}

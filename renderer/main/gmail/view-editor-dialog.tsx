@@ -10,6 +10,7 @@ import {
 import { useAllAccountLabels } from "./hooks";
 import { defaultSelectionsFor } from "./custom-views";
 import { buildLabelTree, flattenLabelTree, type LabelTreeNode } from "./label-tree";
+import { SYSTEM_LABEL_ORDER, labelDisplayName } from "./label-names";
 import type { GmailAccount, GmailLabel, LabelSelection, MailView } from "./types";
 
 type ViewEditorDialogProps = {
@@ -23,39 +24,12 @@ type ViewEditorDialogProps = {
   onReset: (id: string) => void;
 };
 
-// Friendly display names for Gmail's system labels.
-const SYSTEM_LABEL_NAMES: Record<string, string> = {
-  INBOX: "Inbox",
-  SENT: "Sent",
-  DRAFT: "Drafts",
-  SPAM: "Spam",
-  TRASH: "Trash",
-  UNREAD: "Unread",
-  STARRED: "Starred",
-  IMPORTANT: "Important",
-  CATEGORY_PERSONAL: "Personal",
-  CATEGORY_SOCIAL: "Social",
-  CATEGORY_PROMOTIONS: "Promotions",
-  CATEGORY_UPDATES: "Updates",
-  CATEGORY_FORUMS: "Forums",
-  CHAT: "Chat",
-};
-
-const SYSTEM_ORDER = Object.keys(SYSTEM_LABEL_NAMES);
-
-function labelDisplayName(label: GmailLabel): string {
-  if (label.type === "system") {
-    return SYSTEM_LABEL_NAMES[label.id] ?? label.name;
-  }
-  return label.name;
-}
-
 function sortSystemLabels(labels: GmailLabel[]): GmailLabel[] {
   return labels
     .filter((l) => l.type === "system")
     .sort((a, b) => {
-      const ai = SYSTEM_ORDER.indexOf(a.id);
-      const bi = SYSTEM_ORDER.indexOf(b.id);
+      const ai = SYSTEM_LABEL_ORDER.indexOf(a.id);
+      const bi = SYSTEM_LABEL_ORDER.indexOf(b.id);
       return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
     });
 }

@@ -48,6 +48,7 @@ import type { GmailLabel, LabelSelection, MailView } from "./types";
 import { ViewEditorDialog } from "./view-editor-dialog";
 import { COMBINED_ACCOUNT_ID } from "./custom-views";
 import { buildLabelTree, type LabelTreeNode } from "./label-tree";
+import { getAccountColor, getAccountDisplayName } from "./account-style";
 
 const SYSTEM_LABEL_MAP: Record<string, { name: string; icon: React.ReactNode }> = {
   INBOX: { name: "Inbox", icon: <InboxIcon className="size-4" /> },
@@ -293,17 +294,17 @@ export function AccountsSidebar({
                   {selectedAccount?.picture ? (
                     <AvatarImage
                       src={selectedAccount.picture}
-                      alt={selectedAccount.name}
+                      alt={getAccountDisplayName(selectedAccount)}
                     />
                   ) : null}
                   <AvatarFallback>
-                    {selectedAccount ? getInitials(selectedAccount.name) : "?"}
+                    {selectedAccount ? getInitials(getAccountDisplayName(selectedAccount)) : "?"}
                   </AvatarFallback>
                 </Avatar>
               )}
               <div className="flex flex-col min-w-0 flex-1 text-left">
                 <Text variant="small-strong" truncate>
-                  {isCombined ? "Combined" : (selectedAccount?.name ?? "No account")}
+                  {isCombined ? "Combined" : (selectedAccount ? getAccountDisplayName(selectedAccount) : "No account")}
                 </Text>
                 <Text variant="mini" color="secondary" truncate>
                   {isCombined ? "All mailboxes" : (selectedAccount?.email ?? "")}
@@ -334,7 +335,13 @@ export function AccountsSidebar({
                   onSelectAccount(account.id);
                 }}
               >
-                {account.email}
+                <span className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="size-2 rounded-full shrink-0"
+                    style={{ backgroundColor: getAccountColor(account) }}
+                  />
+                  <span className="truncate">{account.email}</span>
+                </span>
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />

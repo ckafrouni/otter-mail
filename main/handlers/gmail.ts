@@ -12,6 +12,7 @@ import { getCredentials, setCredentials, hasCredentials } from "../services/cred
 import {
   listAccounts,
   removeAccount as storeRemoveAccount,
+  updateAccount as storeUpdateAccount,
 } from "../services/account-store.js";
 import {
   addAccount as oauthAddAccount,
@@ -122,6 +123,24 @@ export function registerGmailHandlers(): void {
       return { ok: true as const };
     } catch (err) {
       console.log("[gmail:removeAccount] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:updateAccount — persists a user-set display name / color for an account,
+  // then notifies every window so the sidebar/message list pick up the change live.
+  ipcMain.handle("gmail:updateAccount", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:updateAccount]", { accountId: p?.accountId });
+    try {
+      const accountId = assertString(p?.accountId, "accountId");
+      const displayName = asString(p?.displayName);
+      const color = asString(p?.color);
+      const updated = await storeUpdateAccount(accountId, { displayName, color });
+      ipcMain.broadcast("gmail:accounts-changed");
+      return updated;
+    } catch (err) {
+      console.log("[gmail:updateAccount] error", { error: String(err) });
       throw err;
     }
   });
