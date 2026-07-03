@@ -11,6 +11,7 @@ import { fileURLToPath } from "url";
 import { app, BrowserWindow, Menu, logger, initDevToolsButtonState } from "@glaze/core/backend";
 
 import { registerHandlers } from "./handlers/index.js";
+import { syncAllAccounts } from "./services/mail-sync.js";
 import { getPreloadPath, getWindowUrl } from "./windows/window-paths.js";
 import { openSettingsWindow } from "./windows/settings-window.js";
 
@@ -157,6 +158,20 @@ async function setupApplicationMenu() {
     { role: "fileMenu" },
     { role: "editMenu" },
     { role: "viewMenu" },
+    {
+      label: "Mailbox",
+      submenu: [
+        {
+          label: "Get All New Mail",
+          icon: "tray.and.arrow.down",
+          accelerator: "Shift+Command+N",
+          click: () => {
+            logger.info("main", "Menu: Get All New Mail");
+            void syncAllAccounts();
+          },
+        },
+      ],
+    },
     { role: "windowMenu" },
   ]);
   Menu.setApplicationMenu(menu);
