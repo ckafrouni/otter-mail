@@ -37,7 +37,7 @@ import { gmailApi } from "./api";
 import { COMBINED_ACCOUNT_ID, useMailViews } from "./custom-views";
 import { buildLabelTree, type LabelTreeNode } from "./label-tree";
 import { getAccountDisplayName } from "./account-style";
-import { UnreadPill } from "./slack-ui";
+import { UnreadPill, HintTooltip } from "./slack-ui";
 
 const SIDEBAR_SYSTEM_ORDER = ["INBOX", "STARRED", "SENT", "DRAFT", "IMPORTANT", "SPAM", "TRASH"];
 
@@ -134,6 +134,21 @@ function Section({
       </div>
       {open ? children : null}
     </div>
+  );
+}
+
+function SectionAddButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <HintTooltip label={label}>
+      <button
+        type="button"
+        aria-label={label}
+        onClick={onClick}
+        className="flex size-5 items-center justify-center rounded text-(--sk-muted) hover:bg-(--sk-ctl) hover:text-(--sk-strong)"
+      >
+        <PlusIcon className="size-3.5" />
+      </button>
+    </HintTooltip>
   );
 }
 
@@ -240,7 +255,7 @@ function LabelNode({
   selectedLabelId: string;
   onSelectLabel: (labelId: string) => void;
 }): ReactNode {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const { label, children } = node;
   const unread = label?.unread && label.unread > 0 ? label.unread : 0;
   const hasChildren = children.length > 0;
@@ -475,9 +490,11 @@ export function AccountsSidebar({
           <>
             {views.filter((v) => v.kind !== "custom").map(viewRow)}
 
-            <Section title="Views">
+            <Section
+              title="Views"
+              action={<SectionAddButton label="Add view" onClick={() => openViewEditor("new")} />}
+            >
               {combinedViews.map(viewRow)}
-              <AddRow label="Add view" onClick={() => openViewEditor("new")} />
             </Section>
           </>
         ) : (
@@ -504,13 +521,20 @@ export function AccountsSidebar({
               );
             })}
 
-            <Section title="Views">
+            <Section
+              title="Views"
+              action={<SectionAddButton label="Add view" onClick={() => openViewEditor("new")} />}
+            >
               {accountViews.map(viewRow)}
-              <AddRow label="Add view" onClick={() => openViewEditor("new")} />
             </Section>
 
             {selectedAccountId ? (
-              <Section title="Labels">
+              <Section
+                title="Labels"
+                action={
+                  <SectionAddButton label="Add label" onClick={() => setCreateLabelOpen(true)} />
+                }
+              >
                 {userLabelTree.map((node) => (
                   <LabelNode
                     key={node.key}
@@ -520,7 +544,6 @@ export function AccountsSidebar({
                     onSelectLabel={onSelectLabel}
                   />
                 ))}
-                <AddRow label="Add label" onClick={() => setCreateLabelOpen(true)} />
               </Section>
             ) : null}
 
