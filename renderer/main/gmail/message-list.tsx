@@ -493,6 +493,10 @@ export function MessageList({
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e)) return;
+      // Held-down key repeats can outpace rendering and pile up in the event
+      // queue, replaying moves long after the key is released — drop repeats
+      // that have been waiting more than a beat.
+      if (e.repeat && performance.now() - e.timeStamp > 80) return;
       const { visibleMessages: rows, selectedMessageId: selId, accountId: fallbackAccount } =
         shortcutState.current;
       if (rows.length === 0) return;

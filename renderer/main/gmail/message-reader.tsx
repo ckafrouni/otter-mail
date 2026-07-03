@@ -663,20 +663,24 @@ export function MessageReader({
   }, [isThread, accountId, threadId, messageId, threadMessages]);
 
   // Auto-mark as read when a single message opens (conversation cards mark
-  // themselves as they expand).
+  // themselves as they expand). Debounced so j/k scrubbing past unread rows
+  // doesn't fire a mutation per row — only where the selection settles.
   useEffect(() => {
     if (!message || !messageId) return;
     if (threadQuery.isLoading || isThread) return;
     if (hasAutoMarked.current === messageId) return;
     if (!message.unread) return;
 
-    hasAutoMarked.current = messageId;
-    console.log("[MessageReader:autoMarkRead]", { messageId });
-    void modifyMessage.mutateAsync({
-      accountId,
-      messageId,
-      removeLabelIds: ["UNREAD"],
-    });
+    const timer = setTimeout(() => {
+      hasAutoMarked.current = messageId;
+      console.log("[MessageReader:autoMarkRead]", { messageId });
+      void modifyMessage.mutateAsync({
+        accountId,
+        messageId,
+        removeLabelIds: ["UNREAD"],
+      });
+    }, 300);
+    return () => clearTimeout(timer);
   }, [message, messageId, accountId, modifyMessage, threadQuery.isLoading, isThread]);
 
   if (!messageId) {
