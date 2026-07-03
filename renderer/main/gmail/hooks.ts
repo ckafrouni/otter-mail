@@ -382,6 +382,57 @@ export function useAccountSync(accountId: string | null): SyncStatus | null {
   return statusQuery.data ?? null;
 }
 
+/**
+ * Same as `useAccountSync` but for every account at once — the Combined mailbox
+ * has no single "active account" to drive `useAccountSync`, so its per-account
+ * label counts (used by the mailbox header) would otherwise never refresh once
+ * the background sync fills them in.
+ */
+export function useSyncAccountLabels(accountIds: string[], enabled: boolean): void {
+  const qc = useQueryClient();
+
+  const results = useQueries({
+    queries: accountIds.map((id) => ({
+      queryKey: ["gmail:syncStatus", id],
+      queryFn: () => gmailApi.getSyncStatus(id),
+      enabled,
+      refetchInterval: (query: { state: { data?: SyncStatus } }) =>
+        query.state.data?.syncing ? 1500 : false,
+    })),
+  });
+
+  const accountIdsKey = accountIds.join(",");
+  useEffect(() => {
+    if (!enabled) return;
+    for (const id of accountIdsKey ? accountIdsKey.split(",") : []) {
+      void gmailApi.syncAccount(id);
+    }
+  }, [enabled, accountIdsKey]);
+
+  const prevRef = useRef<Map<string, { synced: number; syncing: boolean }>>(new Map());
+  const progressKey = results
+    .map((r) => {
+      const s = r.data as SyncStatus | undefined;
+      return s ? `${s.synced}:${s.syncing}` : "";
+    })
+    .join(",");
+  useEffect(() => {
+    if (!enabled) return;
+    results.forEach((r, i) => {
+      const accountId = accountIds[i];
+      const status = r.data as SyncStatus | undefined;
+      if (!status) return;
+      const prev = prevRef.current.get(accountId);
+      const progressed =
+        prev != null && (status.synced !== prev.synced || (prev.syncing && !status.syncing));
+      if (progressed) {
+        void qc.invalidateQueries({ queryKey: queryKeys.labels(accountId) });
+      }
+      prevRef.current.set(accountId, { synced: status.synced, syncing: status.syncing });
+    });
+  }, [progressKey, enabled, accountIdsKey, qc]);
+}
+
 export function useGetAttachment() {
   return useMutation({
     mutationFn: (params: {

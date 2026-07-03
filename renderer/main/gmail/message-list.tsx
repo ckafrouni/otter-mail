@@ -1,20 +1,26 @@
 import type React from "react";
+import { useState } from "react";
 import {
   ScrollArea,
   Toolbar,
   ToolbarRow,
+  ToolbarTitle,
+  ToolbarDescription,
+  ToolbarActions,
   ToolbarSearchButton,
   Button,
+  ToggleButton,
   EmptyState,
   Text,
 } from "@glaze/core/components";
-import { ArchiveIcon, StarIcon, StarOffIcon, Trash2Icon } from "lucide-react";
+import { ArchiveIcon, CircleDotIcon, StarIcon, StarOffIcon, Trash2Icon } from "lucide-react";
 import {
   useMessages,
   useCombinedMessages,
   useModifyMessage,
   useTrashMessage,
   useLabelResolver,
+  useSyncAccountLabels,
 } from "./hooks";
 import { LabelChip } from "./label-chip";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
@@ -24,7 +30,7 @@ import type { GmailAccount, GmailLabel, GmailMessageSummary, LabelSelection, Syn
 type ResolveLabel = (accountId: string | undefined, labelId: string) => GmailLabel | undefined;
 
 /** Cross-account query descriptor for the Combined mailbox. */
-export type CombinedList = { viewId: string; selections: LabelSelection[] };
+export type CombinedList = { viewId: string; name: string; selections: LabelSelection[] };
 
 /** Mailbox + account identity shown next to the date in Combined view rows. */
 type CombinedMeta = { mailbox: string; accountName: string; accountColor: string };
@@ -283,6 +289,12 @@ function MessageRow({
   );
 }
 
+/** "260 messages, 7 unread" — omits the unread clause when nothing is unread. */
+function formatMailboxSummary(total: number, unread: number): string {
+  const messages = `${total.toLocaleString()} message${total === 1 ? "" : "s"}`;
+  return unread > 0 ? `${messages}, ${unread.toLocaleString()} unread` : messages;
+}
+
 function syncLabel(status: SyncStatus): string {
   if (status.phase === "full" && status.total) {
     return `Syncing ${status.synced.toLocaleString()} of ~${status.total.toLocaleString()}`;
@@ -307,6 +319,7 @@ export function MessageList({
   syncStatus,
 }: MessageListProps) {
   const isCombined = combined != null;
+  const [unreadOnly, setUnreadOnly] = useState(false);
 
   // Both hooks are always called (rules of hooks); the inactive one is disabled.
   const accountMessages = useMessages(isCombined ? null : accountId, labelId, searchQuery);
@@ -318,9 +331,32 @@ export function MessageList({
   const messagesQuery = isCombined ? combinedMessages : accountMessages;
 
   const resolveLabel = useLabelResolver(isCombined ? accountIds : [accountId]);
+  // Combined mode has no single "active account" to drive per-account label
+  // sync (see useAccountSync), so the header's counts need their own refresh loop.
+  useSyncAccountLabels(accountIds, isCombined);
+
+  // Header title + "N messages, M unread" — from Gmail's own label counters
+  // (not just what's paginated into the list), summed across selections when Combined.
+  const activeLabel = resolveLabel(accountId, labelId);
+  const mailboxTitle = isCombined
+    ? combined.name
+    : (activeLabel ? labelDisplayName(activeLabel) : (SYSTEM_LABEL_NAMES[labelId] ?? labelId));
+  const { mailboxTotal, mailboxUnread } = isCombined
+    ? combined.selections.reduce(
+        (acc, s) => {
+          const label = resolveLabel(s.accountId, s.labelId);
+          return {
+            mailboxTotal: acc.mailboxTotal + (label?.total ?? 0),
+            mailboxUnread: acc.mailboxUnread + (label?.unread ?? 0),
+          };
+        },
+        { mailboxTotal: 0, mailboxUnread: 0 },
+      )
+    : { mailboxTotal: activeLabel?.total ?? 0, mailboxUnread: activeLabel?.unread ?? 0 };
 
   const allMessages: GmailMessageSummary[] =
     messagesQuery.data?.pages.flatMap((p) => p.messages) ?? [];
+  const visibleMessages = unreadOnly ? allMessages.filter((m) => m.unread) : allMessages;
   const hasNextPage = messagesQuery.hasNextPage;
   const isFetchingNextPage = messagesQuery.isFetchingNextPage;
 
@@ -335,6 +371,23 @@ export function MessageList({
     <ScrollArea
       toolbar={
         <Toolbar>
+          <ToolbarRow>
+            <div>
+              <ToolbarTitle>{mailboxTitle}</ToolbarTitle>
+              <ToolbarDescription>{formatMailboxSummary(mailboxTotal, mailboxUnread)}</ToolbarDescription>
+            </div>
+            <ToolbarActions>
+              <ToggleButton
+                iconOnly
+                size="small"
+                pressed={unreadOnly}
+                onPressedChange={setUnreadOnly}
+                aria-label={unreadOnly ? "Show all messages" : "Show unread only"}
+              >
+                <CircleDotIcon className="size-4.5" />
+              </ToggleButton>
+            </ToolbarActions>
+          </ToolbarRow>
           {!isCombined ? (
             <ToolbarRow>
               <ToolbarSearchButton
@@ -373,22 +426,24 @@ export function MessageList({
             </div>
           ))}
         </div>
-      ) : allMessages.length === 0 ? (
+      ) : visibleMessages.length === 0 ? (
         <EmptyState
-          title="No messages"
+          title={unreadOnly ? "No unread messages" : "No messages"}
           description={
-            searchQuery
-              ? "No messages match your search."
-              : "This label is empty."
+            unreadOnly
+              ? "Everything here has been read."
+              : searchQuery
+                ? "No messages match your search."
+                : "This label is empty."
           }
         />
       ) : (
         <>
-          {allMessages.map((message, i) => {
+          {visibleMessages.map((message, i) => {
             const isSelected = selectedMessageId === message.id;
-            const next = allMessages[i + 1];
+            const next = visibleMessages[i + 1];
             const nextSelected = next ? selectedMessageId === next.id : false;
-            const showDivider = i < allMessages.length - 1 && !isSelected && !nextSelected;
+            const showDivider = i < visibleMessages.length - 1 && !isSelected && !nextSelected;
             return (
               <div key={`${message.accountId ?? accountId}:${message.id}`}>
                 <MessageRow

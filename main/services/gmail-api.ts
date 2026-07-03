@@ -64,50 +64,54 @@ async function gmailFetch(
 
 export async function listLabels(accountId: string): Promise<GmailLabel[]> {
   const data = (await gmailFetch(accountId, "/labels")) as {
-    labels?: {
-      id: string;
-      name: string;
-      type: string;
-      messagesUnread?: number;
-      messagesTotal?: number;
-    }[];
+    labels?: { id: string; name: string; type: string }[];
   };
 
   const rawLabels = data.labels ?? [];
 
-  // labels.list omits color — only labels.get returns it, so fetch per user label.
-  const userLabelIds = rawLabels.filter((l) => l.type !== "system").map((l) => l.id);
-  const colorById = new Map<string, { backgroundColor: string; textColor: string }>();
+  // labels.list omits message counts and color — only labels.get returns them,
+  // so fetch per-label detail for every label.
+  const detailById = new Map<
+    string,
+    { unread?: number; total?: number; color?: { backgroundColor: string; textColor: string } }
+  >();
 
   const CONCURRENCY = 8;
-  for (let i = 0; i < userLabelIds.length; i += CONCURRENCY) {
-    const batch = userLabelIds.slice(i, i + CONCURRENCY);
+  for (let i = 0; i < rawLabels.length; i += CONCURRENCY) {
+    const batch = rawLabels.slice(i, i + CONCURRENCY);
     const fetched = await Promise.all(
-      batch.map((id) =>
-        gmailFetch(accountId, `/labels/${id}`) as Promise<{
+      batch.map((l) =>
+        gmailFetch(accountId, `/labels/${l.id}`) as Promise<{
           id: string;
+          messagesUnread?: number;
+          messagesTotal?: number;
           color?: { backgroundColor?: string; textColor?: string };
         }>,
       ),
     );
     for (const label of fetched) {
-      if (label.color?.backgroundColor && label.color.textColor) {
-        colorById.set(label.id, {
-          backgroundColor: label.color.backgroundColor,
-          textColor: label.color.textColor,
-        });
-      }
+      detailById.set(label.id, {
+        unread: label.messagesUnread,
+        total: label.messagesTotal,
+        color:
+          label.color?.backgroundColor && label.color.textColor
+            ? { backgroundColor: label.color.backgroundColor, textColor: label.color.textColor }
+            : undefined,
+      });
     }
   }
 
-  return rawLabels.map((label) => ({
-    id: label.id,
-    name: label.name,
-    type: label.type === "system" ? "system" : "user",
-    unread: label.messagesUnread,
-    total: label.messagesTotal,
-    color: colorById.get(label.id),
-  }));
+  return rawLabels.map((label) => {
+    const detail = detailById.get(label.id);
+    return {
+      id: label.id,
+      name: label.name,
+      type: label.type === "system" ? "system" : "user",
+      unread: detail?.unread,
+      total: detail?.total,
+      color: detail?.color,
+    };
+  });
 }
 
 // ── createLabel ──────────────────────────────────────────────────────────────

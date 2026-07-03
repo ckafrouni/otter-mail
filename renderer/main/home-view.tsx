@@ -97,6 +97,7 @@ export function HomeView() {
     const view = views.find((v) => v.id === selectedLabelId) ?? views[0];
     return {
       viewId: view?.id ?? INBOX_VIEW_ID,
+      name: view?.name ?? "Inbox",
       selections: view ? resolveSelections(view, accounts) : [],
     };
   })();
