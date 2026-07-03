@@ -29,12 +29,16 @@ import {
   trashThread,
   sendMessage,
   getAttachment,
+  getAttachmentData,
+  pickComposeAttachments,
+  fetchReplyHeaders,
+  MAX_ATTACHMENT_TOTAL_BYTES,
 } from "../services/gmail-api.js";
 import * as mailStore from "../services/mail-store.js";
 import * as mailSync from "../services/mail-sync.js";
 import { getSettings, updateSettings } from "../services/settings-store.js";
 import * as viewsStore from "../services/views-store.js";
-import type { MailView, ViewRule } from "../gmail/types.js";
+import type { ComposeAttachment, MailView, ViewRule } from "../gmail/types.js";
 
 const LOCAL_PAGE_SIZE = 50;
 
@@ -71,6 +75,28 @@ function asStringArray(value: unknown): string[] | undefined {
 
 function asNumber(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
+}
+
+function parseAttachments(raw: unknown): ComposeAttachment[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const list = raw
+    .map((a) => a as Record<string, unknown>)
+    .filter(
+      (a) =>
+        typeof a?.name === "string" &&
+        typeof a?.mimeType === "string" &&
+        typeof a?.base64 === "string",
+    )
+    .map((a) => ({
+      name: a.name as string,
+      mimeType: a.mimeType as string,
+      size:
+        typeof a.size === "number"
+          ? a.size
+          : Math.floor(((a.base64 as string).length * 3) / 4),
+      base64: a.base64 as string,
+    }));
+  return list.length > 0 ? list : undefined;
 }
 
 // ── Registration ──────────────────────────────────────────────────────────────
@@ -493,28 +519,120 @@ export function registerGmailHandlers(): void {
     }
   });
 
-  // gmail:sendMessage
+  // gmail:sendMessage — threading (threadId + In-Reply-To/References resolved
+  // from replyToMessageId) and multipart attachments are optional.
   ipcMain.handle("gmail:sendMessage", async (_event, params: unknown) => {
     const p = params as Record<string, unknown>;
     console.log("[gmail:sendMessage]", {
       accountId: p?.accountId,
       to: p?.to,
       subject: p?.subject,
+      threadId: p?.threadId,
+      attachments: Array.isArray(p?.attachments) ? p.attachments.length : 0,
     });
     try {
       const accountId = assertString(p?.accountId, "accountId");
       const to = assertString(p?.to, "to");
       const subject = assertString(p?.subject, "subject");
       const body = assertString(p?.body, "body");
+      const threadId = asString(p?.threadId);
+      const replyToMessageId = asString(p?.replyToMessageId);
+      const attachments = parseAttachments(p?.attachments);
+
+      const totalBytes = (attachments ?? []).reduce(
+        (sum, a) => sum + Math.floor((a.base64.length * 3) / 4),
+        0,
+      );
+      if (totalBytes > MAX_ATTACHMENT_TOTAL_BYTES) {
+        throw new Error("Attachments can total at most 25 MB.");
+      }
+
+      let inReplyTo: string | undefined;
+      let references: string | undefined;
+      if (replyToMessageId) {
+        let headers = mailStore.getStoredReplyHeaders(accountId, replyToMessageId);
+        if (!headers.messageIdHeader) {
+          try {
+            headers = await fetchReplyHeaders(accountId, replyToMessageId);
+            mailStore.setReplyHeaders(
+              accountId,
+              replyToMessageId,
+              headers.messageIdHeader,
+              headers.referencesHeader,
+            );
+          } catch (headerErr) {
+            // Still threads via threadId; Gmail just loses the References chain.
+            console.log("[gmail:sendMessage] reply-header fetch failed", {
+              error: String(headerErr),
+            });
+          }
+        }
+        if (headers.messageIdHeader) {
+          inReplyTo = headers.messageIdHeader;
+          references = headers.referencesHeader
+            ? `${headers.referencesHeader} ${headers.messageIdHeader}`
+            : headers.messageIdHeader;
+        }
+      }
+
       return await sendMessage(accountId, {
         to,
         cc: asString(p?.cc),
         bcc: asString(p?.bcc),
         subject,
         body,
+        threadId,
+        inReplyTo,
+        references,
+        attachments,
       });
     } catch (err) {
       console.log("[gmail:sendMessage] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:pickAttachments — backend open-file dialog, returns file contents
+  ipcMain.handle("gmail:pickAttachments", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:pickAttachments]", { existingBytes: p?.existingBytes });
+    try {
+      const existingBytes = asNumber(p?.existingBytes) ?? 0;
+      return await pickComposeAttachments(existingBytes);
+    } catch (err) {
+      console.log("[gmail:pickAttachments] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:getAttachmentData — attachment bytes as base64 (no save dialog)
+  ipcMain.handle("gmail:getAttachmentData", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:getAttachmentData]", {
+      accountId: p?.accountId,
+      messageId: p?.messageId,
+      attachmentId: p?.attachmentId,
+    });
+    try {
+      const accountId = assertString(p?.accountId, "accountId");
+      const messageId = assertString(p?.messageId, "messageId");
+      const attachmentId = assertString(p?.attachmentId, "attachmentId");
+      return await getAttachmentData(accountId, messageId, attachmentId);
+    } catch (err) {
+      console.log("[gmail:getAttachmentData] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:suggestContacts — recipient autocomplete from the local cache
+  ipcMain.handle("gmail:suggestContacts", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    try {
+      const q = assertString(p?.q, "q");
+      const limit = Math.min(Math.max(asNumber(p?.limit) ?? 8, 1), 20);
+      return mailStore.suggestContacts(q, limit);
+    } catch (err) {
+      console.log("[gmail:suggestContacts] error", { error: String(err) });
       throw err;
     }
   });

@@ -8,10 +8,17 @@
  */
 
 import fs from "fs/promises";
+import path from "path";
+import { randomBytes } from "node:crypto";
 import { dialog } from "@glaze/core/backend";
 import { getAccessToken } from "./gmail-oauth.js";
 import { getAccount } from "./account-store.js";
-import type { GmailLabel, GmailMessageSummary, GmailMessageDetail } from "../gmail/types.js";
+import type {
+  GmailLabel,
+  GmailMessageSummary,
+  GmailMessageDetail,
+  ComposeAttachment,
+} from "../gmail/types.js";
 
 const BASE_URL = "https://gmail.googleapis.com/gmail/v1/users/me";
 const MAX_RETRIES = 4;
@@ -181,6 +188,8 @@ function mapMessageSummary(msg: RawMessageMetadata): GmailMessageSummary {
     starred: labelIds.includes("STARRED"),
     labelIds,
     hasAttachments: false, // metadata format does not expose attachment info reliably
+    messageIdHeader: getHeaderValue(headers, "Message-ID") || undefined,
+    referencesHeader: getHeaderValue(headers, "References") || undefined,
   };
 }
 
@@ -204,7 +213,7 @@ export async function fetchMetadataForIds(
       batch.map((id) =>
         gmailFetch(
           accountId,
-          `/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date`,
+          `/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=Message-ID&metadataHeaders=References`,
         ) as Promise<RawMessageMetadata>,
       ),
     );
@@ -456,29 +465,172 @@ export async function trashThread(accountId: string, threadId: string): Promise<
   return { ok: true };
 }
 
+// ── Reply headers ─────────────────────────────────────────────────────────────
+
+/** Live fetch of the RFC 2822 reply headers for a message not yet cached with them. */
+export async function fetchReplyHeaders(
+  accountId: string,
+  messageId: string,
+): Promise<{ messageIdHeader: string | null; referencesHeader: string | null }> {
+  const msg = (await gmailFetch(
+    accountId,
+    `/messages/${messageId}?format=metadata&metadataHeaders=Message-ID&metadataHeaders=References`,
+  )) as RawMessageMetadata;
+  const headers = msg.payload?.headers ?? [];
+  return {
+    messageIdHeader: getHeaderValue(headers, "Message-ID") || null,
+    referencesHeader: getHeaderValue(headers, "References") || null,
+  };
+}
+
 // ── sendMessage ───────────────────────────────────────────────────────────────
 
-function buildRfc2822(params: {
+const CRLF = "\r\n";
+
+function isPrintableAscii(value: string): boolean {
+  return /^[\x20-\x7e]*$/.test(value);
+}
+
+/**
+ * RFC 2047 B-encoded word(s), chunked by code point so UTF-8 byte sequences
+ * never split across words; continuation words are folded onto new lines.
+ */
+function encodeWords(value: string): string {
+  const MAX_BYTES = 45; // "=?UTF-8?B?" + base64(45B → 60ch) + "?=" = 72 chars ≤ 75
+  const chunks: string[] = [];
+  let current = "";
+  for (const ch of value) {
+    if (current && Buffer.byteLength(current + ch, "utf-8") > MAX_BYTES) {
+      chunks.push(current);
+      current = ch;
+    } else {
+      current += ch;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks
+    .map((c) => `=?UTF-8?B?${Buffer.from(c, "utf-8").toString("base64")}?=`)
+    .join(`${CRLF} `);
+}
+
+function encodeHeaderValue(value: string): string {
+  return isPrintableAscii(value) ? value : encodeWords(value);
+}
+
+function formatAddress(name: string, email: string): string {
+  if (!name || name === email) return email;
+  if (!isPrintableAscii(name)) return `${encodeWords(name)} <${email}>`;
+  if (/[^A-Za-z0-9 !#$%&'*+\-/=?^_`{|}~.]/.test(name)) {
+    return `"${name.replace(/(["\\])/g, "\\$1")}" <${email}>`;
+  }
+  return `${name} <${email}>`;
+}
+
+/** Split a user-typed address list on commas outside double quotes. */
+function splitAddressList(value: string): string[] {
+  const parts: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (const ch of value) {
+    if (ch === '"') inQuotes = !inQuotes;
+    if (ch === "," && !inQuotes) {
+      parts.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  parts.push(current);
+  return parts.map((p) => p.trim()).filter((p) => p.length > 0);
+}
+
+/** Re-emit an address list with display names RFC 2047-encoded when non-ASCII. */
+function encodeAddressList(value: string): string {
+  return splitAddressList(value)
+    .map((entry) => {
+      const match = entry.match(/^(.*?)\s*<([^>]+)>$/);
+      if (!match) return entry;
+      const name = match[1].trim().replace(/^"|"$/g, "").replace(/\\(.)/g, "$1");
+      return formatAddress(name, match[2].trim());
+    })
+    .join(", ");
+}
+
+function wrapBase64(base64: string): string {
+  return base64.match(/.{1,76}/g)?.join(CRLF) ?? "";
+}
+
+function attachmentHeaders(att: { name: string; mimeType: string }): string[] {
+  const mimeType = att.mimeType || "application/octet-stream";
+  if (isPrintableAscii(att.name) && !/["\\]/.test(att.name)) {
+    return [
+      `Content-Type: ${mimeType}; name="${att.name}"`,
+      `Content-Disposition: attachment; filename="${att.name}"`,
+    ];
+  }
+  // RFC 2231 extended parameter + RFC 2047 fallback for legacy clients.
+  const extended = `UTF-8''${encodeURIComponent(att.name).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)}`;
+  const fallback = encodeWords(att.name).split(`${CRLF} `).join(" ");
+  return [
+    `Content-Type: ${mimeType}`,
+    `Content-Disposition: attachment; filename="${fallback}"; filename*=${extended}`,
+  ];
+}
+
+interface OutgoingMessage {
+  /** Already formatted, e.g. via formatAddress(). */
   from: string;
   to: string;
   cc?: string;
   bcc?: string;
   subject: string;
   body: string;
-}): string {
-  const lines: string[] = [
-    `From: ${params.from}`,
-    `To: ${params.to}`,
+  inReplyTo?: string;
+  references?: string;
+  attachments?: ComposeAttachment[];
+}
+
+function buildMime(params: OutgoingMessage): string {
+  const headers: string[] = [`From: ${params.from}`, `To: ${encodeAddressList(params.to)}`];
+  if (params.cc) headers.push(`Cc: ${encodeAddressList(params.cc)}`);
+  if (params.bcc) headers.push(`Bcc: ${encodeAddressList(params.bcc)}`);
+  headers.push(`Subject: ${encodeHeaderValue(params.subject)}`);
+  if (params.inReplyTo) headers.push(`In-Reply-To: ${params.inReplyTo}`);
+  if (params.references) {
+    // One message id per folded line keeps long reply chains within line limits.
+    headers.push(`References: ${params.references.split(/\s+/).filter(Boolean).join(`${CRLF} `)}`);
+  }
+  headers.push("MIME-Version: 1.0");
+
+  const bodyBase64 = wrapBase64(Buffer.from(params.body, "utf-8").toString("base64"));
+  const textPart = [
+    "Content-Type: text/plain; charset=UTF-8",
+    "Content-Transfer-Encoding: base64",
+    "",
+    bodyBase64,
   ];
-  if (params.cc) lines.push(`Cc: ${params.cc}`);
-  if (params.bcc) lines.push(`Bcc: ${params.bcc}`);
-  lines.push(`Subject: ${params.subject}`);
-  lines.push("MIME-Version: 1.0");
-  lines.push("Content-Type: text/plain; charset=UTF-8");
-  lines.push("Content-Transfer-Encoding: 7bit");
-  lines.push("");
-  lines.push(params.body);
-  return lines.join("\r\n");
+
+  const attachments = params.attachments ?? [];
+  if (attachments.length === 0) {
+    return [...headers, ...textPart].join(CRLF);
+  }
+
+  const boundary = `glaze_${randomBytes(12).toString("hex")}`;
+  headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+  const parts: string[] = [[`--${boundary}`, ...textPart].join(CRLF)];
+  for (const att of attachments) {
+    parts.push(
+      [
+        `--${boundary}`,
+        ...attachmentHeaders(att),
+        "Content-Transfer-Encoding: base64",
+        "",
+        // Round-trip through Buffer normalizes url-safe/whitespaced input.
+        wrapBase64(Buffer.from(att.base64, "base64").toString("base64")),
+      ].join(CRLF),
+    );
+  }
+  return [headers.join(CRLF), "", parts.join(CRLF), `--${boundary}--`].join(CRLF);
 }
 
 function encodeBase64url(data: string): string {
@@ -487,23 +639,39 @@ function encodeBase64url(data: string): string {
 
 export async function sendMessage(
   accountId: string,
-  params: { to: string; cc?: string; bcc?: string; subject: string; body: string },
+  params: {
+    to: string;
+    cc?: string;
+    bcc?: string;
+    subject: string;
+    body: string;
+    threadId?: string;
+    inReplyTo?: string;
+    references?: string;
+    attachments?: ComposeAttachment[];
+  },
 ): Promise<{ ok: true }> {
   const account = await getAccount(accountId);
-  const fromAddress = account ? `${account.name} <${account.email}>` : accountId;
+  const fromAddress = account ? formatAddress(account.name, account.email) : accountId;
 
-  const raw = buildRfc2822({
+  const raw = buildMime({
     from: fromAddress,
     to: params.to,
     cc: params.cc,
     bcc: params.bcc,
     subject: params.subject,
     body: params.body,
+    inReplyTo: params.inReplyTo,
+    references: params.references,
+    attachments: params.attachments,
   });
+
+  const payload: { raw: string; threadId?: string } = { raw: encodeBase64url(raw) };
+  if (params.threadId) payload.threadId = params.threadId;
 
   await gmailFetch(accountId, "/messages/send", {
     method: "POST",
-    body: JSON.stringify({ raw: encodeBase64url(raw) }),
+    body: JSON.stringify(payload),
   });
 
   return { ok: true };
@@ -511,13 +679,12 @@ export async function sendMessage(
 
 // ── getAttachment ─────────────────────────────────────────────────────────────
 
-export async function getAttachment(
+/** Attachment bytes as standard base64 (for forwarding / in-memory use). */
+export async function getAttachmentData(
   accountId: string,
   messageId: string,
   attachmentId: string,
-  filename: string,
-  _mimeType: string,
-): Promise<{ saved: boolean; path?: string }> {
+): Promise<{ base64: string; size: number }> {
   const data = (await gmailFetch(
     accountId,
     `/messages/${messageId}/attachments/${attachmentId}`,
@@ -531,6 +698,17 @@ export async function getAttachment(
     data.data.replace(/-/g, "+").replace(/_/g, "/"),
     "base64",
   );
+  return { base64: buffer.toString("base64"), size: buffer.length };
+}
+
+export async function getAttachment(
+  accountId: string,
+  messageId: string,
+  attachmentId: string,
+  filename: string,
+  _mimeType: string,
+): Promise<{ saved: boolean; path?: string }> {
+  const { base64 } = await getAttachmentData(accountId, messageId, attachmentId);
 
   const saveResult = await dialog.showSaveDialog({ defaultPath: filename });
 
@@ -538,9 +716,79 @@ export async function getAttachment(
     return { saved: false };
   }
 
-  await fs.writeFile(saveResult.filePath, buffer);
+  await fs.writeFile(saveResult.filePath, Buffer.from(base64, "base64"));
 
   return { saved: true, path: saveResult.filePath };
+}
+
+// ── Compose attachments ───────────────────────────────────────────────────────
+
+export const MAX_ATTACHMENT_TOTAL_BYTES = 25 * 1024 * 1024;
+
+const MIME_BY_EXT: Record<string, string> = {
+  pdf: "application/pdf",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  heic: "image/heic",
+  svg: "image/svg+xml",
+  txt: "text/plain",
+  md: "text/markdown",
+  csv: "text/csv",
+  html: "text/html",
+  json: "application/json",
+  xml: "application/xml",
+  ics: "text/calendar",
+  zip: "application/zip",
+  gz: "application/gzip",
+  mp3: "audio/mpeg",
+  m4a: "audio/mp4",
+  wav: "audio/wav",
+  mp4: "video/mp4",
+  mov: "video/quicktime",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ppt: "application/vnd.ms-powerpoint",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+};
+
+function mimeTypeForFile(filePath: string): string {
+  const ext = path.extname(filePath).slice(1).toLowerCase();
+  return MIME_BY_EXT[ext] ?? "application/octet-stream";
+}
+
+/**
+ * Backend open-file dialog for compose attachments. `existingBytes` is the
+ * size already attached, so the 25 MB total cap covers the whole message.
+ */
+export async function pickComposeAttachments(
+  existingBytes: number,
+): Promise<{ attachments: ComposeAttachment[]; error?: string }> {
+  const result = await dialog.showOpenDialog({
+    properties: ["openFile", "multiSelections"],
+  });
+  if (result.canceled || result.filePaths.length === 0) return { attachments: [] };
+
+  const attachments: ComposeAttachment[] = [];
+  let total = existingBytes;
+  for (const filePath of result.filePaths) {
+    const buffer = await fs.readFile(filePath);
+    total += buffer.length;
+    if (total > MAX_ATTACHMENT_TOTAL_BYTES) {
+      return { attachments: [], error: "Attachments can total at most 25 MB." };
+    }
+    attachments.push({
+      name: path.basename(filePath),
+      mimeType: mimeTypeForFile(filePath),
+      size: buffer.length,
+      base64: buffer.toString("base64"),
+    });
+  }
+  return { attachments };
 }
 
 export type { GmailLabel, GmailMessageSummary, GmailMessageDetail };

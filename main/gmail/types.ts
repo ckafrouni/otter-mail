@@ -42,6 +42,9 @@ export interface GmailMessageSummary {
   threadCount?: number;
   threadUnread?: boolean;
   threadStarred?: boolean;
+  /** RFC 2822 reply headers — captured on Gmail fetches and persisted, never returned by store reads. */
+  messageIdHeader?: string;
+  referencesHeader?: string;
 }
 
 export interface GmailMessageDetail extends GmailMessageSummary {
@@ -54,6 +57,20 @@ export interface GmailMessageDetail extends GmailMessageSummary {
     mimeType: string;
     size: number;
   }[];
+}
+
+/** An outgoing attachment for compose/forward — base64 is standard (not url-safe). */
+export interface ComposeAttachment {
+  name: string;
+  mimeType: string;
+  size: number;
+  base64: string;
+}
+
+/** A recipient-autocomplete suggestion derived from the local mail cache. */
+export interface ContactSuggestion {
+  name: string;
+  email: string;
 }
 
 /** Per-account local-sync progress, exposed to the renderer for status UI. */

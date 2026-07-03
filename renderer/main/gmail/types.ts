@@ -37,6 +37,23 @@ export type GmailMessageSummary = {
   threadCount?: number;
   threadUnread?: boolean;
   threadStarred?: boolean;
+  /** RFC 2822 reply headers — captured on Gmail fetches and persisted, never returned by store reads. */
+  messageIdHeader?: string;
+  referencesHeader?: string;
+};
+
+/** An outgoing attachment for compose/forward — base64 is standard (not url-safe). */
+export type ComposeAttachment = {
+  name: string;
+  mimeType: string;
+  size: number;
+  base64: string;
+};
+
+/** A recipient-autocomplete suggestion derived from the local mail cache. */
+export type ContactSuggestion = {
+  name: string;
+  email: string;
 };
 
 export type GmailMessageDetail = GmailMessageSummary & {

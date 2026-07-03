@@ -1,4 +1,6 @@
 import type {
+  ComposeAttachment,
+  ContactSuggestion,
   GmailAccount,
   GmailLabel,
   GmailMessageSummary,
@@ -63,6 +65,11 @@ export type SendMessageParams = {
   bcc?: string;
   subject: string;
   body: string;
+  /** Threads the sent message into an existing conversation (replies). */
+  threadId?: string;
+  /** Original message a reply targets; backend resolves In-Reply-To/References. */
+  replyToMessageId?: string;
+  attachments?: ComposeAttachment[];
 };
 
 export type GetAttachmentParams = {
@@ -74,6 +81,14 @@ export type GetAttachmentParams = {
 };
 
 export type GetAttachmentResult = { saved: boolean; path?: string };
+
+export type GetAttachmentDataParams = {
+  accountId: string;
+  messageId: string;
+  attachmentId: string;
+};
+
+export type PickAttachmentsResult = { attachments: ComposeAttachment[]; error?: string };
 
 export type UpdateAccountParams = {
   accountId: string;
@@ -146,6 +161,16 @@ export const gmailApi = {
 
   getAttachment: (params: GetAttachmentParams): Promise<GetAttachmentResult> =>
     ipc("gmail:getAttachment", params),
+
+  getAttachmentData: (
+    params: GetAttachmentDataParams,
+  ): Promise<{ base64: string; size: number }> => ipc("gmail:getAttachmentData", params),
+
+  pickAttachments: (existingBytes: number): Promise<PickAttachmentsResult> =>
+    ipc("gmail:pickAttachments", { existingBytes }),
+
+  suggestContacts: (params: { q: string; limit?: number }): Promise<ContactSuggestion[]> =>
+    ipc("gmail:suggestContacts", params),
 
   syncAccount: (accountId: string): Promise<SyncStatus> =>
     ipc("gmail:syncAccount", { accountId }),

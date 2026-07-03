@@ -14,7 +14,13 @@
 import path from "path";
 import { DatabaseSync } from "node:sqlite";
 import { app } from "@glaze/core/backend";
-import type { GmailLabel, GmailMessageSummary, GmailMessageDetail, ViewRule } from "../gmail/types.js";
+import type {
+  GmailLabel,
+  GmailMessageSummary,
+  GmailMessageDetail,
+  ViewRule,
+  ContactSuggestion,
+} from "../gmail/types.js";
 
 // ── DB bootstrap ────────────────────────────────────────────────────────────
 
@@ -82,6 +88,21 @@ function getDb(): DatabaseSync {
   // Legacy rows synced before threading behave as single-message threads.
   handle.exec("UPDATE messages SET threadId = id WHERE threadId = '';");
 
+  // Reply-threading headers, added after the initial schema shipped.
+  const messageCols = new Set(
+    (
+      handle.prepare("SELECT name FROM pragma_table_info('messages')").all() as unknown as {
+        name: string;
+      }[]
+    ).map((c) => c.name),
+  );
+  if (!messageCols.has("messageIdHeader")) {
+    handle.exec("ALTER TABLE messages ADD COLUMN messageIdHeader TEXT;");
+  }
+  if (!messageCols.has("referencesHeader")) {
+    handle.exec("ALTER TABLE messages ADD COLUMN referencesHeader TEXT;");
+  }
+
   // Full-text search: external-content FTS5 over messages, kept in sync via
   // triggers. On first creation, rebuild indexes every already-cached row.
   const ftsExists =
@@ -143,6 +164,8 @@ interface MessageRow {
   bodyText: string | null;
   attachments: string | null;
   detailFetched: number;
+  messageIdHeader: string | null;
+  referencesHeader: string | null;
 }
 
 function parseLabelIds(json: string): string[] {
@@ -215,8 +238,8 @@ export function upsertMessages(accountId: string, messages: GmailMessageSummary[
   // already established by a full-message fetch.
   const upsert = d.prepare(`
     INSERT INTO messages
-      (accountId, id, threadId, fromName, fromEmail, toField, subject, snippet, date, unread, starred, hasAttachments, labelIds)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (accountId, id, threadId, fromName, fromEmail, toField, subject, snippet, date, unread, starred, hasAttachments, labelIds, messageIdHeader, referencesHeader)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(accountId, id) DO UPDATE SET
       threadId       = excluded.threadId,
       fromName       = excluded.fromName,
@@ -228,7 +251,9 @@ export function upsertMessages(accountId: string, messages: GmailMessageSummary[
       unread         = excluded.unread,
       starred        = excluded.starred,
       labelIds       = excluded.labelIds,
-      hasAttachments = CASE WHEN excluded.hasAttachments = 1 THEN 1 ELSE messages.hasAttachments END
+      hasAttachments = CASE WHEN excluded.hasAttachments = 1 THEN 1 ELSE messages.hasAttachments END,
+      messageIdHeader  = COALESCE(excluded.messageIdHeader, messages.messageIdHeader),
+      referencesHeader = COALESCE(excluded.referencesHeader, messages.referencesHeader)
   `);
   const delLabels = d.prepare("DELETE FROM message_labels WHERE accountId = ? AND messageId = ?");
   const insLabel = d.prepare(
@@ -252,6 +277,8 @@ export function upsertMessages(accountId: string, messages: GmailMessageSummary[
         m.starred ? 1 : 0,
         m.hasAttachments ? 1 : 0,
         JSON.stringify(m.labelIds),
+        m.messageIdHeader ?? null,
+        m.referencesHeader ?? null,
       );
       delLabels.run(accountId, m.id);
       for (const lid of m.labelIds) insLabel.run(accountId, m.id, lid);
@@ -486,6 +513,33 @@ export function getMessageDetail(accountId: string, messageId: string): GmailMes
   return rowToDetail(row);
 }
 
+export function getStoredReplyHeaders(
+  accountId: string,
+  messageId: string,
+): { messageIdHeader: string | null; referencesHeader: string | null } {
+  const d = getDb();
+  const row = d
+    .prepare("SELECT messageIdHeader, referencesHeader FROM messages WHERE accountId = ? AND id = ?")
+    .get(accountId, messageId) as unknown as
+    | { messageIdHeader: string | null; referencesHeader: string | null }
+    | undefined;
+  return {
+    messageIdHeader: row?.messageIdHeader ?? null,
+    referencesHeader: row?.referencesHeader ?? null,
+  };
+}
+
+export function setReplyHeaders(
+  accountId: string,
+  messageId: string,
+  messageIdHeader: string | null,
+  referencesHeader: string | null,
+): void {
+  getDb()
+    .prepare("UPDATE messages SET messageIdHeader = ?, referencesHeader = ? WHERE accountId = ? AND id = ?")
+    .run(messageIdHeader, referencesHeader, accountId, messageId);
+}
+
 /** Ids of messages whose full body hasn't been downloaded yet (newest first). */
 export function getUndownloadedMessageIds(accountId: string): string[] {
   const d = getDb();
@@ -625,6 +679,98 @@ export function searchMessages(
     .all(...params, limit + 1, offset) as unknown as MessageRow[];
   const hasMore = rows.length > limit;
   return { messages: rows.slice(0, limit).map(rowToSummary), hasMore };
+}
+
+// ── Contact suggestions ───────────────────────────────────────────────────────
+
+function parseAddressEntry(entry: string): { name: string; email: string } {
+  const trimmed = entry.trim();
+  const match = trimmed.match(/^(.*?)\s*<([^>]+)>$/);
+  if (match) {
+    return { name: match[1].trim().replace(/^"|"$/g, ""), email: match[2].trim() };
+  }
+  return { name: "", email: trimmed };
+}
+
+/** Split an address-list header on commas outside double quotes. */
+function splitAddressEntries(list: string): { name: string; email: string }[] {
+  const out: { name: string; email: string }[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (const ch of list) {
+    if (ch === '"') inQuotes = !inQuotes;
+    if (ch === "," && !inQuotes) {
+      if (current.trim()) out.push(parseAddressEntry(current));
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  if (current.trim()) out.push(parseAddressEntry(current));
+  return out.filter((e) => e.email.includes("@"));
+}
+
+/**
+ * Recipient autocomplete from the local cache: senders aggregated across the
+ * whole store plus To/Cc addressees from the most recent matching messages,
+ * ranked by frequency then recency.
+ */
+export function suggestContacts(queryText: string, limit: number): ContactSuggestion[] {
+  const q = queryText.trim().toLowerCase();
+  if (!q) return [];
+  const d = getDb();
+  const like = `%${q.replace(/([\\%_])/g, "\\$1")}%`;
+
+  type Entry = { name: string; email: string; freq: number; lastDate: number };
+  const byEmail = new Map<string, Entry>();
+  const bump = (name: string, email: string, freq: number, date: number) => {
+    const key = email.toLowerCase();
+    if (!key.includes("@")) return;
+    const existing = byEmail.get(key);
+    if (!existing) {
+      byEmail.set(key, { name, email, freq, lastDate: date });
+      return;
+    }
+    existing.freq += freq;
+    if (date > existing.lastDate) existing.lastDate = date;
+    if (!existing.name && name) existing.name = name;
+  };
+
+  const fromRows = d
+    .prepare(`
+      SELECT fromEmail AS email, MAX(fromName) AS name, COUNT(*) AS freq, MAX(date) AS lastDate
+        FROM messages
+       WHERE fromEmail LIKE ? ESCAPE '\\' OR fromName LIKE ? ESCAPE '\\'
+       GROUP BY lower(fromEmail)
+    `)
+    .all(like, like) as unknown as {
+    email: string;
+    name: string | null;
+    freq: number;
+    lastDate: number;
+  }[];
+  for (const r of fromRows) bump(r.name ?? "", r.email, r.freq, r.lastDate);
+
+  const recipientRows = d
+    .prepare(`
+      SELECT toField, cc, date FROM messages
+       WHERE toField LIKE ? ESCAPE '\\' OR cc LIKE ? ESCAPE '\\'
+       ORDER BY date DESC LIMIT 400
+    `)
+    .all(like, like) as unknown as { toField: string; cc: string | null; date: number }[];
+  for (const r of recipientRows) {
+    const list = r.cc ? `${r.toField},${r.cc}` : r.toField;
+    for (const entry of splitAddressEntries(list)) {
+      if (entry.email.toLowerCase().includes(q) || entry.name.toLowerCase().includes(q)) {
+        bump(entry.name, entry.email, 1, r.date);
+      }
+    }
+  }
+
+  return [...byEmail.values()]
+    .sort((a, b) => b.freq - a.freq || b.lastDate - a.lastDate)
+    .slice(0, limit)
+    .map((e) => ({ name: e.name === e.email ? "" : e.name, email: e.email }));
 }
 
 // ── Labels ──────────────────────────────────────────────────────────────────

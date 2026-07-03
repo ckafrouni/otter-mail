@@ -14,6 +14,7 @@ import {
   type SendMessageParams,
 } from "./api";
 import type {
+  ContactSuggestion,
   GmailAccount,
   GmailLabel,
   GmailMessageDetail,
@@ -853,7 +854,22 @@ export function useSendMessage() {
       void qc.invalidateQueries({
         queryKey: ["gmail:messages", params.accountId],
       });
+      // Replies land inside existing threads/views, so refresh those caches too.
+      void qc.invalidateQueries({ queryKey: ["gmail:thread", params.accountId] });
+      void qc.invalidateQueries({ queryKey: ["gmail:combinedMessages"] });
+      void qc.invalidateQueries({ queryKey: ["gmail:searchMessages"] });
     },
+  });
+}
+
+/** Recipient autocomplete backed by the local mail cache. */
+export function useSuggestContacts(q: string, enabled = true) {
+  return useQuery<ContactSuggestion[]>({
+    queryKey: ["gmail:suggestContacts", q],
+    queryFn: () => gmailApi.suggestContacts({ q }),
+    enabled: enabled && q.trim().length > 0,
+    staleTime: STALE_TIME,
+    placeholderData: (prev) => prev,
   });
 }
 

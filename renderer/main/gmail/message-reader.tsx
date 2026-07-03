@@ -20,9 +20,12 @@ import {
   MailOpenIcon,
   MailIcon,
   ReplyIcon,
+  ReplyAllIcon,
+  ForwardIcon,
   DownloadIcon,
 } from "lucide-react";
 import {
+  useAccounts,
   useMessage,
   useThread,
   useModifyMessage,
@@ -32,13 +35,26 @@ import {
   useGetAttachment,
   useLabels,
 } from "./hooks";
-import { ComposeDialog } from "./compose-dialog";
+import { gmailApi } from "./api";
+import { ComposeDialog, type ComposePrefill } from "./compose-dialog";
 import { LabelChip } from "./label-chip";
-import type { GmailLabel, GmailMessageDetail, GmailMessageSummary } from "./types";
+import { parseAddressEntry, splitAddressList } from "./address";
+import type {
+  ComposeAttachment,
+  GmailLabel,
+  GmailMessageDetail,
+  GmailMessageSummary,
+} from "./types";
 
 type MessageReaderProps = {
   accountId: string;
   messageId: string | null;
+};
+
+type ComposeState = {
+  title: string;
+  prefill: ComposePrefill;
+  replyTo?: { threadId: string; messageId: string };
 };
 
 type DownloadAttachment = (
@@ -268,6 +284,7 @@ function ExpandedMessageCard({
 export function MessageReader({ accountId, messageId }: MessageReaderProps) {
   const messageQuery = useMessage(accountId, messageId);
   const labelsQuery = useLabels(accountId);
+  const accountsQuery = useAccounts();
   const modifyMessage = useModifyMessage();
   const trashMessage = useTrashMessage();
   const modifyThread = useModifyThread();
@@ -280,13 +297,9 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
   const threadMessages = threadQuery.data ?? [];
   const isThread = threadMessages.length > 1;
 
-  const [composeOpen, setComposeOpen] = useState(false);
+  const [compose, setCompose] = useState<ComposeState | null>(null);
+  const [forwardPending, setForwardPending] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [replyPrefill, setReplyPrefill] = useState<{
-    to: string;
-    subject: string;
-    body: string;
-  } | null>(null);
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set());
 
   const hasAutoMarked = useRef<string | null>(null);
@@ -447,16 +460,85 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
     void trashMessage.mutateAsync({ accountId, messageId });
   };
 
+  const replySubject = message.subject.startsWith("Re:")
+    ? message.subject
+    : `Re: ${message.subject}`;
+  const quotedReplyBody = `\n\n---\nOn ${formatFullDate(message.date)}, ${message.fromName || message.fromEmail} wrote:\n${message.bodyText ?? ""}`;
+  const replyTarget = { threadId: message.threadId || message.id, messageId: message.id };
+
   const handleReply = () => {
     console.log("[MessageReader:reply]", { messageId });
-    setReplyPrefill({
-      to: message.fromEmail,
-      subject: message.subject.startsWith("Re:")
-        ? message.subject
-        : `Re: ${message.subject}`,
-      body: `\n\n---\nOn ${formatFullDate(message.date)}, ${message.fromName || message.fromEmail} wrote:\n${message.bodyText ?? ""}`,
+    setCompose({
+      title: "Reply",
+      prefill: { to: message.fromEmail, subject: replySubject, body: quotedReplyBody },
+      replyTo: replyTarget,
     });
-    setComposeOpen(true);
+  };
+
+  const handleReplyAll = () => {
+    console.log("[MessageReader:replyAll]", { messageId });
+    const ownEmail =
+      accountsQuery.data?.find((a) => a.id === accountId)?.email.toLowerCase() ?? "";
+    const seen = new Set<string>([ownEmail, message.fromEmail.toLowerCase()]);
+    const ccEntries: string[] = [];
+    const recipients = [message.to, message.cc ?? ""].filter(Boolean).join(",");
+    for (const entry of splitAddressList(recipients)) {
+      const email = parseAddressEntry(entry).email.toLowerCase();
+      if (!email || seen.has(email)) continue;
+      seen.add(email);
+      ccEntries.push(entry);
+    }
+    setCompose({
+      title: "Reply All",
+      prefill: {
+        to: message.fromEmail,
+        cc: ccEntries.join(", ") || undefined,
+        subject: replySubject,
+        body: quotedReplyBody,
+      },
+      replyTo: replyTarget,
+    });
+  };
+
+  const handleForward = () => {
+    console.log("[MessageReader:forward]", { messageId });
+    const fromDisplay = message.fromName
+      ? `${message.fromName} <${message.fromEmail}>`
+      : message.fromEmail;
+    const forwardBody = `\n\n---------- Forwarded message ----------\nFrom: ${fromDisplay}\nDate: ${formatFullDate(message.date)}\nSubject: ${message.subject}\nTo: ${message.to}\n\n${message.bodyText ?? ""}`;
+    void (async () => {
+      setForwardPending(true);
+      try {
+        const attachments: ComposeAttachment[] = [];
+        for (const att of message.attachments) {
+          const data = await gmailApi.getAttachmentData({
+            accountId,
+            messageId: message.id,
+            attachmentId: att.id,
+          });
+          attachments.push({
+            name: att.filename,
+            mimeType: att.mimeType,
+            size: data.size,
+            base64: data.base64,
+          });
+        }
+        setCompose({
+          title: "Forward",
+          prefill: {
+            subject: message.subject.startsWith("Fwd:")
+              ? message.subject
+              : `Fwd: ${message.subject}`,
+            body: forwardBody,
+            attachments: attachments.length > 0 ? attachments : undefined,
+          },
+        });
+      } catch {
+        toast.error("Could not load the original attachments");
+      } finally {
+        setForwardPending(false);
+      }
+    })();
   };
 
   const handleDownloadAttachment: DownloadAttachment = (
@@ -503,6 +585,25 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
           aria-label="Reply"
         >
           <ReplyIcon className="size-4.5" />
+        </Button>
+        <Button
+          variant="glass"
+          size="large"
+          iconOnly
+          onClick={handleReplyAll}
+          aria-label="Reply all"
+        >
+          <ReplyAllIcon className="size-4.5" />
+        </Button>
+        <Button
+          variant="glass"
+          size="large"
+          iconOnly
+          onClick={handleForward}
+          disabled={forwardPending}
+          aria-label="Forward"
+        >
+          <ForwardIcon className="size-4.5" />
         </Button>
         <Button
           variant="glass"
@@ -635,12 +736,16 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
         )}
       </ScrollArea>
 
-      {composeOpen && replyPrefill ? (
+      {compose ? (
         <ComposeDialog
           accountId={accountId}
-          open={composeOpen}
-          onOpenChange={setComposeOpen}
-          prefill={replyPrefill}
+          open
+          onOpenChange={(open) => {
+            if (!open) setCompose(null);
+          }}
+          title={compose.title}
+          prefill={compose.prefill}
+          replyTo={compose.replyTo}
         />
       ) : null}
     </>
