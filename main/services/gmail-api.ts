@@ -526,7 +526,11 @@ function formatAddress(name: string, email: string): string {
   return `${name} <${email}>`;
 }
 
-/** Split a user-typed address list on commas outside double quotes. */
+/**
+ * Split a user-typed address list on commas outside double quotes. CR/LF are
+ * collapsed to spaces — a raw newline in an entry would otherwise terminate
+ * the To/Cc/Bcc header line mid-value (header injection).
+ */
 function splitAddressList(value: string): string[] {
   const parts: string[] = [];
   let current = "";
@@ -541,7 +545,7 @@ function splitAddressList(value: string): string[] {
     }
   }
   parts.push(current);
-  return parts.map((p) => p.trim()).filter((p) => p.length > 0);
+  return parts.map((p) => p.replace(/[\r\n]+/g, " ").trim()).filter((p) => p.length > 0);
 }
 
 /** Re-emit an address list with display names RFC 2047-encoded when non-ASCII. */
