@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent } from "react";
 import {
   ScrollArea,
   Toolbar,
@@ -23,6 +23,7 @@ import {
   ReplyAllIcon,
   ForwardIcon,
   DownloadIcon,
+  ImageIcon,
   TagIcon,
 } from "lucide-react";
 import {
@@ -130,45 +131,272 @@ function MessageBody({
   );
 }
 
+type MessageAttachment = GmailMessageDetail["attachments"][number];
+
+const MAX_THUMBNAIL_FETCHES = 3;
+let activeThumbnailFetches = 0;
+const thumbnailFetchQueue: (() => void)[] = [];
+
+async function withThumbnailSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (activeThumbnailFetches >= MAX_THUMBNAIL_FETCHES) {
+    await new Promise<void>((resolve) => thumbnailFetchQueue.push(resolve));
+  }
+  activeThumbnailFetches += 1;
+  try {
+    return await fn();
+  } finally {
+    activeThumbnailFetches -= 1;
+    thumbnailFetchQueue.shift()?.();
+  }
+}
+
+function useAttachmentActions(
+  accountId: string,
+  messageId: string,
+  attachment: MessageAttachment,
+) {
+  const [opening, setOpening] = useState(false);
+  const pressRef = useRef<{ x: number; y: number } | null>(null);
+  const draggedRef = useRef(false);
+
+  const params = {
+    accountId,
+    messageId,
+    attachmentId: attachment.id,
+    filename: attachment.filename,
+  };
+
+  const handleOpen = () => {
+    if (draggedRef.current || opening) return;
+    console.log("[MessageReader:openAttachment]", { messageId, filename: attachment.filename });
+    setOpening(true);
+    void (async () => {
+      try {
+        await gmailApi.openAttachment(params);
+      } catch {
+        toast.error("Could not open attachment");
+      } finally {
+        setOpening(false);
+      }
+    })();
+  };
+
+  // Native drag-out starts once the pointer travels past a small threshold with
+  // the button held; a plain click (no travel) opens the file instead.
+  const dragProps = {
+    onPointerDown: (e: PointerEvent<HTMLElement>) => {
+      if (e.button !== 0) return;
+      pressRef.current = { x: e.clientX, y: e.clientY };
+      draggedRef.current = false;
+    },
+    onPointerMove: (e: PointerEvent<HTMLElement>) => {
+      const press = pressRef.current;
+      if (!press) return;
+      if ((e.buttons & 1) === 0) {
+        pressRef.current = null;
+        return;
+      }
+      if (Math.abs(e.clientX - press.x) + Math.abs(e.clientY - press.y) < 5) return;
+      pressRef.current = null;
+      draggedRef.current = true;
+      console.log("[MessageReader:dragAttachment]", {
+        messageId,
+        filename: attachment.filename,
+      });
+      void gmailApi.dragAttachment(params).catch(() => {
+        toast.error("Could not export attachment");
+      });
+    },
+    onPointerUp: () => {
+      pressRef.current = null;
+    },
+  };
+
+  return { handleOpen, dragProps, opening };
+}
+
+function ImageAttachmentTile({
+  accountId,
+  messageId,
+  attachment,
+  onDownload,
+}: {
+  accountId: string;
+  messageId: string;
+  attachment: MessageAttachment;
+  onDownload: DownloadAttachment;
+}) {
+  const { handleOpen, dragProps, opening } = useAttachmentActions(
+    accountId,
+    messageId,
+    attachment,
+  );
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setUrl(null);
+    setFailed(false);
+    void (async () => {
+      try {
+        const data = await withThumbnailSlot(() =>
+          gmailApi.getAttachmentData({ accountId, messageId, attachmentId: attachment.id }),
+        );
+        const bytes = Uint8Array.from(atob(data.base64), (c) => c.charCodeAt(0));
+        const blobUrl = URL.createObjectURL(new Blob([bytes], { type: attachment.mimeType }));
+        if (cancelled) {
+          URL.revokeObjectURL(blobUrl);
+          return;
+        }
+        objectUrl = blobUrl;
+        setUrl(blobUrl);
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [accountId, messageId, attachment.id, attachment.mimeType]);
+
+  return (
+    <div className="group relative w-36 select-none">
+      <div
+        role="button"
+        aria-label={`Open ${attachment.filename}`}
+        onClick={handleOpen}
+        {...dragProps}
+        className={`h-28 w-36 cursor-pointer overflow-hidden rounded-card border border-separator bg-well${opening ? " opacity-60" : ""}`}
+      >
+        {url ? (
+          <img
+            src={url}
+            alt={attachment.filename}
+            draggable={false}
+            className="h-full w-full object-cover"
+          />
+        ) : failed ? (
+          <div className="flex h-full items-center justify-center">
+            <ImageIcon className="size-6 text-tertiary" />
+          </div>
+        ) : (
+          <div className="h-full w-full animate-pulse bg-control" />
+        )}
+      </div>
+      <Button
+        variant="filled"
+        size="small"
+        iconOnly
+        onClick={() =>
+          onDownload(messageId, attachment.id, attachment.filename, attachment.mimeType)
+        }
+        aria-label={`Download ${attachment.filename}`}
+        className="absolute right-1.5 top-1.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+      >
+        <DownloadIcon className="size-3.5" />
+      </Button>
+      <Text variant="mini" color="tertiary" truncate className="mt-1">
+        {attachment.filename}
+      </Text>
+    </div>
+  );
+}
+
+function FileAttachmentRow({
+  accountId,
+  messageId,
+  attachment,
+  onDownload,
+}: {
+  accountId: string;
+  messageId: string;
+  attachment: MessageAttachment;
+  onDownload: DownloadAttachment;
+}) {
+  const { handleOpen, dragProps, opening } = useAttachmentActions(
+    accountId,
+    messageId,
+    attachment,
+  );
+  return (
+    <div
+      role="button"
+      aria-label={`Open ${attachment.filename}`}
+      onClick={handleOpen}
+      {...dragProps}
+      className={`flex cursor-pointer select-none items-center justify-between gap-3 px-3 py-2 rounded-card bg-well hover:bg-control transition-colors${opening ? " opacity-60" : ""}`}
+    >
+      <div className="flex flex-col min-w-0">
+        <Text variant="small" truncate>
+          {attachment.filename}
+        </Text>
+        <Text variant="mini" color="tertiary">
+          {attachment.mimeType} · {formatBytes(attachment.size)}
+        </Text>
+      </div>
+      <Button
+        variant="filled"
+        size="small"
+        iconOnly
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onDownload(messageId, attachment.id, attachment.filename, attachment.mimeType);
+        }}
+        aria-label={`Download ${attachment.filename}`}
+      >
+        <DownloadIcon className="size-4" />
+      </Button>
+    </div>
+  );
+}
+
 function AttachmentList({
+  accountId,
   messageId,
   attachments,
   onDownload,
 }: {
+  accountId: string;
   messageId: string;
   attachments: GmailMessageDetail["attachments"];
   onDownload: DownloadAttachment;
 }) {
   if (attachments.length === 0) return null;
+  const images = attachments.filter((a) => a.mimeType.startsWith("image/"));
+  const files = attachments.filter((a) => !a.mimeType.startsWith("image/"));
   return (
     <div className="flex flex-col gap-2 border-t border-separator pt-4">
       <Text variant="small-strong">Attachments ({attachments.length})</Text>
-      <div className="flex flex-col gap-1">
-        {attachments.map((att) => (
-          <div
-            key={att.id}
-            className="flex items-center justify-between gap-3 px-3 py-2 rounded-card bg-well"
-          >
-            <div className="flex flex-col min-w-0">
-              <Text variant="small" truncate>
-                {att.filename}
-              </Text>
-              <Text variant="mini" color="tertiary">
-                {att.mimeType} · {formatBytes(att.size)}
-              </Text>
-            </div>
-            <Button
-              variant="filled"
-              size="small"
-              iconOnly
-              onClick={() => onDownload(messageId, att.id, att.filename, att.mimeType)}
-              aria-label={`Download ${att.filename}`}
-            >
-              <DownloadIcon className="size-4" />
-            </Button>
-          </div>
-        ))}
-      </div>
+      {images.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {images.map((att) => (
+            <ImageAttachmentTile
+              key={att.id}
+              accountId={accountId}
+              messageId={messageId}
+              attachment={att}
+              onDownload={onDownload}
+            />
+          ))}
+        </div>
+      ) : null}
+      {files.length > 0 ? (
+        <div className="flex flex-col gap-1">
+          {files.map((att) => (
+            <FileAttachmentRow
+              key={att.id}
+              accountId={accountId}
+              messageId={messageId}
+              attachment={att}
+              onDownload={onDownload}
+            />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -268,6 +496,7 @@ function ExpandedMessageCard({
           <>
             <MessageBody bodyHtml={detail.bodyHtml} bodyText={detail.bodyText} />
             <AttachmentList
+              accountId={accountId}
               messageId={summary.id}
               attachments={detail.attachments}
               onDownload={onDownload}
@@ -739,6 +968,7 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
             </div>
 
             <AttachmentList
+              accountId={accountId}
               messageId={messageId}
               attachments={message.attachments}
               onDownload={handleDownloadAttachment}

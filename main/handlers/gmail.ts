@@ -7,7 +7,7 @@
  * NOTE: gmail:getCredentials NEVER returns the client secret.
  */
 
-import { ipcMain } from "@glaze/core/backend";
+import { ipcMain, nativeImage, shell, WebContents } from "@glaze/core/backend";
 import { getCredentials, setCredentials, hasCredentials } from "../services/credentials-store.js";
 import {
   listAccounts,
@@ -30,6 +30,7 @@ import {
   sendMessage,
   getAttachment,
   getAttachmentData,
+  saveAttachmentToTemp,
   pickComposeAttachments,
   fetchReplyHeaders,
   MAX_ATTACHMENT_TOTAL_BYTES,
@@ -626,6 +627,54 @@ export function registerGmailHandlers(): void {
       return await getAttachmentData(accountId, messageId, attachmentId);
     } catch (err) {
       console.log("[gmail:getAttachmentData] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:openAttachment — save to the temp cache and open with the default app
+  ipcMain.handle("gmail:openAttachment", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:openAttachment]", {
+      accountId: p?.accountId,
+      messageId: p?.messageId,
+      filename: p?.filename,
+    });
+    try {
+      const accountId = assertString(p?.accountId, "accountId");
+      const messageId = assertString(p?.messageId, "messageId");
+      const attachmentId = assertString(p?.attachmentId, "attachmentId");
+      const filename = assertString(p?.filename, "filename");
+      const filePath = await saveAttachmentToTemp(accountId, messageId, attachmentId, filename);
+      const error = await shell.openPath(filePath);
+      if (error) throw new Error(error);
+      return { ok: true };
+    } catch (err) {
+      console.log("[gmail:openAttachment] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:dragAttachment — native drag-out to Finder (startDrag needs a real file on disk)
+  ipcMain.handle("gmail:dragAttachment", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:dragAttachment]", {
+      accountId: p?.accountId,
+      messageId: p?.messageId,
+      filename: p?.filename,
+    });
+    try {
+      const accountId = assertString(p?.accountId, "accountId");
+      const messageId = assertString(p?.messageId, "messageId");
+      const attachmentId = assertString(p?.attachmentId, "attachmentId");
+      const filename = assertString(p?.filename, "filename");
+      const filePath = await saveAttachmentToTemp(accountId, messageId, attachmentId, filename);
+      const icon = await nativeImage
+        .createThumbnailFromPath(filePath, { width: 64, height: 64 })
+        .catch(() => nativeImage.createEmpty());
+      new WebContents("main").startDrag({ file: filePath, icon });
+      return { ok: true };
+    } catch (err) {
+      console.log("[gmail:dragAttachment] error", { error: String(err) });
       throw err;
     }
   });

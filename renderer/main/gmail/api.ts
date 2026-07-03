@@ -90,6 +90,13 @@ export type GetAttachmentDataParams = {
 
 export type PickAttachmentsResult = { attachments: ComposeAttachment[]; error?: string };
 
+export type AttachmentFileParams = {
+  accountId: string;
+  messageId: string;
+  attachmentId: string;
+  filename: string;
+};
+
 export type UpdateAccountParams = {
   accountId: string;
   displayName?: string;
@@ -170,6 +177,12 @@ export const gmailApi = {
   getAttachmentData: (
     params: GetAttachmentDataParams,
   ): Promise<{ base64: string; size: number }> => ipc("gmail:getAttachmentData", params),
+
+  openAttachment: (params: AttachmentFileParams): Promise<{ ok: boolean }> =>
+    ipc("gmail:openAttachment", params),
+
+  dragAttachment: (params: AttachmentFileParams): Promise<{ ok: boolean }> =>
+    ipc("gmail:dragAttachment", params),
 
   pickAttachments: (existingBytes: number): Promise<PickAttachmentsResult> =>
     ipc("gmail:pickAttachments", { existingBytes }),

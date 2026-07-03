@@ -9,8 +9,8 @@
 
 import fs from "fs/promises";
 import path from "path";
-import { randomBytes } from "node:crypto";
-import { dialog } from "@glaze/core/backend";
+import { createHash, randomBytes } from "node:crypto";
+import { app, dialog } from "@glaze/core/backend";
 import { getAccessToken } from "./gmail-oauth.js";
 import { getAccount } from "./account-store.js";
 import type {
@@ -719,6 +719,33 @@ export async function getAttachment(
   await fs.writeFile(saveResult.filePath, Buffer.from(base64, "base64"));
 
   return { saved: true, path: saveResult.filePath };
+}
+
+function sanitizeFilename(name: string): string {
+  const cleaned = name.replace(/[/\\]/g, "_").replace(/^\.+/, "").trim();
+  return cleaned || "attachment";
+}
+
+/** Writes the attachment to a temp cache dir (keyed by identity hash) and reuses it on later opens/drags. */
+export async function saveAttachmentToTemp(
+  accountId: string,
+  messageId: string,
+  attachmentId: string,
+  filename: string,
+): Promise<string> {
+  const key = createHash("sha256")
+    .update(`${accountId}:${messageId}:${attachmentId}`)
+    .digest("hex")
+    .slice(0, 16);
+  const dir = path.join(app.getPath("temp"), "gmail-inbox-attachments", key);
+  const filePath = path.join(dir, sanitizeFilename(filename));
+  const existing = await fs.stat(filePath).catch(() => null);
+  if (existing && existing.size > 0) return filePath;
+
+  const { base64 } = await getAttachmentData(accountId, messageId, attachmentId);
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(filePath, Buffer.from(base64, "base64"));
+  return filePath;
 }
 
 // ── Compose attachments ───────────────────────────────────────────────────────
