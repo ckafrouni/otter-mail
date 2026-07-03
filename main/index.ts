@@ -162,11 +162,11 @@ async function setupApplicationMenu() {
       label: "Mailbox",
       submenu: [
         {
-          label: "Get All New Mail",
-          icon: "tray.and.arrow.down",
+          label: "Synchronize All Mailboxes",
+          icon: "arrow.triangle.2.circlepath",
           accelerator: "Shift+Command+N",
           click: () => {
-            logger.info("main", "Menu: Get All New Mail");
+            logger.info("main", "Menu: Synchronize All Mailboxes");
             void syncAllAccounts();
           },
         },
