@@ -42,6 +42,13 @@ export type ModifyMessageParams = {
   removeLabelIds?: string[];
 };
 
+export type ModifyThreadParams = {
+  accountId: string;
+  threadId: string;
+  addLabelIds?: string[];
+  removeLabelIds?: string[];
+};
+
 export type SendMessageParams = {
   accountId: string;
   to: string;
@@ -114,6 +121,15 @@ export const gmailApi = {
 
   trashMessage: (accountId: string, messageId: string): Promise<{ ok: boolean }> =>
     ipc("gmail:trashMessage", { accountId, messageId }),
+
+  getThread: (accountId: string, threadId: string): Promise<GmailMessageSummary[]> =>
+    ipc("gmail:getThread", { accountId, threadId }),
+
+  modifyThread: (params: ModifyThreadParams): Promise<{ ok: boolean }> =>
+    ipc("gmail:modifyThread", params),
+
+  trashThread: (accountId: string, threadId: string): Promise<{ ok: boolean }> =>
+    ipc("gmail:trashThread", { accountId, threadId }),
 
   sendMessage: (params: SendMessageParams): Promise<{ ok: boolean }> =>
     ipc("gmail:sendMessage", params),

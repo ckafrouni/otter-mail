@@ -436,6 +436,28 @@ export async function trashMessage(accountId: string, messageId: string): Promis
   return { ok: true };
 }
 
+// ── Thread actions ────────────────────────────────────────────────────────────
+
+export async function modifyThread(
+  accountId: string,
+  threadId: string,
+  params: { addLabelIds?: string[]; removeLabelIds?: string[] },
+): Promise<{ ok: true }> {
+  await gmailFetch(accountId, `/threads/${threadId}/modify`, {
+    method: "POST",
+    body: JSON.stringify({
+      addLabelIds: params.addLabelIds ?? [],
+      removeLabelIds: params.removeLabelIds ?? [],
+    }),
+  });
+  return { ok: true };
+}
+
+export async function trashThread(accountId: string, threadId: string): Promise<{ ok: true }> {
+  await gmailFetch(accountId, `/threads/${threadId}/trash`, { method: "POST" });
+  return { ok: true };
+}
+
 // ── sendMessage ───────────────────────────────────────────────────────────────
 
 function buildRfc2822(params: {

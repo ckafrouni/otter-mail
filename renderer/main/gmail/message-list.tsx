@@ -19,7 +19,8 @@ import {
   useCombinedMessages,
   useCombinedCounts,
   useModifyMessage,
-  useTrashMessage,
+  useModifyThread,
+  useTrashThread,
   useLabelResolver,
   useSyncAccountLabels,
 } from "./hooks";
@@ -80,7 +81,15 @@ function resolveCombinedMeta(
       r.allOf.every((id) => message.labelIds.includes(id)) &&
       !r.noneOf.some((id) => message.labelIds.includes(id)),
   );
-  if (!matched) return null;
+  // Thread representatives may not carry the matched labels themselves (e.g.
+  // your own reply in an Inbox view) — still show which account the row is from.
+  if (!matched) {
+    return {
+      mailbox: null,
+      accountName: getAccountDisplayName(account),
+      accountColor: getAccountColor(account),
+    };
+  }
   // When the whole view is one mailbox (built-in Inbox/Sent, or the same
   // labels required everywhere), the mailbox prefix is obvious — omit it.
   const mailbox = ruleMailboxName(matched, resolveLabel);
@@ -129,9 +138,12 @@ function MessageRow({
   combinedMeta,
 }: MessageRowProps) {
   const modifyMessage = useModifyMessage();
-  const trashMessage = useTrashMessage();
+  const modifyThread = useModifyThread();
+  const trashThread = useTrashThread();
 
   const ownerAccountId = message.accountId ?? accountId;
+  const threadId = message.threadId || message.id;
+  const threadCount = message.threadCount ?? 1;
 
   const messageLabels = message.labelIds
     .map((id) => resolveLabel(ownerAccountId, id))
@@ -160,21 +172,21 @@ function MessageRow({
 
   const handleArchive = (e: React.MouseEvent) => {
     e.stopPropagation();
-    console.log("[MessageList:archive]", { messageId: message.id });
-    void modifyMessage.mutateAsync({
+    console.log("[MessageList:archive]", { threadId });
+    void modifyThread.mutateAsync({
       accountId: ownerAccountId,
-      messageId: message.id,
+      threadId,
       removeLabelIds: ["INBOX"],
     });
   };
 
   const handleTrash = (e: React.MouseEvent) => {
     e.stopPropagation();
-    console.log("[MessageList:trash]", { messageId: message.id });
-    void trashMessage.mutateAsync({ accountId: ownerAccountId, messageId: message.id });
+    console.log("[MessageList:trash]", { threadId });
+    void trashThread.mutateAsync({ accountId: ownerAccountId, threadId });
   };
 
-  const unread = message.unread;
+  const unread = message.threadUnread ?? message.unread;
   // Selected rows sit on a solid accent block (Apple Mail-style); every text/icon
   // color below is force-overridden to white via inline style so it stays legible
   // regardless of the semantic (light/dark) color the row would otherwise use.
@@ -222,6 +234,16 @@ function MessageRow({
                   >
                     {combinedMeta.accountName}
                   </Text>
+                </span>
+              ) : null}
+              {threadCount > 1 ? (
+                <span
+                  className={[
+                    "shrink-0 rounded-pill px-1.5 text-mini tabular-nums",
+                    selected ? "bg-white/20 text-white" : "bg-control text-secondary",
+                  ].join(" ")}
+                >
+                  {threadCount}
                 </span>
               ) : null}
               <Text
@@ -372,7 +394,9 @@ export function MessageList({
 
   const allMessages: GmailMessageSummary[] =
     messagesQuery.data?.pages.flatMap((p) => p.messages) ?? [];
-  const visibleMessages = unreadOnly ? allMessages.filter((m) => m.unread) : allMessages;
+  const visibleMessages = unreadOnly
+    ? allMessages.filter((m) => m.threadUnread ?? m.unread)
+    : allMessages;
   const hasNextPage = messagesQuery.hasNextPage;
   const isFetchingNextPage = messagesQuery.isFetchingNextPage;
 

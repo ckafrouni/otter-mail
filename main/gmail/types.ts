@@ -38,6 +38,10 @@ export interface GmailMessageSummary {
   starred: boolean;
   labelIds: string[];
   hasAttachments: boolean;
+  /** Thread rollups — set on threaded list reads (one representative row per thread). */
+  threadCount?: number;
+  threadUnread?: boolean;
+  threadStarred?: boolean;
 }
 
 export interface GmailMessageDetail extends GmailMessageSummary {

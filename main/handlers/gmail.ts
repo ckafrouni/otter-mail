@@ -25,6 +25,8 @@ import {
   getMessage,
   modifyMessage,
   trashMessage,
+  modifyThread,
+  trashThread,
   sendMessage,
   getAttachment,
 } from "../services/gmail-api.js";
@@ -234,7 +236,7 @@ export function registerGmailHandlers(): void {
 
       mailSync.syncAccount(accountId);
 
-      const page = mailStore.getMessagesPage(accountId, labelId, offset, maxResults);
+      const page = mailStore.getThreadsPage(accountId, labelId, offset, maxResults);
       return {
         messages: page.messages,
         nextPageToken: page.hasMore ? String(offset + maxResults) : undefined,
@@ -263,7 +265,7 @@ export function registerGmailHandlers(): void {
 
       void mailSync.syncAllAccounts();
 
-      const page = mailStore.getCombinedMessagesByRules(rules, offset, maxResults);
+      const page = mailStore.getCombinedThreadsByRules(rules, offset, maxResults);
       return {
         messages: page.messages,
         nextPageToken: page.hasMore ? String(offset + maxResults) : undefined,
@@ -422,6 +424,54 @@ export function registerGmailHandlers(): void {
       return result;
     } catch (err) {
       console.log("[gmail:trashMessage] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:getThread — all locally-cached messages of a thread, oldest first
+  ipcMain.handle("gmail:getThread", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:getThread]", { accountId: p?.accountId, threadId: p?.threadId });
+    try {
+      const accountId = assertString(p?.accountId, "accountId");
+      const threadId = assertString(p?.threadId, "threadId");
+      return mailStore.getThreadMessages(accountId, threadId);
+    } catch (err) {
+      console.log("[gmail:getThread] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:modifyThread — one Gmail call for the whole conversation, mirrored locally
+  ipcMain.handle("gmail:modifyThread", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:modifyThread]", { accountId: p?.accountId, threadId: p?.threadId });
+    try {
+      const accountId = assertString(p?.accountId, "accountId");
+      const threadId = assertString(p?.threadId, "threadId");
+      const addLabelIds = asStringArray(p?.addLabelIds);
+      const removeLabelIds = asStringArray(p?.removeLabelIds);
+      const result = await modifyThread(accountId, threadId, { addLabelIds, removeLabelIds });
+      mailStore.applyLabelChangeToThread(accountId, threadId, addLabelIds ?? [], removeLabelIds ?? []);
+      return result;
+    } catch (err) {
+      console.log("[gmail:modifyThread] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:trashThread
+  ipcMain.handle("gmail:trashThread", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:trashThread]", { accountId: p?.accountId, threadId: p?.threadId });
+    try {
+      const accountId = assertString(p?.accountId, "accountId");
+      const threadId = assertString(p?.threadId, "threadId");
+      const result = await trashThread(accountId, threadId);
+      mailStore.deleteThread(accountId, threadId);
+      return result;
+    } catch (err) {
+      console.log("[gmail:trashThread] error", { error: String(err) });
       throw err;
     }
   });

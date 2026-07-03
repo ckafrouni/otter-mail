@@ -49,6 +49,7 @@ function getDb(): DatabaseSync {
       PRIMARY KEY (accountId, id)
     );
     CREATE INDEX IF NOT EXISTS idx_messages_account_date ON messages (accountId, date DESC);
+    CREATE INDEX IF NOT EXISTS idx_messages_account_thread ON messages (accountId, threadId, date);
 
     CREATE TABLE IF NOT EXISTS message_labels (
       accountId TEXT NOT NULL,
@@ -77,6 +78,9 @@ function getDb(): DatabaseSync {
       lastSyncAt   INTEGER
     );
   `);
+
+  // Legacy rows synced before threading behave as single-message threads.
+  handle.exec("UPDATE messages SET threadId = id WHERE threadId = '';");
 
   db = handle;
   return handle;
@@ -129,6 +133,21 @@ function rowToSummary(row: MessageRow): GmailMessageSummary {
     starred: row.starred === 1,
     labelIds: parseLabelIds(row.labelIds),
     hasAttachments: row.hasAttachments === 1,
+  };
+}
+
+interface ThreadRow extends MessageRow {
+  threadCount: number;
+  threadUnread: number;
+  threadStarred: number;
+}
+
+function rowToThreadSummary(row: ThreadRow): GmailMessageSummary {
+  return {
+    ...rowToSummary(row),
+    threadCount: row.threadCount,
+    threadUnread: row.threadUnread === 1,
+    threadStarred: row.threadStarred === 1,
   };
 }
 
@@ -186,7 +205,7 @@ export function upsertMessages(accountId: string, messages: GmailMessageSummary[
       upsert.run(
         accountId,
         m.id,
-        m.threadId,
+        m.threadId || m.id,
         m.fromName,
         m.fromEmail,
         m.to,
@@ -331,7 +350,39 @@ export function applyLabelChange(
 
 // ── Messages: reads ───────────────────────────────────────────────────────────
 
-export function getMessagesPage(
+/**
+ * One row per thread: `matchedSql` selects the (accountId, threadId) pairs the
+ * view includes; rollups (count/unread/starred) and the representative row (the
+ * thread's latest message) are computed over EVERY locally-cached message of
+ * the thread, so e.g. an Inbox thread counts your sent replies like Gmail does.
+ */
+function threadPageQuery(matchedSql: string): string {
+  return `
+    WITH matched AS (${matchedSql}),
+    agg AS (
+      SELECT t.accountId AS accountId, t.threadId AS threadId,
+             COUNT(*) AS threadCount,
+             MAX(t.unread) AS threadUnread,
+             MAX(t.starred) AS threadStarred,
+             MAX(t.date) AS repDate
+        FROM messages t
+        JOIN matched mt ON mt.accountId = t.accountId AND mt.threadId = t.threadId
+       GROUP BY t.accountId, t.threadId
+       ORDER BY repDate DESC
+       LIMIT ? OFFSET ?
+    )
+    SELECT m.*, agg.threadCount AS threadCount,
+           agg.threadUnread AS threadUnread,
+           agg.threadStarred AS threadStarred
+      FROM agg
+      JOIN messages m
+        ON m.accountId = agg.accountId AND m.threadId = agg.threadId AND m.date = agg.repDate
+     GROUP BY agg.accountId, agg.threadId
+     ORDER BY agg.repDate DESC
+  `;
+}
+
+export function getThreadsPage(
   accountId: string,
   labelId: string,
   offset: number,
@@ -339,18 +390,55 @@ export function getMessagesPage(
 ): { messages: GmailMessageSummary[]; hasMore: boolean } {
   const d = getDb();
   const rows = d
-    .prepare(`
-      SELECT m.* FROM messages m
-        JOIN message_labels ml
-          ON ml.accountId = m.accountId AND ml.messageId = m.id
-       WHERE m.accountId = ? AND ml.labelId = ?
-       ORDER BY m.date DESC
-       LIMIT ? OFFSET ?
-    `)
-    .all(accountId, labelId, limit + 1, offset) as unknown as MessageRow[];
+    .prepare(
+      threadPageQuery(`
+        SELECT DISTINCT m.accountId AS accountId, m.threadId AS threadId
+          FROM messages m
+          JOIN message_labels ml
+            ON ml.accountId = m.accountId AND ml.messageId = m.id
+         WHERE m.accountId = ? AND ml.labelId = ?
+      `),
+    )
+    .all(accountId, labelId, limit + 1, offset) as unknown as ThreadRow[];
 
   const hasMore = rows.length > limit;
-  return { messages: rows.slice(0, limit).map(rowToSummary), hasMore };
+  return { messages: rows.slice(0, limit).map(rowToThreadSummary), hasMore };
+}
+
+/** All locally-cached messages of a thread, oldest first. */
+export function getThreadMessages(accountId: string, threadId: string): GmailMessageSummary[] {
+  const d = getDb();
+  const rows = d
+    .prepare(
+      "SELECT * FROM messages WHERE accountId = ? AND threadId = ? ORDER BY date ASC, id ASC",
+    )
+    .all(accountId, threadId) as unknown as MessageRow[];
+  return rows.map(rowToSummary);
+}
+
+function getThreadMessageIds(accountId: string, threadId: string): string[] {
+  const d = getDb();
+  const rows = d
+    .prepare("SELECT id FROM messages WHERE accountId = ? AND threadId = ?")
+    .all(accountId, threadId) as unknown as { id: string }[];
+  return rows.map((r) => r.id);
+}
+
+export function applyLabelChangeToThread(
+  accountId: string,
+  threadId: string,
+  addLabelIds: string[],
+  removeLabelIds: string[],
+): void {
+  for (const id of getThreadMessageIds(accountId, threadId)) {
+    applyLabelChange(accountId, id, addLabelIds, removeLabelIds);
+  }
+}
+
+export function deleteThread(accountId: string, threadId: string): void {
+  for (const id of getThreadMessageIds(accountId, threadId)) {
+    deleteMessage(accountId, id);
+  }
 }
 
 export function getMessageDetail(accountId: string, messageId: string): GmailMessageDetail | null {
@@ -411,11 +499,11 @@ function rulesWhere(rules: ViewRule[]): { clause: string; params: string[] } {
 }
 
 /**
- * Combined-view query: unions messages matching any of the given per-account
- * rules. Label ids are exact and account-scoped, so the same label *name* in
- * two accounts stays two distinct choices.
+ * Combined-view query: one row per thread having any message matching any of
+ * the given per-account rules. Label ids are exact and account-scoped, so the
+ * same label *name* in two accounts stays two distinct choices.
  */
-export function getCombinedMessagesByRules(
+export function getCombinedThreadsByRules(
   rules: ViewRule[],
   offset: number,
   limit: number,
@@ -425,16 +513,17 @@ export function getCombinedMessagesByRules(
   const { clause, params } = rulesWhere(rules);
 
   const rows = d
-    .prepare(`
-      SELECT m.* FROM messages m
-       WHERE ${clause}
-       ORDER BY m.date DESC
-       LIMIT ? OFFSET ?
-    `)
-    .all(...params, limit + 1, offset) as unknown as MessageRow[];
+    .prepare(
+      threadPageQuery(`
+        SELECT DISTINCT m.accountId AS accountId, m.threadId AS threadId
+          FROM messages m
+         WHERE ${clause}
+      `),
+    )
+    .all(...params, limit + 1, offset) as unknown as ThreadRow[];
 
   const hasMore = rows.length > limit;
-  return { messages: rows.slice(0, limit).map(rowToSummary), hasMore };
+  return { messages: rows.slice(0, limit).map(rowToThreadSummary), hasMore };
 }
 
 export function countCombinedByRules(rules: ViewRule[]): { total: number; unread: number } {
