@@ -13,10 +13,12 @@ import type {
   GmailLabel,
   GmailMessageDetail,
   GmailMessageSummary,
-  LabelSelection,
+  MailView,
   SyncStatus,
+  ViewRule,
 } from "./types";
 import type { ListMessagesResult } from "./api";
+import { resolveRules } from "./custom-views";
 
 const STALE_TIME = 30_000;
 
@@ -29,8 +31,10 @@ export const queryKeys = {
     ["gmail:messages", accountId, labelId, q] as const,
   message: (accountId: string, messageId: string) =>
     ["gmail:message", accountId, messageId] as const,
-  combinedMessages: (viewId: string, selections: LabelSelection[]) =>
-    ["gmail:combinedMessages", viewId, selections] as const,
+  combinedMessages: (viewId: string, rules: ViewRule[]) =>
+    ["gmail:combinedMessages", viewId, rules] as const,
+  combinedCounts: (viewId: string, rules: ViewRule[]) =>
+    ["gmail:combinedCounts", viewId, rules] as const,
 };
 
 // ---- Credentials ----
@@ -149,11 +153,11 @@ export function useMessages(
 // ---- Combined (cross-account) views ----
 
 /**
- * Cross-account message list for the Combined mailbox. `selections` is the set
- * of (accountId, labelId) pairs to union; `viewId` keys the cache per view.
+ * Cross-account message list for the Combined mailbox. `rules` are the view's
+ * per-account filters (union across rules); `viewId` keys the cache per view.
  */
 export function useCombinedMessages(
-  selections: LabelSelection[],
+  rules: ViewRule[],
   viewId: string,
   enabled = true,
 ) {
@@ -164,24 +168,54 @@ export function useCombinedMessages(
     ReturnType<typeof queryKeys.combinedMessages>,
     string | undefined
   >({
-    queryKey: queryKeys.combinedMessages(viewId, selections),
+    queryKey: queryKeys.combinedMessages(viewId, rules),
     queryFn: ({ pageParam }) => {
       console.log("[hooks:useCombinedMessages] fetching", {
         viewId,
-        selectionCount: selections.length,
+        ruleCount: rules.length,
         pageToken: pageParam,
       });
       return gmailApi.listCombinedMessages({
-        selections,
+        rules,
         pageToken: pageParam,
         maxResults: 50,
       });
     },
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage.nextPageToken,
-    enabled: enabled && selections.length > 0,
+    enabled: enabled && rules.length > 0,
     staleTime: STALE_TIME,
   });
+}
+
+/** Total/unread counts for a rule set, from the local store. */
+export function useCombinedCounts(rules: ViewRule[], viewId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.combinedCounts(viewId, rules),
+    queryFn: () => gmailApi.countCombinedMessages({ rules }),
+    enabled: enabled && rules.length > 0,
+    staleTime: STALE_TIME,
+  });
+}
+
+/** Unread count per view id, for the Combined sidebar rows. */
+export function useViewUnreadCounts(
+  views: MailView[],
+  accounts: GmailAccount[],
+  enabled = true,
+): Record<string, number> {
+  const results = useQueries({
+    queries: views.map((view) => {
+      const rules = resolveRules(view, accounts);
+      return {
+        queryKey: queryKeys.combinedCounts(view.id, rules),
+        queryFn: () => gmailApi.countCombinedMessages({ rules }),
+        enabled: enabled && rules.length > 0,
+        staleTime: STALE_TIME,
+      };
+    }),
+  });
+  return Object.fromEntries(views.map((v, i) => [v.id, results[i]?.data?.unread ?? 0]));
 }
 
 /** Full label list per account, keyed by accountId, for the view-editor picker. */
@@ -461,6 +495,7 @@ export function useModifyMessage() {
       // prefix invalidation above never reaches them — without this, read/unread
       // and star changes never show up there until the 30s staleTime lapses.
       void qc.invalidateQueries({ queryKey: ["gmail:combinedMessages"] });
+      void qc.invalidateQueries({ queryKey: ["gmail:combinedCounts"] });
       // Reconcile the optimistic label-count patch with the backend's own
       // recompute (mail-store.ts), which is the source of truth.
       void qc.invalidateQueries({ queryKey: queryKeys.labels(params.accountId) });
@@ -531,6 +566,7 @@ export function useTrashMessage() {
     onSuccess: (_data, { accountId }) => {
       void qc.invalidateQueries({ queryKey: ["gmail:messages", accountId] });
       void qc.invalidateQueries({ queryKey: ["gmail:combinedMessages"] });
+      void qc.invalidateQueries({ queryKey: ["gmail:combinedCounts"] });
       void qc.invalidateQueries({ queryKey: queryKeys.labels(accountId) });
     },
   });
@@ -666,6 +702,7 @@ export function useSyncAccountLabels(accountIds: string[], enabled: boolean): vo
     // The combined list isn't reachable by any per-account invalidation.
     if (anyProgressed) {
       void qc.invalidateQueries({ queryKey: ["gmail:combinedMessages"] });
+      void qc.invalidateQueries({ queryKey: ["gmail:combinedCounts"] });
     }
   }, [progressKey, enabled, accountIdsKey, qc]);
 }

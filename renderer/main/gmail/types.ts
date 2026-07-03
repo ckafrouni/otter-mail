@@ -51,16 +51,27 @@ export type LabelSelection = {
 export type ViewKind = "inbox" | "sent" | "custom";
 
 /**
- * A Combined-mailbox view. Shows the union of messages matching any of its
- * label `selections`. Built-in "inbox"/"sent" views use dynamic defaults when
- * `selections` is null (every account's INBOX/SENT) and can be reset back to it.
+ * One account's filter within a Combined-mailbox view. A message matches when
+ * it belongs to the account, carries every label in `allOf` (empty = any mail
+ * from the account), and carries none of the labels in `noneOf`.
+ */
+export type ViewRule = {
+  accountId: string;
+  allOf: string[];
+  noneOf: string[];
+};
+
+/**
+ * A Combined-mailbox view: the union of messages matching any of its per-account
+ * `rules`. Built-in "inbox"/"sent" views use dynamic defaults when `rules` is
+ * null (every account's INBOX/SENT) and can be reset back to it.
  */
 export type MailView = {
   id: string;
   name: string;
   kind: ViewKind;
   /** null = use the dynamic default for this kind (only for inbox/sent). */
-  selections: LabelSelection[] | null;
+  rules: ViewRule[] | null;
 };
 
 /** Per-account local-sync progress, exposed to the renderer for status UI. */

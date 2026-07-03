@@ -65,3 +65,14 @@ export interface SyncStatus {
   fullSyncDone: boolean;
   error: string | null;
 }
+
+/**
+ * One account's filter within a Combined-mailbox view. A message matches when
+ * it belongs to the account, carries every label in `allOf` (empty = any mail
+ * from the account), and carries none of the labels in `noneOf`.
+ */
+export interface ViewRule {
+  accountId: string;
+  allOf: string[];
+  noneOf: string[];
+}

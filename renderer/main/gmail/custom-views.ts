@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useSyncExternalStore } from "react";
-import type { GmailAccount, LabelSelection, MailView, ViewKind } from "./types";
+import type { GmailAccount, MailView, ViewKind, ViewRule } from "./types";
 
 const VIEWS_KEY = "gmail:combined-views";
 const LAST_LOCATION_KEY = "gmail:last-location";
@@ -21,8 +21,8 @@ export const INBOX_VIEW_ID = "__inbox__";
 export const SENT_VIEW_ID = "__sent__";
 
 const DEFAULT_VIEWS: MailView[] = [
-  { id: INBOX_VIEW_ID, name: "Inbox", kind: "inbox", selections: null },
-  { id: SENT_VIEW_ID, name: "Sent", kind: "sent", selections: null },
+  { id: INBOX_VIEW_ID, name: "Inbox", kind: "inbox", rules: null },
+  { id: SENT_VIEW_ID, name: "Sent", kind: "sent", rules: null },
 ];
 
 /** The Gmail system-label id a default view aggregates across accounts. */
@@ -32,33 +32,60 @@ function systemLabelForKind(kind: ViewKind): string | null {
   return null;
 }
 
-/** Dynamic default selections for a built-in view: every account's INBOX/SENT. */
-export function defaultSelectionsFor(kind: ViewKind, accounts: GmailAccount[]): LabelSelection[] {
+/** Dynamic default rules for a built-in view: every account's INBOX/SENT. */
+export function defaultRulesFor(kind: ViewKind, accounts: GmailAccount[]): ViewRule[] {
   const labelId = systemLabelForKind(kind);
   if (!labelId) return [];
-  return accounts.map((a) => ({ accountId: a.id, labelId }));
+  return accounts.map((a) => ({ accountId: a.id, allOf: [labelId], noneOf: [] }));
 }
 
 /**
- * Resolves a view to the concrete selections used for querying, pruned to
- * accounts that still exist. Built-in views with null selections fall back to
- * their dynamic default.
+ * Resolves a view to the concrete rules used for querying, pruned to accounts
+ * that still exist. Built-in views with null rules fall back to their dynamic
+ * default.
  */
-export function resolveSelections(view: MailView, accounts: GmailAccount[]): LabelSelection[] {
+export function resolveRules(view: MailView, accounts: GmailAccount[]): ViewRule[] {
   const accountIds = new Set(accounts.map((a) => a.id));
-  const raw =
-    view.selections ?? defaultSelectionsFor(view.kind, accounts);
-  return raw.filter((s) => accountIds.has(s.accountId));
+  const raw = view.rules ?? defaultRulesFor(view.kind, accounts);
+  return raw.filter((r) => accountIds.has(r.accountId));
 }
 
-function isValidView(v: unknown): v is MailView {
-  const view = v as MailView;
+type StoredView = MailView & {
+  /** Legacy pre-rules shape: flat OR'd (account, label) picks. */
+  selections?: { accountId: string; labelId: string }[] | null;
+};
+
+/** Migrates a legacy `selections` view: each account's picked labels become one allOf rule. */
+function migrateView(v: StoredView): MailView {
+  if (v.rules !== undefined && v.rules !== null && Array.isArray(v.rules)) {
+    return { id: v.id, name: v.name, kind: v.kind, rules: v.rules };
+  }
+  if (v.rules === null || v.selections === null || v.selections === undefined) {
+    return { id: v.id, name: v.name, kind: v.kind, rules: null };
+  }
+  const byAccount = new Map<string, string[]>();
+  for (const s of v.selections) {
+    byAccount.set(s.accountId, [...(byAccount.get(s.accountId) ?? []), s.labelId]);
+  }
+  return {
+    id: v.id,
+    name: v.name,
+    kind: v.kind,
+    rules: [...byAccount.entries()].map(([accountId, allOf]) => ({ accountId, allOf, noneOf: [] })),
+  };
+}
+
+function isValidView(v: unknown): v is StoredView {
+  const view = v as StoredView;
   return (
     !!view &&
     typeof view.id === "string" &&
     typeof view.name === "string" &&
     (view.kind === "inbox" || view.kind === "sent" || view.kind === "custom") &&
-    (view.selections === null || Array.isArray(view.selections))
+    (view.rules === null ||
+      Array.isArray(view.rules) ||
+      view.selections === null ||
+      Array.isArray(view.selections))
   );
 }
 
@@ -76,7 +103,7 @@ function loadViews(): MailView[] {
     if (!raw) return withDefaults([]);
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return withDefaults([]);
-    return withDefaults(parsed.filter(isValidView));
+    return withDefaults(parsed.filter(isValidView).map(migrateView));
   } catch {
     return withDefaults([]);
   }
@@ -107,7 +134,7 @@ function genId(): string {
 export type SaveViewInput = {
   id?: string;
   name: string;
-  selections: LabelSelection[];
+  rules: ViewRule[];
 };
 
 export function useMailViews() {
@@ -118,15 +145,13 @@ export function useMailViews() {
     if (existing) {
       emit(
         cache.map((v) =>
-          v.id === existing.id
-            ? { ...v, name: input.name, selections: input.selections }
-            : v,
+          v.id === existing.id ? { ...v, name: input.name, rules: input.rules } : v,
         ),
       );
       return existing.id;
     }
     const id = genId();
-    emit([...cache, { id, name: input.name, kind: "custom", selections: input.selections }]);
+    emit([...cache, { id, name: input.name, kind: "custom", rules: input.rules }]);
     return id;
   }, []);
 
@@ -140,7 +165,7 @@ export function useMailViews() {
     emit(
       cache.map((v) =>
         v.id === id && (v.kind === "inbox" || v.kind === "sent")
-          ? { ...v, name: v.kind === "inbox" ? "Inbox" : "Sent", selections: null }
+          ? { ...v, name: v.kind === "inbox" ? "Inbox" : "Sent", rules: null }
           : v,
       ),
     );

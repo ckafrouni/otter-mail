@@ -17,6 +17,7 @@ import { ArchiveIcon, CircleDotIcon, StarIcon, StarOffIcon, Trash2Icon } from "l
 import {
   useMessages,
   useCombinedMessages,
+  useCombinedCounts,
   useModifyMessage,
   useTrashMessage,
   useLabelResolver,
@@ -25,12 +26,12 @@ import {
 import { LabelChip } from "./label-chip";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
 import { SYSTEM_LABEL_NAMES, labelDisplayName } from "./label-names";
-import type { GmailAccount, GmailLabel, GmailMessageSummary, LabelSelection, SyncStatus } from "./types";
+import type { GmailAccount, GmailLabel, GmailMessageSummary, SyncStatus, ViewRule } from "./types";
 
 type ResolveLabel = (accountId: string | undefined, labelId: string) => GmailLabel | undefined;
 
 /** Cross-account query descriptor for the Combined mailbox. */
-export type CombinedList = { viewId: string; name: string; selections: LabelSelection[] };
+export type CombinedList = { viewId: string; name: string; rules: ViewRule[] };
 
 /** Mailbox + account identity shown next to the date in Combined view rows.
     mailbox is null when every selection in the view is the same mailbox (e.g.
@@ -54,6 +55,16 @@ type MessageListProps = {
   syncStatus: SyncStatus | null;
 };
 
+function ruleMailboxName(rule: ViewRule, resolveLabel: ResolveLabel): string | null {
+  if (rule.allOf.length === 0) return null;
+  return rule.allOf
+    .map((labelId) => {
+      const label = resolveLabel(rule.accountId, labelId);
+      return label ? labelDisplayName(label) : (SYSTEM_LABEL_NAMES[labelId] ?? labelId);
+    })
+    .join(" + ");
+}
+
 function resolveCombinedMeta(
   message: GmailMessageSummary,
   combined: CombinedList | null,
@@ -63,18 +74,17 @@ function resolveCombinedMeta(
   if (!combined || !message.accountId) return null;
   const account = accounts.find((a) => a.id === message.accountId);
   if (!account) return null;
-  const matched = combined.selections.find(
-    (s) => s.accountId === message.accountId && message.labelIds.includes(s.labelId),
+  const matched = combined.rules.find(
+    (r) =>
+      r.accountId === message.accountId &&
+      r.allOf.every((id) => message.labelIds.includes(id)) &&
+      !r.noneOf.some((id) => message.labelIds.includes(id)),
   );
   if (!matched) return null;
-  const mailboxName = (s: LabelSelection) => {
-    const label = resolveLabel(s.accountId, s.labelId);
-    return label ? labelDisplayName(label) : (SYSTEM_LABEL_NAMES[s.labelId] ?? s.labelId);
-  };
-  // When the whole view is one mailbox (built-in Inbox/Sent, or a custom view
-  // ticking the same label everywhere), the mailbox prefix is obvious — omit it.
-  const mailbox = mailboxName(matched);
-  const uniform = combined.selections.every((s) => mailboxName(s) === mailbox);
+  // When the whole view is one mailbox (built-in Inbox/Sent, or the same
+  // labels required everywhere), the mailbox prefix is obvious — omit it.
+  const mailbox = ruleMailboxName(matched, resolveLabel);
+  const uniform = combined.rules.every((r) => ruleMailboxName(r, resolveLabel) === mailbox);
   return {
     mailbox: uniform ? null : mailbox,
     accountName: getAccountDisplayName(account),
@@ -334,7 +344,7 @@ export function MessageList({
   // Both hooks are always called (rules of hooks); the inactive one is disabled.
   const accountMessages = useMessages(isCombined ? null : accountId, labelId, searchQuery);
   const combinedMessages = useCombinedMessages(
-    combined?.selections ?? [],
+    combined?.rules ?? [],
     combined?.viewId ?? "",
     isCombined,
   );
@@ -345,23 +355,19 @@ export function MessageList({
   // sync (see useAccountSync), so the header's counts need their own refresh loop.
   useSyncAccountLabels(accountIds, isCombined);
 
-  // Header title + "N messages, M unread" — from Gmail's own label counters
-  // (not just what's paginated into the list), summed across selections when Combined.
+  // Header title + "N messages, M unread". Combined counts come from the local
+  // store (rules can't be summed from Gmail's per-label counters); account mode
+  // still uses Gmail's own label counters.
+  const combinedCounts = useCombinedCounts(combined?.rules ?? [], combined?.viewId ?? "", isCombined);
   const activeLabel = resolveLabel(accountId, labelId);
   const mailboxTitle = isCombined
     ? combined.name
     : (activeLabel ? labelDisplayName(activeLabel) : (SYSTEM_LABEL_NAMES[labelId] ?? labelId));
   const { mailboxTotal, mailboxUnread } = isCombined
-    ? combined.selections.reduce(
-        (acc, s) => {
-          const label = resolveLabel(s.accountId, s.labelId);
-          return {
-            mailboxTotal: acc.mailboxTotal + (label?.total ?? 0),
-            mailboxUnread: acc.mailboxUnread + (label?.unread ?? 0),
-          };
-        },
-        { mailboxTotal: 0, mailboxUnread: 0 },
-      )
+    ? {
+        mailboxTotal: combinedCounts.data?.total ?? 0,
+        mailboxUnread: combinedCounts.data?.unread ?? 0,
+      }
     : { mailboxTotal: activeLabel?.total ?? 0, mailboxUnread: activeLabel?.unread ?? 0 };
 
   const allMessages: GmailMessageSummary[] =

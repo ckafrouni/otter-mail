@@ -31,8 +31,21 @@ import {
 import * as mailStore from "../services/mail-store.js";
 import * as mailSync from "../services/mail-sync.js";
 import { getSettings, updateSettings } from "../services/settings-store.js";
+import type { ViewRule } from "../gmail/types.js";
 
 const LOCAL_PAGE_SIZE = 50;
+
+function parseRules(raw: unknown): ViewRule[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((r) => r as Record<string, unknown>)
+    .filter((r) => typeof r?.accountId === "string")
+    .map((r) => ({
+      accountId: r.accountId as string,
+      allOf: Array.isArray(r.allOf) ? r.allOf.filter((x): x is string => typeof x === "string") : [],
+      noneOf: Array.isArray(r.noneOf) ? r.noneOf.filter((x): x is string => typeof x === "string") : [],
+    }));
+}
 
 // ── Type guards ───────────────────────────────────────────────────────────────
 
@@ -231,35 +244,42 @@ export function registerGmailHandlers(): void {
     }
   });
 
-  // gmail:listCombinedMessages — cross-account union for the "Combined" mailbox.
-  // `selections` is a list of {accountId, labelId} pairs; a message matches if it
-  // carries any selected label in its own account. Reads the local store and
-  // refreshes all accounts in the background.
+  // gmail:listCombinedMessages — cross-account query for the "Combined" mailbox.
+  // `rules` are per-account: a message matches a rule when it has every label in
+  // allOf (empty = any mail from the account) and none in noneOf; rules union.
+  // Reads the local store and refreshes all accounts in the background.
   ipcMain.handle("gmail:listCombinedMessages", async (_event, params: unknown) => {
     const p = params as Record<string, unknown>;
     console.log("[gmail:listCombinedMessages]", {
-      selectionCount: Array.isArray(p?.selections) ? p.selections.length : 0,
+      ruleCount: Array.isArray(p?.rules) ? p.rules.length : 0,
       pageToken: p?.pageToken,
     });
     try {
-      const rawSelections = Array.isArray(p?.selections) ? p.selections : [];
-      const selections = rawSelections
-        .map((s) => s as Record<string, unknown>)
-        .filter((s) => typeof s?.accountId === "string" && typeof s?.labelId === "string")
-        .map((s) => ({ accountId: s.accountId as string, labelId: s.labelId as string }));
+      const rules = parseRules(p?.rules);
       const pageToken = asString(p?.pageToken);
       const maxResults = asNumber(p?.maxResults) ?? LOCAL_PAGE_SIZE;
       const offset = pageToken ? Number.parseInt(pageToken, 10) || 0 : 0;
 
       void mailSync.syncAllAccounts();
 
-      const page = mailStore.getCombinedMessagesBySelections(selections, offset, maxResults);
+      const page = mailStore.getCombinedMessagesByRules(rules, offset, maxResults);
       return {
         messages: page.messages,
         nextPageToken: page.hasMore ? String(offset + maxResults) : undefined,
       };
     } catch (err) {
       console.log("[gmail:listCombinedMessages] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:countCombinedMessages — total/unread counts for a rule set (local store)
+  ipcMain.handle("gmail:countCombinedMessages", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    try {
+      return mailStore.countCombinedByRules(parseRules(p?.rules));
+    } catch (err) {
+      console.log("[gmail:countCombinedMessages] error", { error: String(err) });
       throw err;
     }
   });

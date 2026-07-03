@@ -14,7 +14,7 @@
 import path from "path";
 import { DatabaseSync } from "node:sqlite";
 import { app } from "@glaze/core/backend";
-import type { GmailLabel, GmailMessageSummary, GmailMessageDetail } from "../gmail/types.js";
+import type { GmailLabel, GmailMessageSummary, GmailMessageDetail, ViewRule } from "../gmail/types.js";
 
 // ── DB bootstrap ────────────────────────────────────────────────────────────
 
@@ -385,44 +385,76 @@ export function countMessagesForLabel(accountId: string, labelId: string): numbe
 
 // ── Combined (cross-account) reads ──────────────────────────────────────────
 
-export interface LabelSelection {
-  accountId: string;
-  labelId: string;
+const HAS_LABEL =
+  "EXISTS (SELECT 1 FROM message_labels ml WHERE ml.accountId = m.accountId AND ml.messageId = m.id AND ml.labelId = ?)";
+
+/** WHERE fragment for a rule set: rules OR'd; within a rule, allOf AND'd and noneOf excluded. */
+function rulesWhere(rules: ViewRule[]): { clause: string; params: string[] } {
+  const parts: string[] = [];
+  const params: string[] = [];
+  for (const rule of rules) {
+    const sub: string[] = ["m.accountId = ?"];
+    params.push(rule.accountId);
+    for (const labelId of rule.allOf) {
+      sub.push(HAS_LABEL);
+      params.push(labelId);
+    }
+    if (rule.noneOf.length > 0) {
+      sub.push(
+        `NOT EXISTS (SELECT 1 FROM message_labels ml WHERE ml.accountId = m.accountId AND ml.messageId = m.id AND ml.labelId IN (${rule.noneOf.map(() => "?").join(", ")}))`,
+      );
+      params.push(...rule.noneOf);
+    }
+    parts.push(`(${sub.join(" AND ")})`);
+  }
+  return { clause: parts.join(" OR "), params };
 }
 
 /**
- * Combined-view query: unions messages matching any of the given
- * (accountId, labelId) selections. Each selection is scoped to one account and
- * one exact label id — so the same label *name* in two accounts is two distinct
- * selections, giving the user per-account control.
+ * Combined-view query: unions messages matching any of the given per-account
+ * rules. Label ids are exact and account-scoped, so the same label *name* in
+ * two accounts stays two distinct choices.
  */
-export function getCombinedMessagesBySelections(
-  selections: LabelSelection[],
+export function getCombinedMessagesByRules(
+  rules: ViewRule[],
   offset: number,
   limit: number,
 ): { messages: GmailMessageSummary[]; hasMore: boolean } {
-  if (selections.length === 0) return { messages: [], hasMore: false };
+  if (rules.length === 0) return { messages: [], hasMore: false };
   const d = getDb();
-  const clause = selections
-    .map(() => "(ml.accountId = ? AND ml.labelId = ?)")
-    .join(" OR ");
-  const params: (string | number)[] = [];
-  for (const sel of selections) params.push(sel.accountId, sel.labelId);
-  params.push(limit + 1, offset);
+  const { clause, params } = rulesWhere(rules);
 
   const rows = d
     .prepare(`
-      SELECT DISTINCT m.* FROM messages m
-        JOIN message_labels ml
-          ON ml.accountId = m.accountId AND ml.messageId = m.id
+      SELECT m.* FROM messages m
        WHERE ${clause}
        ORDER BY m.date DESC
        LIMIT ? OFFSET ?
     `)
-    .all(...params) as unknown as MessageRow[];
+    .all(...params, limit + 1, offset) as unknown as MessageRow[];
 
   const hasMore = rows.length > limit;
   return { messages: rows.slice(0, limit).map(rowToSummary), hasMore };
+}
+
+export function countCombinedByRules(rules: ViewRule[]): { total: number; unread: number } {
+  if (rules.length === 0) return { total: 0, unread: 0 };
+  const d = getDb();
+  const { clause, params } = rulesWhere(rules);
+
+  const row = d
+    .prepare(`
+      SELECT COUNT(*) AS total,
+             COALESCE(SUM(CASE WHEN EXISTS (
+               SELECT 1 FROM message_labels ml
+                WHERE ml.accountId = m.accountId AND ml.messageId = m.id AND ml.labelId = 'UNREAD'
+             ) THEN 1 ELSE 0 END), 0) AS unread
+        FROM messages m
+       WHERE ${clause}
+    `)
+    .get(...params) as { total: number; unread: number } | undefined;
+
+  return { total: row?.total ?? 0, unread: row?.unread ?? 0 };
 }
 
 // ── Labels ──────────────────────────────────────────────────────────────────

@@ -7,7 +7,7 @@ import { ComposeDialog } from "./gmail/compose-dialog";
 import { useCredentials, useAccounts, useAddAccount, useAccountSync } from "./gmail/hooks";
 import {
   useMailViews,
-  resolveSelections,
+  resolveRules,
   loadLastLocation,
   saveLastLocation,
   COMBINED_ACCOUNT_ID,
@@ -91,14 +91,14 @@ export function HomeView() {
   // refreshes all accounts via its own list handler (sentinel isn't a real account).
   const syncStatus = useAccountSync(isCombined ? null : effectiveAccountId);
 
-  // Resolve the selected combined view to concrete (account, label) selections.
+  // Resolve the selected combined view to concrete per-account rules.
   const combined = (() => {
     if (!isCombined) return null;
     const view = views.find((v) => v.id === selectedLabelId) ?? views[0];
     return {
       viewId: view?.id ?? INBOX_VIEW_ID,
       name: view?.name ?? "Inbox",
-      selections: view ? resolveSelections(view, accounts) : [],
+      rules: view ? resolveRules(view, accounts) : [],
     };
   })();
 
