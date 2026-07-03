@@ -688,6 +688,7 @@ export function registerGmailHandlers(): void {
         bcc: asString(p?.bcc),
         subject,
         body,
+        bodyHtml: asString(p?.bodyHtml),
         threadId,
         inReplyTo,
         references,

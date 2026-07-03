@@ -12,6 +12,7 @@ import { ComposeDialog } from "./compose-dialog";
 import { parseAddressEntry, splitAddressList } from "./address";
 import { getAccountColor } from "./account-style";
 import { IconBtn, HintTooltip } from "./slack-ui";
+import { RichTextArea, type RichTextRef } from "./rich-text";
 import type { GmailAccount } from "./types";
 
 /**
@@ -37,7 +38,7 @@ export function NewMessageView({
   const [text, setText] = useState("");
   const [expanded, setExpanded] = useState(false);
   const toRef = useRef<HTMLInputElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<RichTextRef>(null);
   const sendMessage = useSendMessage();
 
   const fromAccount = accounts.find((a) => a.id === fromId) ?? accounts[0];
@@ -63,13 +64,6 @@ export function NewMessageView({
     return () => window.removeEventListener("keydown", down, true);
   }, [onClose]);
 
-  const autoGrow = () => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
-  };
-
   const hasRecipient = splitAddressList(to).some((e) => parseAddressEntry(e).email.includes("@"));
   const canSend =
     !sendMessage.isPending &&
@@ -86,7 +80,8 @@ export function NewMessageView({
         to,
         cc: cc.trim() || undefined,
         subject: subject.trim() || "(no subject)",
-        body: text,
+        body: editorRef.current?.getText() ?? text,
+        bodyHtml: `<div dir="auto">${editorRef.current?.getHTML() ?? ""}</div>`,
       })
       .then(() => {
         toast.success("Sent");
@@ -225,17 +220,12 @@ export function NewMessageView({
             />
           </div>
 
-          <textarea
-            ref={textareaRef}
-            value={text}
-            rows={3}
-            onChange={(e) => {
-              setText(e.target.value);
-              autoGrow();
-            }}
+          <RichTextArea
+            ref={editorRef}
             placeholder="Write your message…"
-            aria-label="Message"
-            className="sk-scroll max-h-60 w-full resize-none bg-transparent px-3 pt-2.5 text-[15px] leading-relaxed text-(--sk-strong) outline-none placeholder:text-(--sk-faint)"
+            ariaLabel="Message"
+            onTextChange={setText}
+            minHeightClass="min-h-[72px]"
           />
           <div className="flex items-center gap-1 px-2 pb-1.5">
             <HintTooltip label="Open full composer" hint="Bcc, attachments, drafts…">

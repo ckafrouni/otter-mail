@@ -622,6 +622,8 @@ interface OutgoingMessage {
   bcc?: string;
   subject: string;
   body: string;
+  /** When present, the message is sent as multipart/alternative (text + html). */
+  bodyHtml?: string;
   inReplyTo?: string;
   references?: string;
   attachments?: ComposeAttachment[];
@@ -649,14 +651,33 @@ function buildMime(params: OutgoingMessage): string {
     bodyBase64,
   ];
 
+  // Rich mail: text/plain + text/html under multipart/alternative.
+  let bodyEntity = textPart;
+  if (params.bodyHtml) {
+    const altBoundary = `glaze_alt_${randomBytes(12).toString("hex")}`;
+    const htmlPart = [
+      "Content-Type: text/html; charset=UTF-8",
+      "Content-Transfer-Encoding: base64",
+      "",
+      wrapBase64(Buffer.from(params.bodyHtml, "utf-8").toString("base64")),
+    ];
+    bodyEntity = [
+      `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
+      "",
+      [`--${altBoundary}`, ...textPart].join(CRLF),
+      [`--${altBoundary}`, ...htmlPart].join(CRLF),
+      `--${altBoundary}--`,
+    ];
+  }
+
   const attachments = params.attachments ?? [];
   if (attachments.length === 0) {
-    return [...headers, ...textPart].join(CRLF);
+    return [...headers, ...bodyEntity].join(CRLF);
   }
 
   const boundary = `glaze_${randomBytes(12).toString("hex")}`;
   headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
-  const parts: string[] = [[`--${boundary}`, ...textPart].join(CRLF)];
+  const parts: string[] = [[`--${boundary}`, ...bodyEntity].join(CRLF)];
   for (const att of attachments) {
     parts.push(
       [
@@ -684,6 +705,7 @@ export async function sendMessage(
     bcc?: string;
     subject: string;
     body: string;
+    bodyHtml?: string;
     threadId?: string;
     inReplyTo?: string;
     references?: string;
@@ -700,6 +722,7 @@ export async function sendMessage(
     bcc: params.bcc,
     subject: params.subject,
     body: params.body,
+    bodyHtml: params.bodyHtml,
     inReplyTo: params.inReplyTo,
     references: params.references,
     attachments: params.attachments,

@@ -65,6 +65,8 @@ export type SendMessageParams = {
   bcc?: string;
   subject: string;
   body: string;
+  /** HTML alternative body — sent as multipart/alternative when present. */
+  bodyHtml?: string;
   /** Threads the sent message into an existing conversation (replies). */
   threadId?: string;
   /** Original message a reply targets; backend resolves In-Reply-To/References. */

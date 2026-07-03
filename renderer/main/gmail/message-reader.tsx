@@ -44,6 +44,7 @@ import { LabelPickerMenu } from "./label-picker-menu";
 import { parseAddressEntry, splitAddressList } from "./address";
 import { isTypingTarget } from "./keyboard";
 import { IconBtn, HintTooltip } from "./slack-ui";
+import { RichTextArea, textToHtml, type RichTextRef } from "./rich-text";
 import type {
   ComposeAttachment,
   GmailLabel,
@@ -676,7 +677,7 @@ function InlineComposer({
   const recipientsDirty = useRef(false);
   // null = still fetching the original files (forward only).
   const [forwardAttachments, setForwardAttachments] = useState<ComposeAttachment[] | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<RichTextRef>(null);
   const toRef = useRef<HTMLInputElement>(null);
   const sendMessage = useSendMessage();
   const accountsQuery = useAccounts();
@@ -742,15 +743,8 @@ function InlineComposer({
 
   useEffect(() => {
     if (mode === "forward") toRef.current?.focus();
-    else textareaRef.current?.focus();
+    else editorRef.current?.focus();
   }, [mode]);
-
-  const autoGrow = () => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
-  };
 
   const subject =
     mode === "forward"
@@ -771,8 +765,11 @@ function InlineComposer({
 
   const handleSend = () => {
     if (!canSend) return;
-    const body =
-      mode === "forward" ? `${text}${forwardBlock(lastDetail ?? lastMessage)}` : text;
+    const plain = editorRef.current?.getText() ?? text;
+    const html = editorRef.current?.getHTML() ?? textToHtml(text);
+    const quoted = mode === "forward" ? forwardBlock(lastDetail ?? lastMessage) : "";
+    const body = `${plain}${quoted}`;
+    const bodyHtml = `<div dir="auto">${html}${textToHtml(quoted)}</div>`;
     console.log("[MessageReader:inlineSend]", { mode, threadId });
     sendMessage
       .mutateAsync({
@@ -781,6 +778,7 @@ function InlineComposer({
         cc: cc.trim() || undefined,
         subject,
         body,
+        bodyHtml,
         ...(mode === "forward"
           ? {
               attachments:
@@ -878,17 +876,11 @@ function InlineComposer({
             />
           </div>
         ) : null}
-        <textarea
-          ref={textareaRef}
-          value={text}
-          rows={1}
-          onChange={(e) => {
-            setText(e.target.value);
-            autoGrow();
-          }}
+        <RichTextArea
+          ref={editorRef}
           placeholder={placeholder}
-          aria-label={INLINE_MODE_LABEL[mode]}
-          className="sk-scroll max-h-48 w-full resize-none bg-transparent px-3 pt-2.5 text-[15px] leading-relaxed text-(--sk-strong) outline-none placeholder:text-(--sk-faint)"
+          ariaLabel={INLINE_MODE_LABEL[mode]}
+          onTextChange={setText}
         />
         <div className="flex items-center gap-1 px-2 pb-1.5">
           <HintTooltip label="Open full composer" hint="Bcc, attachments…">

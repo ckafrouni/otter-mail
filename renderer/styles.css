@@ -71,6 +71,40 @@
   --sk-badge-fg: #1d1c1d;
 }
 
+/* Rich-text composer content (contentEditable) */
+[data-rt][data-empty="true"]::before {
+  content: attr(data-placeholder);
+  color: var(--sk-faint);
+  pointer-events: none;
+  display: block;
+  position: absolute;
+}
+[data-rt] {
+  position: relative;
+  word-break: break-word;
+}
+[data-rt] a {
+  color: var(--sk-blue);
+  text-decoration: underline;
+}
+[data-rt] ul,
+[data-rt] ol {
+  padding-left: 1.4em;
+  margin: 0.15em 0;
+}
+[data-rt] ul {
+  list-style: disc;
+}
+[data-rt] ol {
+  list-style: decimal;
+}
+[data-rt] blockquote {
+  border-left: 3px solid var(--sk-border);
+  padding-left: 0.75em;
+  margin: 0.15em 0;
+  color: var(--sk-muted);
+}
+
 /* Overlay scrollbars for the custom panes. */
 .sk-scroll {
   scrollbar-width: thin;
