@@ -70,6 +70,20 @@ export async function syncAllAccounts(): Promise<void> {
   }
 }
 
+let autoSyncTimer: ReturnType<typeof setInterval> | null = null;
+
+/** (Re)start the periodic pull-sync timer; 0 disables it. */
+export function configureAutoSync(intervalSeconds: number): void {
+  if (autoSyncTimer) {
+    clearInterval(autoSyncTimer);
+    autoSyncTimer = null;
+  }
+  if (intervalSeconds > 0) {
+    autoSyncTimer = setInterval(() => void syncAllAccounts(), intervalSeconds * 1000);
+  }
+  logger.info("mail-sync", `auto-sync ${intervalSeconds > 0 ? `every ${intervalSeconds}s` : "disabled"}`);
+}
+
 async function runSync(accountId: string): Promise<void> {
   const state = store.getSyncState(accountId);
   update(accountId, { syncing: true, error: null, synced: 0, phase: "labels" });

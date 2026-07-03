@@ -5,6 +5,11 @@ import {
   RadioGroup,
   RadioGroupItem,
   ScrollArea,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Toolbar,
   ToolbarRow,
   ToolbarContent,
@@ -31,6 +36,16 @@ import { gmailApi } from "../main/gmail/api";
 import { useAccounts, useUpdateAccount } from "../main/gmail/hooks";
 import { ACCOUNT_COLOR_PALETTE, getAccountColor, getAccountDisplayName } from "../main/gmail/account-style";
 import type { GmailAccount } from "../main/gmail/types";
+
+/** Auto-sync cadence choices in seconds; 0 = manual only. */
+const SYNC_INTERVAL_OPTIONS = [
+  { value: 0, label: "Manually" },
+  { value: 15, label: "Every 15 seconds" },
+  { value: 30, label: "Every 30 seconds" },
+  { value: 60, label: "Every minute" },
+  { value: 300, label: "Every 5 minutes" },
+  { value: 900, label: "Every 15 minutes" },
+];
 
 function AccountRow({ account }: { account: GmailAccount }) {
   const updateAccount = useUpdateAccount();
@@ -102,6 +117,8 @@ export function SettingsView() {
   const [hasCredentials, setHasCredentials] = useState(false);
   const [isSavingCredentials, setIsSavingCredentials] = useState(false);
 
+  const [syncInterval, setSyncInterval] = useState<number | null>(null);
+
   // Close settings window on Escape, unless an interactive element is focused or a popover is open
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -153,10 +170,33 @@ export function SettingsView() {
     }
   };
 
+  const loadSyncSettings = async () => {
+    console.log("[SettingsView:loadSyncSettings]");
+    try {
+      const settings = await gmailApi.getSyncSettings();
+      setSyncInterval(settings.syncIntervalSeconds);
+    } catch (error) {
+      toast.error(`Failed to load sync settings: ${error}`);
+    }
+  };
+
   useEffect(() => {
     void refreshThemeInfo();
     void loadCredentials();
+    void loadSyncSettings();
   }, []);
+
+  const handleSyncIntervalChange = async (value: string) => {
+    const seconds = Number(value);
+    setSyncInterval(seconds);
+    console.log("[SettingsView:setSyncInterval]", { seconds });
+    try {
+      await gmailApi.setSyncSettings({ syncIntervalSeconds: seconds });
+    } catch (error) {
+      toast.error(`Failed to save sync setting: ${error}`);
+      void loadSyncSettings();
+    }
+  };
 
   const handleThemeChange = async (value: string) => {
     const source = value as "system" | "light" | "dark";
@@ -249,6 +289,26 @@ export function SettingsView() {
                       Dark
                     </Label>
                   </RadioGroup>
+                </Field>
+                <Field orientation="horizontal">
+                  <FieldContent>
+                    <FieldLabel htmlFor="syncInterval">Check for new mail</FieldLabel>
+                  </FieldContent>
+                  <Select
+                    value={syncInterval != null ? String(syncInterval) : undefined}
+                    onValueChange={(value) => void handleSyncIntervalChange(value)}
+                  >
+                    <SelectTrigger id="syncInterval" className="w-44">
+                      <SelectValue placeholder="Loading…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SYNC_INTERVAL_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={String(option.value)}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </Field>
               </FieldGroup>
             </FieldSet>

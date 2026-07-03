@@ -30,6 +30,7 @@ import {
 } from "../services/gmail-api.js";
 import * as mailStore from "../services/mail-store.js";
 import * as mailSync from "../services/mail-sync.js";
+import { getSettings, updateSettings } from "../services/settings-store.js";
 
 const LOCAL_PAGE_SIZE = 50;
 
@@ -390,6 +391,35 @@ export function registerGmailHandlers(): void {
       return mailSync.getSyncStatus(accountId);
     } catch (err) {
       console.log("[gmail:getSyncStatus] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:getSyncSettings — read the periodic pull-sync configuration
+  ipcMain.handle("gmail:getSyncSettings", async () => {
+    try {
+      return await getSettings();
+    } catch (err) {
+      console.log("[gmail:getSyncSettings] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:setSyncSettings — persist the interval and restart the timer
+  ipcMain.handle("gmail:setSyncSettings", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:setSyncSettings]", { syncIntervalSeconds: p?.syncIntervalSeconds });
+    try {
+      const raw = p?.syncIntervalSeconds;
+      if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) {
+        throw new Error('Invalid parameter: "syncIntervalSeconds" must be a non-negative number.');
+      }
+      const syncIntervalSeconds = Math.min(Math.round(raw), 24 * 60 * 60);
+      const settings = await updateSettings({ syncIntervalSeconds });
+      mailSync.configureAutoSync(settings.syncIntervalSeconds);
+      return settings;
+    } catch (err) {
+      console.log("[gmail:setSyncSettings] error", { error: String(err) });
       throw err;
     }
   });

@@ -569,7 +569,8 @@ export function useAccountSync(accountId: string | null): SyncStatus | null {
     queryKey: ["gmail:syncStatus", accountId],
     queryFn: () => gmailApi.getSyncStatus(accountId!),
     enabled: accountId != null,
-    refetchInterval: (query) => (query.state.data?.syncing ? 1500 : false),
+    // Idle poll (vs false) so timer-driven backend syncs are still noticed.
+    refetchInterval: (query) => (query.state.data?.syncing ? 1500 : 10_000),
   });
 
   // Start a sync whenever the active account changes.
@@ -581,20 +582,23 @@ export function useAccountSync(accountId: string | null): SyncStatus | null {
     });
   }, [accountId, qc]);
 
-  // Refresh views as sync progresses or finishes.
-  const prevRef = useRef<{ synced: number; syncing: boolean } | null>(null);
+  // Refresh views as sync progresses or finishes (lastSyncAt catches syncs
+  // that start and finish entirely between polls).
+  const prevRef = useRef<{ synced: number; syncing: boolean; lastSyncAt: number | null } | null>(null);
   useEffect(() => {
     const status = statusQuery.data;
     if (!status || !accountId) return;
     const prev = prevRef.current;
     const progressed =
       prev != null &&
-      (status.synced !== prev.synced || (prev.syncing && !status.syncing));
+      (status.synced !== prev.synced ||
+        (prev.syncing && !status.syncing) ||
+        status.lastSyncAt !== prev.lastSyncAt);
     if (progressed) {
       void qc.invalidateQueries({ queryKey: ["gmail:messages", accountId] });
       void qc.invalidateQueries({ queryKey: queryKeys.labels(accountId) });
     }
-    prevRef.current = { synced: status.synced, syncing: status.syncing };
+    prevRef.current = { synced: status.synced, syncing: status.syncing, lastSyncAt: status.lastSyncAt };
   }, [statusQuery.data, accountId, qc]);
 
   return statusQuery.data ?? null;
@@ -615,7 +619,7 @@ export function useSyncAccountLabels(accountIds: string[], enabled: boolean): vo
       queryFn: () => gmailApi.getSyncStatus(id),
       enabled,
       refetchInterval: (query: { state: { data?: SyncStatus } }) =>
-        query.state.data?.syncing ? 1500 : false,
+        query.state.data?.syncing ? 1500 : 10_000,
     })),
   });
 
@@ -627,27 +631,42 @@ export function useSyncAccountLabels(accountIds: string[], enabled: boolean): vo
     }
   }, [enabled, accountIdsKey]);
 
-  const prevRef = useRef<Map<string, { synced: number; syncing: boolean }>>(new Map());
+  const prevRef = useRef<Map<string, { synced: number; syncing: boolean; lastSyncAt: number | null }>>(
+    new Map(),
+  );
   const progressKey = results
     .map((r) => {
       const s = r.data as SyncStatus | undefined;
-      return s ? `${s.synced}:${s.syncing}` : "";
+      return s ? `${s.synced}:${s.syncing}:${s.lastSyncAt ?? 0}` : "";
     })
     .join(",");
   useEffect(() => {
     if (!enabled) return;
+    let anyProgressed = false;
     results.forEach((r, i) => {
       const accountId = accountIds[i];
       const status = r.data as SyncStatus | undefined;
       if (!status) return;
       const prev = prevRef.current.get(accountId);
       const progressed =
-        prev != null && (status.synced !== prev.synced || (prev.syncing && !status.syncing));
+        prev != null &&
+        (status.synced !== prev.synced ||
+          (prev.syncing && !status.syncing) ||
+          status.lastSyncAt !== prev.lastSyncAt);
       if (progressed) {
+        anyProgressed = true;
         void qc.invalidateQueries({ queryKey: queryKeys.labels(accountId) });
       }
-      prevRef.current.set(accountId, { synced: status.synced, syncing: status.syncing });
+      prevRef.current.set(accountId, {
+        synced: status.synced,
+        syncing: status.syncing,
+        lastSyncAt: status.lastSyncAt,
+      });
     });
+    // The combined list isn't reachable by any per-account invalidation.
+    if (anyProgressed) {
+      void qc.invalidateQueries({ queryKey: ["gmail:combinedMessages"] });
+    }
   }, [progressKey, enabled, accountIdsKey, qc]);
 }
 

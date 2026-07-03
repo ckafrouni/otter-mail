@@ -64,6 +64,8 @@ export type UpdateAccountParams = {
   color?: string;
 };
 
+export type SyncSettings = { syncIntervalSeconds: number };
+
 export const gmailApi = {
   getCredentials: (): Promise<CredentialsResult> => ipc("gmail:getCredentials"),
 
@@ -113,4 +115,9 @@ export const gmailApi = {
 
   getSyncStatus: (accountId: string): Promise<SyncStatus> =>
     ipc("gmail:getSyncStatus", { accountId }),
+
+  getSyncSettings: (): Promise<SyncSettings> => ipc("gmail:getSyncSettings"),
+
+  setSyncSettings: (params: SyncSettings): Promise<SyncSettings> =>
+    ipc("gmail:setSyncSettings", params),
 };
