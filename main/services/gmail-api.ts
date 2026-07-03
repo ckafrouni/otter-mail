@@ -210,14 +210,22 @@ export async function fetchMetadataForIds(
   for (let i = 0; i < ids.length; i += CONCURRENCY) {
     const batch = ids.slice(i, i + CONCURRENCY);
     const fetched = await Promise.all(
-      batch.map((id) =>
-        gmailFetch(
-          accountId,
-          `/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=Message-ID&metadataHeaders=References`,
-        ) as Promise<RawMessageMetadata>,
-      ),
+      batch.map(async (id) => {
+        try {
+          return (await gmailFetch(
+            accountId,
+            `/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=Message-ID&metadataHeaders=References`,
+          )) as RawMessageMetadata;
+        } catch (err) {
+          // A message can be purged between the history feed listing it and this
+          // fetch; a dead id must not kill the sync (the cursor would never
+          // advance and every tick would replay the same failure).
+          if (err instanceof Error && err.message.includes("Gmail API error: 404")) return null;
+          throw err;
+        }
+      }),
     );
-    results.push(...fetched.map(mapMessageSummary));
+    results.push(...fetched.filter((m): m is RawMessageMetadata => m !== null).map(mapMessageSummary));
   }
 
   return results;
