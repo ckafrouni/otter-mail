@@ -4,12 +4,12 @@ import {
   Field,
   Input,
   Checkbox,
-  ScrollArea,
   Text,
   EmptyState,
 } from "@glaze/core/components";
 import { useAllAccountLabels } from "./hooks";
 import { defaultSelectionsFor } from "./custom-views";
+import { buildLabelTree, flattenLabelTree, type LabelTreeNode } from "./label-tree";
 import type { GmailAccount, GmailLabel, LabelSelection, MailView } from "./types";
 
 type ViewEditorDialogProps = {
@@ -50,22 +50,55 @@ function labelDisplayName(label: GmailLabel): string {
   return label.name;
 }
 
-function sortLabels(labels: GmailLabel[]): GmailLabel[] {
-  const system = labels
+function sortSystemLabels(labels: GmailLabel[]): GmailLabel[] {
+  return labels
     .filter((l) => l.type === "system")
     .sort((a, b) => {
       const ai = SYSTEM_ORDER.indexOf(a.id);
       const bi = SYSTEM_ORDER.indexOf(b.id);
       return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
     });
-  const user = labels
-    .filter((l) => l.type === "user")
-    .sort((a, b) => a.name.localeCompare(b.name));
-  return [...system, ...user];
+}
+
+// User labels nest by "/" in the name — flatten the tree into a depth-annotated,
+// pre-order list so the flat checkbox list can indent children under their parent.
+function userLabelRows(labels: GmailLabel[]): { node: LabelTreeNode; depth: number }[] {
+  return flattenLabelTree(buildLabelTree(labels.filter((l) => l.type === "user")));
 }
 
 function hasSelection(list: LabelSelection[], accountId: string, labelId: string): boolean {
   return list.some((s) => s.accountId === accountId && s.labelId === labelId);
+}
+
+// Indent depth 16px per level, on top of the row's base 8px inset.
+function LabelRow({
+  displayName,
+  color,
+  depth,
+  checked,
+  onToggle,
+}: {
+  displayName: string;
+  color?: string;
+  depth: number;
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <label
+      className="flex items-center gap-2.5 rounded-control py-1.5 pr-2 hover:bg-control-subtle cursor-pointer"
+      style={{ paddingLeft: `${8 + depth * 16}px` }}
+    >
+      <Checkbox checked={checked} onCheckedChange={onToggle} />
+      <span
+        className={["size-2.5 shrink-0 rounded-full", color ? "" : "bg-foreground-40"].join(" ")}
+        style={color ? { backgroundColor: color } : undefined}
+      />
+      <Text variant="small" truncate className="flex-1 min-w-0">
+        {displayName}
+      </Text>
+    </label>
+  );
 }
 
 export function ViewEditorDialog({
@@ -118,7 +151,8 @@ export function ViewEditorDialog({
       accountLabels.map((entry) => ({
         ...entry,
         account: accounts.find((a) => a.id === entry.accountId) ?? null,
-        labels: sortLabels(entry.labels),
+        systemLabels: sortSystemLabels(entry.labels),
+        userRows: userLabelRows(entry.labels),
       })),
     [accountLabels, accounts],
   );
@@ -171,7 +205,7 @@ export function ViewEditorDialog({
 
         <div className="flex flex-col gap-1.5">
           <Text variant="small-strong">Labels</Text>
-          {anyLoading && sortedByAccount.every((a) => a.labels.length === 0) ? (
+          {anyLoading && sortedByAccount.every((a) => a.systemLabels.length === 0 && a.userRows.length === 0) ? (
             <Text variant="small" color="tertiary">
               Loading labels…
             </Text>
@@ -182,7 +216,7 @@ export function ViewEditorDialog({
               description="Connect an account to pick labels."
             />
           ) : (
-            <ScrollArea className="max-h-72 rounded-control border border-separator">
+            <div className="max-h-72 overflow-y-auto rounded-control border border-separator">
               <div className="flex flex-col gap-2 p-1.5">
                 {sortedByAccount.map((entry) => (
                   <div key={entry.accountId} className="flex flex-col">
@@ -193,35 +227,43 @@ export function ViewEditorDialog({
                     >
                       {entry.account?.email ?? entry.accountId}
                     </Text>
-                    {entry.labels.map((label) => (
-                      <label
+                    {entry.systemLabels.map((label) => (
+                      <LabelRow
                         key={label.id}
-                        className="flex items-center gap-2.5 rounded-control px-2 py-1.5 hover:bg-control-subtle cursor-pointer"
-                      >
-                        <Checkbox
-                          checked={hasSelection(selected, entry.accountId, label.id)}
-                          onCheckedChange={() => toggle(entry.accountId, label.id)}
-                        />
-                        <span
-                          className={[
-                            "size-2.5 shrink-0 rounded-full",
-                            label.color ? "" : "bg-foreground-40",
-                          ].join(" ")}
-                          style={
-                            label.color
-                              ? { backgroundColor: label.color.backgroundColor }
-                              : undefined
-                          }
-                        />
-                        <Text variant="small" truncate className="flex-1 min-w-0">
-                          {labelDisplayName(label)}
-                        </Text>
-                      </label>
+                        displayName={labelDisplayName(label)}
+                        color={label.color?.backgroundColor}
+                        depth={0}
+                        checked={hasSelection(selected, entry.accountId, label.id)}
+                        onToggle={() => toggle(entry.accountId, label.id)}
+                      />
                     ))}
+                    {entry.userRows.map(({ node, depth }) =>
+                      node.label ? (
+                        <LabelRow
+                          key={node.key}
+                          displayName={node.segment}
+                          color={node.label.color?.backgroundColor}
+                          depth={depth}
+                          checked={hasSelection(selected, entry.accountId, node.label.id)}
+                          onToggle={() => toggle(entry.accountId, node.label!.id)}
+                        />
+                      ) : (
+                        <Text
+                          key={node.key}
+                          variant="small"
+                          color="tertiary"
+                          truncate
+                          className="py-1.5 pr-2"
+                          style={{ paddingLeft: `${8 + depth * 16}px` }}
+                        >
+                          {node.segment}
+                        </Text>
+                      ),
+                    )}
                   </div>
                 ))}
               </div>
-            </ScrollArea>
+            </div>
           )}
         </div>
       </div>

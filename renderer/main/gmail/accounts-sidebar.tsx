@@ -47,6 +47,7 @@ import {
 import type { GmailLabel, LabelSelection, MailView } from "./types";
 import { ViewEditorDialog } from "./view-editor-dialog";
 import { COMBINED_ACCOUNT_ID } from "./custom-views";
+import { buildLabelTree, type LabelTreeNode } from "./label-tree";
 
 const SYSTEM_LABEL_MAP: Record<string, { name: string; icon: React.ReactNode }> = {
   INBOX: { name: "Inbox", icon: <InboxIcon className="size-4" /> },
@@ -55,45 +56,6 @@ const SYSTEM_LABEL_MAP: Record<string, { name: string; icon: React.ReactNode }> 
   DRAFT: { name: "Drafts", icon: <FileIcon className="size-4" /> },
   IMPORTANT: { name: "Important", icon: <BookmarkIcon className="size-4" /> },
 };
-
-type LabelTreeNode = {
-  key: string;
-  segment: string;
-  label?: GmailLabel;
-  children: LabelTreeNode[];
-};
-
-// Gmail nests user labels by "/" in the name (e.g. "99/personal" is a child of "99").
-// Build a tree from the flat list so the sidebar can render it with proper disclosure nesting.
-function buildLabelTree(labels: GmailLabel[]): LabelTreeNode[] {
-  const root: LabelTreeNode[] = [];
-  const nodesByPath = new Map<string, LabelTreeNode>();
-
-  for (const label of labels) {
-    const parts = label.name.split("/").filter(Boolean);
-    let siblings = root;
-    let path = "";
-    parts.forEach((part, i) => {
-      path = path ? `${path}/${part}` : part;
-      let node = nodesByPath.get(path);
-      if (!node) {
-        node = { key: path, segment: part, children: [] };
-        nodesByPath.set(path, node);
-        siblings.push(node);
-      }
-      if (i === parts.length - 1) node.label = label;
-      siblings = node.children;
-    });
-  }
-
-  sortLabelTree(root);
-  return root;
-}
-
-function sortLabelTree(nodes: LabelTreeNode[]): void {
-  nodes.sort((a, b) => a.segment.localeCompare(b.segment));
-  for (const node of nodes) sortLabelTree(node.children);
-}
 
 // Gmail's own label icon is a solid filled tag — colored per label when Gmail
 // has a color set, otherwise a neutral solid tag (via the design system's
