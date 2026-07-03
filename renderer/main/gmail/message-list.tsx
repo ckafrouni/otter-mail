@@ -13,7 +13,7 @@ import {
   EmptyState,
   Text,
 } from "@glaze/core/components";
-import { ArchiveIcon, CircleDotIcon, StarIcon, StarOffIcon, Trash2Icon } from "lucide-react";
+import { ArchiveIcon, CircleDotIcon, StarIcon, StarOffIcon, TagIcon, Trash2Icon } from "lucide-react";
 import {
   useMessages,
   useCombinedMessages,
@@ -27,6 +27,7 @@ import {
   useSyncAccountLabels,
 } from "./hooks";
 import { LabelChip } from "./label-chip";
+import { LabelPickerMenu } from "./label-picker-menu";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
 import { SYSTEM_LABEL_NAMES, labelDisplayName } from "./label-names";
 import type { GmailAccount, GmailLabel, GmailMessageSummary, SyncStatus, ViewRule } from "./types";
@@ -292,7 +293,7 @@ function MessageRow({
           </button>
         ) : (
           /* Hover-revealed quick actions */
-          <div className="shrink-0 mt-0.5 flex items-center gap-1 max-w-0 opacity-0 overflow-hidden group-hover:max-w-[76px] group-hover:opacity-100 transition-all duration-150">
+          <div className="shrink-0 mt-0.5 flex items-center gap-1 max-w-0 opacity-0 overflow-hidden group-hover:max-w-[100px] group-hover:opacity-100 transition-all duration-150">
             <button
               type="button"
               onClick={handleStarToggle}
@@ -304,6 +305,24 @@ function MessageRow({
             >
               <StarOffIcon className="size-4" />
             </button>
+            <LabelPickerMenu
+              accountId={ownerAccountId}
+              messageId={message.id}
+              labelIds={message.labelIds}
+            >
+              <button
+                type="button"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                className={[
+                  "transition-colors",
+                  selected ? "text-white/90 hover:text-white" : "text-tertiary hover:text-primary",
+                ].join(" ")}
+                aria-label="Labels"
+              >
+                <TagIcon className="size-4" />
+              </button>
+            </LabelPickerMenu>
             <button
               type="button"
               onClick={handleArchive}

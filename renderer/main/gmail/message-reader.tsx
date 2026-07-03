@@ -23,6 +23,7 @@ import {
   ReplyAllIcon,
   ForwardIcon,
   DownloadIcon,
+  TagIcon,
 } from "lucide-react";
 import {
   useAccounts,
@@ -38,6 +39,7 @@ import {
 import { gmailApi } from "./api";
 import { ComposeDialog, type ComposePrefill } from "./compose-dialog";
 import { LabelChip } from "./label-chip";
+import { LabelPickerMenu } from "./label-picker-menu";
 import { parseAddressEntry, splitAddressList } from "./address";
 import type {
   ComposeAttachment,
@@ -605,6 +607,15 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
         >
           <ForwardIcon className="size-4.5" />
         </Button>
+        <LabelPickerMenu
+          accountId={accountId}
+          messageId={message.id}
+          labelIds={message.labelIds}
+        >
+          <Button variant="glass" size="large" iconOnly aria-label="Labels">
+            <TagIcon className="size-4.5" />
+          </Button>
+        </LabelPickerMenu>
         <Button
           variant="glass"
           size="large"
