@@ -327,15 +327,14 @@ function MessageRow({
             {message.subject || "(no subject)"}
           </Text>
           <Text variant="mini" color={selected ? undefined : "tertiary"} truncate style={onAccentFaint}>
-            {message.snippet}
+            {message.snippet || " "}
           </Text>
-          {messageLabels.length > 0 ? (
-            <div className="flex items-center gap-1 flex-wrap pt-0.5">
-              {messageLabels.map((label) => (
-                <LabelChip key={label.id} label={label} />
-              ))}
-            </div>
-          ) : null}
+          {/* Fixed-height single-line chip strip so every row measures the same. */}
+          <div className="flex items-center gap-1 h-5 mt-0.5 overflow-hidden">
+            {messageLabels.map((label) => (
+              <LabelChip key={label.id} label={label} />
+            ))}
+          </div>
         </div>
 
         {message.starred ? (
