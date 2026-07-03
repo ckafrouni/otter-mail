@@ -464,25 +464,31 @@ function CollapsedRow({
   onExpand: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onExpand}
-      className="flex w-full items-center gap-2.5 px-5 py-1.5 text-left hover:bg-(--sk-hover)"
-    >
-      <SenderAvatar name={summary.fromName} email={summary.fromEmail} size="sm" />
-      <span
-        className={[
-          "shrink-0 text-[15px] leading-snug",
-          summary.unread ? "font-bold text-(--sk-strong)" : "font-semibold text-(--sk-text)",
-        ].join(" ")}
+    <div className="px-5 py-0.5">
+      <button
+        type="button"
+        onClick={onExpand}
+        aria-label="Expand message"
+        className="flex w-full items-center gap-2.5 rounded-lg border border-(--sk-border) bg-(--sk-ctl) px-3 py-2 text-left hover:bg-(--sk-ctl-hover)"
       >
-        {summary.fromName || summary.fromEmail}
-      </span>
-      <span className="min-w-0 flex-1 truncate text-[13px] text-(--sk-faint)">{summary.snippet}</span>
-      <span className="shrink-0 text-[11px] tabular-nums text-(--sk-faint)">
-        {formatTime(summary.date)}
-      </span>
-    </button>
+        <SenderAvatar name={summary.fromName} email={summary.fromEmail} size="sm" />
+        <span
+          className={[
+            "shrink-0 text-[13px] leading-snug",
+            summary.unread ? "font-bold text-(--sk-strong)" : "font-semibold text-(--sk-text)",
+          ].join(" ")}
+        >
+          {summary.fromName || summary.fromEmail}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[13px] text-(--sk-faint)">
+          {summary.snippet}
+        </span>
+        <span className="shrink-0 text-[11px] tabular-nums text-(--sk-faint)">
+          {formatTime(summary.date)}
+        </span>
+        <ChevronDownIcon className="size-3.5 shrink-0 -rotate-90 text-(--sk-faint)" />
+      </button>
+    </div>
   );
 }
 
@@ -544,6 +550,9 @@ function ExpandedRow({
           >
             {formatTime(summary.date)}
           </span>
+          {onCollapse ? (
+            <ChevronDownIcon className="size-3.5 shrink-0 rotate-180 self-center text-(--sk-faint) opacity-0 group-hover:opacity-100" />
+          ) : null}
         </button>
         <div className="truncate text-[12px] text-(--sk-faint)" title={`to ${summary.to}`}>
           to {summary.to}
@@ -1141,10 +1150,15 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
           {rows.map((m, i) => {
             const prev = rows[i - 1];
             const newDay = !prev || dayKey(prev.date) !== dayKey(m.date);
+            const isExpanded = expandedIds.has(m.id) || rows.length === 1;
+            const prevExpanded = prev ? expandedIds.has(prev.id) : false;
             return (
               <div key={m.id}>
                 {newDay ? <DayDivider timestamp={m.date} /> : null}
-                {expandedIds.has(m.id) || rows.length === 1 ? (
+                {!newDay && isExpanded && prevExpanded ? (
+                  <div className="mx-5 my-1 border-t border-(--sk-border)" />
+                ) : null}
+                {isExpanded ? (
                   <ExpandedRow
                     accountId={accountId}
                     summary={m}
