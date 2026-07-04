@@ -17,9 +17,11 @@ import {
   listMessageIdsPage,
   fetchMetadataForIds,
   getMessage,
+  getAttachmentData,
   listHistory,
   isHistoryExpiredError,
 } from "./gmail-api.js";
+import { hasCachedAttachment } from "./attachment-cache.js";
 import { listAccounts } from "./account-store.js";
 import * as store from "./mail-store.js";
 import { notifyNewMail, updateDockBadge } from "./notifier.js";
@@ -124,6 +126,9 @@ async function runSync(accountId: string): Promise<void> {
     // Download full bodies so the whole mailbox is readable offline.
     await backfillBodies(accountId);
 
+    // Local-first drafts: warm attachment bytes so the composer opens instantly.
+    await prefetchDraftAttachments(accountId);
+
     const now = Date.now();
     store.setSyncState(accountId, { lastSyncAt: now });
     update(accountId, {
@@ -174,6 +179,33 @@ async function fullSync(accountId: string): Promise<void> {
 
   store.setSyncState(accountId, { fullSyncDone: true, historyId: seedHistoryId });
   store.setKv(`spamTrashBackfilled:${accountId}`, "1");
+}
+
+const PREFETCH_MAX_FILE_BYTES = 15 * 1024 * 1024;
+
+/**
+ * Cache the attachment bytes of every draft (drafts are few and editing one
+ * re-uploads its files, so they must be in memory before the composer can
+ * save). Other mail keeps fetching attachments lazily — getAttachmentData
+ * write-through means anything opened once is cached from then on.
+ */
+async function prefetchDraftAttachments(accountId: string): Promise<void> {
+  for (const id of store.getMessageIdsForLabel(accountId, "DRAFT")) {
+    try {
+      let detail = store.getMessageDetail(accountId, id);
+      if (!detail) {
+        detail = await getMessage(accountId, id);
+        store.upsertMessageDetail(accountId, detail);
+      }
+      for (const att of detail.attachments) {
+        if (att.size > PREFETCH_MAX_FILE_BYTES) continue;
+        if (await hasCachedAttachment(accountId, id, att.id)) continue;
+        await getAttachmentData(accountId, id, att.id);
+      }
+    } catch (err) {
+      logger.info("mail-sync", `draft attachment prefetch skipped ${id}: ${String(err)}`);
+    }
+  }
 }
 
 async function backfillSpamTrash(accountId: string): Promise<void> {

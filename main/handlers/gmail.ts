@@ -34,6 +34,7 @@ import {
   sendMessage,
   getAttachment,
   getAttachmentData,
+  saveComposeAttachmentToTemp,
   saveAttachmentToTemp,
   pickComposeAttachments,
   fetchReplyHeaders,
@@ -825,6 +826,23 @@ export function registerGmailHandlers(): void {
       return { ok: true };
     } catch (err) {
       console.log("[gmail:openAttachment] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:openComposeAttachment — write in-memory compose bytes to temp and open
+  ipcMain.handle("gmail:openComposeAttachment", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:openComposeAttachment]", { name: p?.name });
+    try {
+      const name = assertString(p?.name, "name");
+      const base64 = assertString(p?.base64, "base64");
+      const filePath = await saveComposeAttachmentToTemp(name, base64);
+      const error = await shell.openPath(filePath);
+      if (error) throw new Error(error);
+      return { ok: true };
+    } catch (err) {
+      console.log("[gmail:openComposeAttachment] error", { error: String(err) });
       throw err;
     }
   });

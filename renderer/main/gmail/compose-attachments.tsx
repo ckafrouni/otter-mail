@@ -42,10 +42,22 @@ export function AttachmentChips({
       {attachments.map((att, i) => (
         <span
           key={`${att.name}:${i}`}
-          className="flex max-w-56 items-center gap-1.5 rounded-[4px] border border-(--te-border) bg-(--te-ctl) px-2 py-1 text-[12px] text-(--te-text)"
+          className="flex max-w-64 items-center gap-1.5 rounded-[4px] border border-(--te-border) bg-(--te-ctl) px-2 py-1 text-[12px] text-(--te-text)"
         >
-          <PaperclipIcon className="size-3 shrink-0 text-(--te-faint)" />
-          <span className="min-w-0 truncate">{att.name}</span>
+          <button
+            type="button"
+            title={att.name}
+            aria-label={`Open ${att.name}`}
+            onClick={() => {
+              void gmailApi
+                .openComposeAttachment({ name: att.name, base64: att.base64 })
+                .catch(() => toast.error("Could not open attachment"));
+            }}
+            className="flex min-w-0 items-center gap-1.5 hover:text-(--te-strong)"
+          >
+            <PaperclipIcon className="size-3 shrink-0 text-(--te-faint)" />
+            <span className="min-w-0 truncate">{att.name}</span>
+          </button>
           <span className="shrink-0 text-(--te-faint)">{formatBytes(att.size)}</span>
           <button
             type="button"

@@ -224,6 +224,9 @@ export const gmailApi = {
     params: GetAttachmentDataParams,
   ): Promise<{ base64: string; size: number }> => ipc("gmail:getAttachmentData", params),
 
+  openComposeAttachment: (params: { name: string; base64: string }): Promise<{ ok: boolean }> =>
+    ipc("gmail:openComposeAttachment", params),
+
   openAttachment: (params: AttachmentFileParams): Promise<{ ok: boolean }> =>
     ipc("gmail:openAttachment", params),
 

@@ -12,6 +12,7 @@ import { app, BrowserWindow, Menu, logger, initDevToolsButtonState } from "@glaz
 
 import { registerHandlers } from "./handlers/index.js";
 import { syncAllAccounts } from "./services/mail-sync.js";
+import { pruneAttachmentCache } from "./services/attachment-cache.js";
 import { getPreloadPath, getWindowUrl } from "./windows/window-paths.js";
 import { openSettingsWindow } from "./windows/settings-window.js";
 
@@ -226,6 +227,8 @@ app.whenReady().then(async () => {
   await devHarness?.runParityAutotestIfRequested();
 
   await setupApplicationMenu();
+
+  void pruneAttachmentCache();
 
   createMainWindow()
     .then(() => {

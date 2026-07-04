@@ -13,6 +13,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { app, dialog } from "@glaze/core/backend";
 import { getAccessToken } from "./gmail-oauth.js";
 import { getAccount } from "./account-store.js";
+import { getCachedAttachment, putCachedAttachment } from "./attachment-cache.js";
 import type {
   GmailLabel,
   GmailMessageSummary,
@@ -878,12 +879,16 @@ export async function deleteDraft(
 
 // ── getAttachment ─────────────────────────────────────────────────────────────
 
-/** Attachment bytes as standard base64 (for forwarding / in-memory use). */
+/** Attachment bytes as standard base64 (for forwarding / in-memory use).
+    Local-first: served from the disk cache when present, write-through otherwise. */
 export async function getAttachmentData(
   accountId: string,
   messageId: string,
   attachmentId: string,
 ): Promise<{ base64: string; size: number }> {
+  const cached = await getCachedAttachment(accountId, messageId, attachmentId);
+  if (cached) return { base64: cached.toString("base64"), size: cached.length };
+
   const data = (await gmailFetch(
     accountId,
     `/messages/${messageId}/attachments/${attachmentId}`,
@@ -897,6 +902,7 @@ export async function getAttachmentData(
     data.data.replace(/-/g, "+").replace(/_/g, "/"),
     "base64",
   );
+  await putCachedAttachment(accountId, messageId, attachmentId, buffer);
   return { base64: buffer.toString("base64"), size: buffer.length };
 }
 
@@ -923,6 +929,19 @@ export async function getAttachment(
 function sanitizeFilename(name: string): string {
   const cleaned = name.replace(/[/\\]/g, "_").replace(/^\.+/, "").trim();
   return cleaned || "attachment";
+}
+
+/** Writes in-memory compose bytes (draft/new-mail chips) to the temp cache and returns the path. */
+export async function saveComposeAttachmentToTemp(name: string, base64: string): Promise<string> {
+  const bytes = Buffer.from(base64, "base64");
+  const key = createHash("sha256").update(bytes).digest("hex").slice(0, 16);
+  const dir = path.join(app.getPath("temp"), "gmail-inbox-attachments", `compose-${key}`);
+  const filePath = path.join(dir, sanitizeFilename(name));
+  const existing = await fs.stat(filePath).catch(() => null);
+  if (existing && existing.size > 0) return filePath;
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(filePath, bytes);
+  return filePath;
 }
 
 /** Writes the attachment to a temp cache dir (keyed by identity hash) and reuses it on later opens/drags. */
