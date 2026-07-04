@@ -471,6 +471,7 @@ export async function getMessage(accountId: string, messageId: string): Promise<
   return {
     ...summary,
     cc: getHeaderValue(headers, "Cc") || undefined,
+    bcc: getHeaderValue(headers, "Bcc") || undefined,
     bodyHtml: bodyResult.bodyHtml,
     bodyText: bodyResult.bodyText,
     hasAttachments: bodyResult.attachments.length > 0,

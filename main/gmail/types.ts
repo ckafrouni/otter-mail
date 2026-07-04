@@ -51,6 +51,8 @@ export interface GmailMessageDetail extends GmailMessageSummary {
   bodyHtml: string | null;
   bodyText: string | null;
   cc?: string;
+  /** Only present on your own drafts/sent mail (Gmail echoes the header back). */
+  bcc?: string;
   attachments: {
     id: string;
     filename: string;

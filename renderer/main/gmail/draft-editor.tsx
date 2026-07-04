@@ -1,14 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "@glaze/core/components";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileIcon, SendHorizontalIcon, Trash2Icon, XIcon } from "lucide-react";
+import { FileIcon, PaperclipIcon, SendHorizontalIcon, Trash2Icon, XIcon } from "lucide-react";
 import { usePruneThreadRows, useSendMessage } from "./hooks";
 import { gmailApi } from "./api";
 import { RichTextArea, textToHtml, type RichTextRef } from "./rich-text";
 import { RecipientInput } from "./recipient-input";
 import { IconBtn, HintTooltip } from "./te-ui";
 import { parseAddressEntry, splitAddressList } from "./address";
-import type { GmailMessageDetail, GmailMessageSummary } from "./types";
+import {
+  AttachmentChips,
+  attachmentSignature,
+  pickComposeAttachments,
+} from "./compose-attachments";
+import type { ComposeAttachment, GmailMessageDetail, GmailMessageSummary } from "./types";
 
 /**
  * Resume editing a Gmail draft in the composer pane. Autosaves over the same
@@ -30,6 +35,8 @@ export function DraftEditor({
   const [to, setTo] = useState(detail.to ?? "");
   const [cc, setCc] = useState(detail.cc ?? "");
   const [ccVisible, setCcVisible] = useState(!!detail.cc);
+  const [bcc, setBcc] = useState(detail.bcc ?? "");
+  const [bccVisible, setBccVisible] = useState(!!detail.bcc);
   const [subject, setSubject] = useState(detail.subject ?? "");
   const [text, setText] = useState(detail.bodyText ?? "");
   const [sending, setSending] = useState(false);
@@ -38,6 +45,45 @@ export function DraftEditor({
 
   const sendMessage = useSendMessage();
   const pruneThreadRows = usePruneThreadRows();
+
+  // The draft's files must be back in memory before any save: saveDraft
+  // rewrites the whole message, so a save without them silently drops the
+  // attachments server-side. null = still loading (autosave and send stay
+  // suspended until then).
+  const [attachments, setAttachments] = useState<ComposeAttachment[] | null>(
+    detail.attachments.length === 0 ? [] : null,
+  );
+  const [attachLoadFailed, setAttachLoadFailed] = useState(false);
+  // Baseline set once the originals are loaded, so merely opening a draft
+  // never re-uploads it.
+  const attSnapshotRef = useRef<string | null>(detail.attachments.length === 0 ? "" : null);
+
+  const loadAttachments = async () => {
+    setAttachLoadFailed(false);
+    setAttachments(null);
+    try {
+      const out: ComposeAttachment[] = [];
+      for (const att of detail.attachments) {
+        const data = await gmailApi.getAttachmentData({
+          accountId,
+          messageId: detail.id,
+          attachmentId: att.id,
+        });
+        out.push({ name: att.filename, mimeType: att.mimeType, size: data.size, base64: data.base64 });
+      }
+      attSnapshotRef.current ??= attachmentSignature(out);
+      setAttachments(out);
+    } catch (err) {
+      console.log("[DraftEditor:attachmentsLoadFailed]", { error: String(err) });
+      setAttachLoadFailed(true);
+      toast.error("Could not load the draft's attachments");
+    }
+  };
+  const loadAttachmentsRef = useRef(loadAttachments);
+  loadAttachmentsRef.current = loadAttachments;
+  useEffect(() => {
+    if (detail.attachments.length > 0) void loadAttachmentsRef.current();
+  }, []);
 
   // Which Gmail draft owns this message row (drafts.list lookup).
   const draftIdRef = useRef<string | null>(null);
@@ -73,6 +119,7 @@ export function DraftEditor({
     snapshotRef.current = JSON.stringify({
       to,
       cc,
+      bcc,
       subject,
       plain: (editorRef.current?.getText() ?? "").trim(),
     });
@@ -80,10 +127,12 @@ export function DraftEditor({
 
   const save = async () => {
     if (doneRef.current || savingRef.current || snapshotRef.current == null) return;
+    if (attachments == null || attSnapshotRef.current == null) return;
     const plain = editorRef.current?.getText() ?? text;
     const html = editorRef.current?.getHTML() ?? textToHtml(plain);
-    const serialized = JSON.stringify({ to, cc, subject, plain: plain.trim() });
-    if (serialized === snapshotRef.current) return;
+    const serialized = JSON.stringify({ to, cc, bcc, subject, plain: plain.trim() });
+    const attSig = attachmentSignature(attachments);
+    if (serialized === snapshotRef.current && attSig === attSnapshotRef.current) return;
     savingRef.current = true;
     setSaveState("saving");
     try {
@@ -92,13 +141,16 @@ export function DraftEditor({
         draftId: draftIdRef.current ?? undefined,
         to,
         cc: cc.trim() || undefined,
+        bcc: bcc.trim() || undefined,
         subject,
         body: plain,
         bodyHtml: `<div dir="auto">${html}</div>`,
+        attachments: attachments.length > 0 ? attachments : undefined,
         threadId: detail.threadId || undefined,
       });
       draftIdRef.current = res.draftId;
       snapshotRef.current = serialized;
+      attSnapshotRef.current = attSig;
       setSaveState("saved");
       // Lists refresh on close, not per save — every save mints a new message
       // id, and refetching mid-edit made the selected row vanish.
@@ -125,7 +177,7 @@ export function DraftEditor({
     if (!draftIdQuery.isFetched) return;
     const timer = setTimeout(() => void triggerRef.current(), 1500);
     return () => clearTimeout(timer);
-  }, [to, cc, subject, text, draftIdQuery.isFetched]);
+  }, [to, cc, bcc, subject, text, attachments, draftIdQuery.isFetched]);
 
   // Flush the last edits and refresh the draft lists once, on the way out.
   const refreshRef = useRef(refreshDraftLists);
@@ -153,7 +205,11 @@ export function DraftEditor({
   }, [onDone]);
 
   const hasRecipient = splitAddressList(to).some((e) => parseAddressEntry(e).email.includes("@"));
-  const canSend = !sending && hasRecipient && (text.trim().length > 0 || subject.trim().length > 0);
+  const canSend =
+    !sending &&
+    hasRecipient &&
+    attachments != null &&
+    (text.trim().length > 0 || subject.trim().length > 0);
 
   const handleSend = () => {
     if (!canSend) return;
@@ -173,9 +229,11 @@ export function DraftEditor({
         accountId,
         to,
         cc: cc.trim() || undefined,
+        bcc: bcc.trim() || undefined,
         subject: subject.trim() || "(no subject)",
         body: plain,
         bodyHtml: html,
+        attachments: attachments && attachments.length > 0 ? attachments : undefined,
         ...(last ? { threadId: detail.threadId, replyToMessageId: last.id } : {}),
       })
       .then(
@@ -288,11 +346,26 @@ export function DraftEditor({
                 Cc
               </button>
             ) : null}
+            {!bccVisible ? (
+              <button
+                type="button"
+                onClick={() => setBccVisible(true)}
+                className="shrink-0 text-[11px] text-(--te-faint) hover:text-(--te-strong)"
+              >
+                Bcc
+              </button>
+            ) : null}
           </div>
           {ccVisible ? (
             <div className={recipientRow}>
               <span className="te-label shrink-0 text-(--te-faint)">Cc</span>
               <RecipientInput value={cc} onChange={setCc} ariaLabel="Cc" />
+            </div>
+          ) : null}
+          {bccVisible ? (
+            <div className={recipientRow}>
+              <span className="te-label shrink-0 text-(--te-faint)">Bcc</span>
+              <RecipientInput value={bcc} onChange={setBcc} ariaLabel="Bcc" />
             </div>
           ) : null}
           <div className={recipientRow}>
@@ -317,7 +390,41 @@ export function DraftEditor({
               detail.bodyHtml ?? (detail.bodyText ? textToHtml(detail.bodyText) : undefined)
             }
           />
+          <AttachmentChips
+            attachments={attachments}
+            onRemove={(i) => setAttachments((prev) => (prev ?? []).filter((_, j) => j !== i))}
+          />
           <div className="flex items-center gap-1 px-2 pb-1.5">
+            <HintTooltip label="Attach files">
+              <IconBtn
+                label="Attach files"
+                className="size-7"
+                disabled={attachments == null}
+                onClick={() => {
+                  void pickComposeAttachments(attachments ?? []).then((picked) => {
+                    if (picked.length > 0) setAttachments((prev) => [...(prev ?? []), ...picked]);
+                  });
+                }}
+              >
+                <PaperclipIcon className="size-3.5" />
+              </IconBtn>
+            </HintTooltip>
+            {attachments == null ? (
+              attachLoadFailed ? (
+                <span className="te-label pl-1 text-(--red)">
+                  Couldn't load attachments —{" "}
+                  <button
+                    type="button"
+                    onClick={() => void loadAttachments()}
+                    className="underline hover:text-(--te-strong)"
+                  >
+                    retry
+                  </button>
+                </span>
+              ) : (
+                <span className="te-label pl-1 text-(--te-faint)">Loading attachments…</span>
+              )
+            ) : null}
             <span className="flex-1" />
             {canSend ? <span className="te-label pr-1 text-(--te-faint)">⌘↩ send</span> : null}
             <button

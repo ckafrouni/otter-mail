@@ -60,6 +60,7 @@ export type GmailMessageDetail = GmailMessageSummary & {
   bodyHtml: string | null;
   bodyText: string | null;
   cc?: string;
+  bcc?: string;
   attachments: { id: string; filename: string; mimeType: string; size: number }[];
 };
 
