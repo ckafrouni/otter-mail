@@ -277,7 +277,13 @@ export function useViewUnreadCounts(
       };
     }),
   });
-  return Object.fromEntries(views.map((v, i) => [v.id, results[i]?.data?.unread ?? 0]));
+  return Object.fromEntries(
+    views.map((v, i) => {
+      const data = results[i]?.data;
+      // Drafts badge counts every draft, not unread ones (Gmail parity).
+      return [v.id, (v.kind === "drafts" ? data?.total : data?.unread) ?? 0];
+    }),
+  );
 }
 
 /** Full label list per account, keyed by accountId, for the view-editor picker. */

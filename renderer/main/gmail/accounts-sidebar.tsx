@@ -496,7 +496,7 @@ export function AccountsSidebar({
                   icon={viewIcon(view)}
                   title={view.name}
                   selected={selectedLabelId === view.id}
-                  unread={(viewUnreadCounts[view.id] ?? 0) > 0}
+                  unread={view.kind !== "drafts" && (viewUnreadCounts[view.id] ?? 0) > 0}
                   badge={viewUnreadCounts[view.id] ?? 0}
                   onClick={() => {
                     console.log("[AccountsSidebar:selectView]", { viewId: view.id });
@@ -515,19 +515,21 @@ export function AccountsSidebar({
         ) : (
           <>
             {(systemLabels.length > 0
-              ? systemLabels.map((l) => ({ id: l.id, unread: l.unread ?? 0 }))
-              : Object.keys(SYSTEM_LABEL_MAP).map((id) => ({ id, unread: 0 }))
-            ).map(({ id, unread }) => {
+              ? systemLabels.map((l) => ({ id: l.id, unread: l.unread ?? 0, total: l.total ?? 0 }))
+              : Object.keys(SYSTEM_LABEL_MAP).map((id) => ({ id, unread: 0, total: 0 }))
+            ).map(({ id, unread, total }) => {
               const meta = SYSTEM_LABEL_MAP[id];
               if (!meta) return null;
+              // Drafts is a raw count of drafts, not an unread signal.
+              const isDrafts = id === "DRAFT";
               return (
                 <SkRow
                   key={id}
                   icon={meta.icon}
                   title={meta.name}
                   selected={selectedLabelId === id}
-                  unread={unread > 0}
-                  badge={unread}
+                  unread={!isDrafts && unread > 0}
+                  badge={isDrafts ? total : unread}
                   onClick={() => {
                     console.log("[AccountsSidebar:selectLabel]", { labelId: id });
                     onSelectLabel(id);
