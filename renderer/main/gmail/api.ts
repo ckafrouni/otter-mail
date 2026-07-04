@@ -201,8 +201,9 @@ export const gmailApi = {
   getDraftForMessage: (
     accountId: string,
     messageId: string,
+    threadId?: string,
   ): Promise<{ draftId: string | null }> =>
-    ipc("gmail:getDraftForMessage", { accountId, messageId }),
+    ipc("gmail:getDraftForMessage", { accountId, messageId, threadId }),
 
   getAttachment: (params: GetAttachmentParams): Promise<GetAttachmentResult> =>
     ipc("gmail:getAttachment", params),

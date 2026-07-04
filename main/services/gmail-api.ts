@@ -781,25 +781,33 @@ export async function saveDraft(
   };
 }
 
-/** The draft id owning a message id, or null (drafts.list carries message ids). */
+/**
+ * The draft id owning a message id, or null. Draft updates mint new message
+ * ids, so a stale local row can miss by id — the thread id is stable across
+ * updates and serves as the fallback match.
+ */
 export async function findDraftIdByMessageId(
   accountId: string,
   messageId: string,
+  threadId?: string,
 ): Promise<string | null> {
+  let threadHit: string | null = null;
   let pageToken: string | undefined;
   for (let page = 0; page < 5; page++) {
     const query = new URLSearchParams({ maxResults: "100" });
     if (pageToken) query.set("pageToken", pageToken);
     const res = (await gmailFetch(accountId, `/drafts?${query.toString()}`)) as {
-      drafts?: { id: string; message?: { id?: string } }[];
+      drafts?: { id: string; message?: { id?: string; threadId?: string } }[];
       nextPageToken?: string;
     };
-    const hit = (res.drafts ?? []).find((d) => d.message?.id === messageId);
-    if (hit) return hit.id;
-    if (!res.nextPageToken) return null;
+    for (const d of res.drafts ?? []) {
+      if (d.message?.id === messageId) return d.id;
+      if (threadId && !threadHit && d.message?.threadId === threadId) threadHit = d.id;
+    }
+    if (!res.nextPageToken) break;
     pageToken = res.nextPageToken;
   }
-  return null;
+  return threadHit;
 }
 
 export async function deleteDraft(

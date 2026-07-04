@@ -585,6 +585,11 @@ export function registerGmailHandlers(): void {
   // gmail:saveDraft — composer autosave; creates or updates a Gmail draft.
   ipcMain.handle("gmail:saveDraft", async (_event, params: unknown) => {
     const p = params as Record<string, unknown>;
+    console.log("[gmail:saveDraft]", {
+      accountId: p?.accountId,
+      draftId: p?.draftId ?? "(new)",
+      threadId: p?.threadId,
+    });
     try {
       const accountId = assertString(p?.accountId, "accountId");
       const res = await saveDraft(accountId, {
@@ -619,7 +624,8 @@ export function registerGmailHandlers(): void {
     try {
       const accountId = assertString(p?.accountId, "accountId");
       const messageId = assertString(p?.messageId, "messageId");
-      const draftId = await findDraftIdByMessageId(accountId, messageId);
+      const draftId = await findDraftIdByMessageId(accountId, messageId, asString(p?.threadId));
+      console.log("[gmail:getDraftForMessage]", { accountId, messageId, found: draftId != null });
       return { draftId };
     } catch (err) {
       console.log("[gmail:getDraftForMessage] error", { error: String(err) });

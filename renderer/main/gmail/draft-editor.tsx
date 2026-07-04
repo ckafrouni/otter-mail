@@ -33,7 +33,7 @@ export function DraftEditor({
   const [subject, setSubject] = useState(detail.subject ?? "");
   const [text, setText] = useState(detail.bodyText ?? "");
   const [sending, setSending] = useState(false);
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const editorRef = useRef<RichTextRef>(null);
 
   const sendMessage = useSendMessage();
@@ -42,7 +42,7 @@ export function DraftEditor({
   const draftIdRef = useRef<string | null>(null);
   const draftIdQuery = useQuery({
     queryKey: ["gmail:draftId", accountId, detail.id],
-    queryFn: () => gmailApi.getDraftForMessage(accountId, detail.id),
+    queryFn: () => gmailApi.getDraftForMessage(accountId, detail.id, detail.threadId),
     staleTime: Infinity,
     retry: false,
   });
@@ -64,17 +64,21 @@ export function DraftEditor({
   // sent/discarded.
   const doneRef = useRef(false);
   const savingRef = useRef(false);
-  const snapshotRef = useRef(
-    JSON.stringify({
-      to: detail.to ?? "",
-      cc: detail.cc ?? "",
-      subject: detail.subject ?? "",
-      plain: (detail.bodyText ?? "").trim(),
-    }),
-  );
+  const snapshotRef = useRef<string | null>(null);
+  // Baseline AFTER the editor seeds (child mount effects run first): the
+  // editor's own text extraction never matches bodyText byte-for-byte, and a
+  // bodyText baseline made merely opening a draft look dirty and re-save it.
+  useEffect(() => {
+    snapshotRef.current = JSON.stringify({
+      to,
+      cc,
+      subject,
+      plain: (editorRef.current?.getText() ?? "").trim(),
+    });
+  }, []);
 
   const save = async () => {
-    if (doneRef.current || savingRef.current) return;
+    if (doneRef.current || savingRef.current || snapshotRef.current == null) return;
     const plain = editorRef.current?.getText() ?? text;
     const html = editorRef.current?.getHTML() ?? textToHtml(plain);
     const serialized = JSON.stringify({ to, cc, subject, plain: plain.trim() });
@@ -95,9 +99,12 @@ export function DraftEditor({
       draftIdRef.current = res.draftId;
       snapshotRef.current = serialized;
       setSaveState("saved");
-      refreshDraftLists();
-    } catch {
-      setSaveState("idle"); // retried on the next edit tick
+      // Lists refresh on close, not per save — every save mints a new message
+      // id, and refetching mid-edit made the selected row vanish.
+    } catch (err) {
+      console.log("[DraftEditor:saveFailed]", { error: String(err) });
+      setSaveState("error");
+      setTimeout(() => void saveRef.current(), 5000);
     } finally {
       savingRef.current = false;
     }
@@ -111,7 +118,15 @@ export function DraftEditor({
     return () => clearTimeout(timer);
   }, [to, cc, subject, text, draftIdQuery.isFetched]);
 
-  useEffect(() => () => void saveRef.current(), []);
+  // Flush the last edits and refresh the draft lists once, on the way out.
+  const refreshRef = useRef(refreshDraftLists);
+  refreshRef.current = refreshDraftLists;
+  useEffect(
+    () => () => {
+      void Promise.resolve(saveRef.current()).finally(() => refreshRef.current());
+    },
+    [],
+  );
 
   // Escape returns to the list (the draft keeps autosaving).
   useEffect(() => {
@@ -199,7 +214,14 @@ export function DraftEditor({
             {subject.trim() || "Draft"}
           </div>
           <div className="truncate text-[11px] leading-tight text-(--sk-muted)">
-            Draft · {saveState === "saving" ? "saving…" : "saves automatically"}
+            Draft ·{" "}
+            {saveState === "saving"
+              ? "saving…"
+              : saveState === "saved"
+                ? "saved"
+                : saveState === "error"
+                  ? "couldn't save — retrying"
+                  : "saves automatically"}
           </div>
         </div>
         <HintTooltip label="Delete draft">
