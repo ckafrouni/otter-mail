@@ -34,7 +34,6 @@ import {
   ChevronDownIcon,
   LayersIcon,
   TagIcon,
-  SearchIcon,
   SquarePenIcon,
 } from "lucide-react";
 import {
@@ -452,7 +451,6 @@ type AccountsSidebarProps = {
   onSelectLabel: (labelId: string) => void;
   views: MailView[];
   onCompose: () => void;
-  onOpenSearch: () => void;
 };
 
 export function AccountsSidebar({
@@ -462,7 +460,6 @@ export function AccountsSidebar({
   onSelectLabel,
   views,
   onCompose,
-  onOpenSearch,
 }: AccountsSidebarProps) {
   const isCombined = selectedAccountId === COMBINED_ACCOUNT_ID;
 
@@ -672,20 +669,7 @@ export function AccountsSidebar({
         </button>
       </div>
 
-      {/* Find a conversation… (command palette) */}
-      <div className="px-3 pb-1 pt-3">
-        <button
-          type="button"
-          onClick={onOpenSearch}
-          className="flex h-7 w-full items-center gap-2 rounded-[5px] border border-(--te-outline) bg-(--te-panel) px-2 text-[13px] text-(--te-muted) hover:border-(--te-outline-hover) hover:text-(--te-text)"
-        >
-          <SearchIcon className="size-3.5 shrink-0" />
-          <span className="truncate">Find a conversation…</span>
-          <span className="te-num ml-auto shrink-0 text-[11px] text-(--te-faint)">⌘K</span>
-        </button>
-      </div>
-
-      <div className="te-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-4 pt-2">
+      <div className="te-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-4 pt-3">
         {isCombined ? (
           <>
             {views

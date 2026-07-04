@@ -29,6 +29,7 @@ type TopBarProps = {
   selectedAccountId: string | null;
   onSelectAccount: (accountId: string) => void;
   onAddAccount: () => void;
+  onOpenPalette: () => void;
   onOpenHelp: () => void;
 };
 
@@ -82,6 +83,7 @@ export function TopBar({
   selectedAccountId,
   onSelectAccount,
   onAddAccount,
+  onOpenPalette,
   onOpenHelp,
 }: TopBarProps) {
   const isCombined = selectedAccountId === COMBINED_ACCOUNT_ID;
@@ -139,35 +141,47 @@ export function TopBar({
         gmail inbox
       </span>
 
-      <div className="flex min-w-0 flex-1 justify-center px-4">
-        <div className="relative w-full max-w-[600px]">
-          <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-(--te-faint)" />
-          <input
-            ref={searchRef}
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                onSearchChange("");
-                e.currentTarget.blur();
-              }
-            }}
-            placeholder={isCombined ? "Search all mailboxes" : "Search mail"}
-            className="h-7 w-full rounded-[5px] border border-(--te-outline) bg-(--te-panel) pl-8 pr-8 text-[13px] text-(--te-strong) outline-none placeholder:text-(--te-faint) hover:border-(--te-outline-hover) focus:border-(--te-outline-hover)"
-            aria-label="Search mail"
-          />
-          {searchQuery ? (
-            <button
-              type="button"
-              onClick={() => onSearchChange("")}
-              aria-label="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-(--te-faint) hover:text-(--te-strong)"
-            >
-              <XIcon className="size-3.5" />
-            </button>
-          ) : null}
-        </div>
+      <span className="min-w-0 flex-1" />
+
+      {/* Quiet ghost search, right-aligned; borderless until focused. */}
+      <div className="relative shrink-0">
+        <SearchIcon className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-(--te-faint)" />
+        <input
+          ref={searchRef}
+          value={searchQuery}
+          onChange={(e) => onSearchChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              onSearchChange("");
+              e.currentTarget.blur();
+            }
+          }}
+          placeholder={isCombined ? "Search all mailboxes" : "Search mail"}
+          className="h-7 w-48 rounded-[5px] border border-transparent bg-transparent pl-7 pr-6 text-[12px] text-(--te-strong) outline-none placeholder:text-(--te-faint) hover:bg-(--te-hover) focus:border-(--te-outline) focus:bg-(--te-panel)"
+          aria-label="Search mail"
+        />
+        {searchQuery ? (
+          <button
+            type="button"
+            onClick={() => onSearchChange("")}
+            aria-label="Clear search"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-(--te-faint) hover:text-(--te-strong)"
+          >
+            <XIcon className="size-3.5" />
+          </button>
+        ) : null}
       </div>
+
+      <HintTooltip label="Jump to anything" hint="⌘K">
+        <button
+          type="button"
+          aria-label="Open command palette"
+          onClick={onOpenPalette}
+          className="te-num flex h-7 shrink-0 items-center rounded-[5px] border border-(--te-outline) px-1.5 text-[11px] text-(--te-muted) hover:border-(--te-outline-hover) hover:text-(--te-strong)"
+        >
+          ⌘K
+        </button>
+      </HintTooltip>
 
       {syncing ? (
         <div className="flex min-w-0 items-center gap-1.5 pr-1">

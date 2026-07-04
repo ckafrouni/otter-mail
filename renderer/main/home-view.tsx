@@ -559,6 +559,7 @@ export function HomeView() {
           selectedAccountId={effectiveAccountId}
           onSelectAccount={handleSelectAccount}
           onAddAccount={() => void handleAddAccount()}
+          onOpenPalette={() => setPaletteOpen(true)}
           onOpenHelp={() => setHelpOpen(true)}
         />
         {/* Outer bottom corners run concentric with the 26px window radius (4px margin). */}
@@ -574,7 +575,6 @@ export function HomeView() {
               onSelectLabel={handleSelectLabel}
               views={views}
               onCompose={() => setComposeOpen(true)}
-              onOpenSearch={() => setPaletteOpen(true)}
             />
           </div>
           <PaneResizer onPointerDown={sidebarPane.start} />
