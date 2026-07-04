@@ -34,6 +34,9 @@ export function useDraftAutosave({
   const [saveState, setSaveState] = useState<DraftSaveState>("idle");
   const draftIdRef = useRef<string | null>(null);
   const draftAccountRef = useRef<string | null>(null);
+  // Thread Gmail assigned on the first save. Without pinning it, every update
+  // re-threads the draft — a new list row per save until sync reconciles.
+  const adoptedThreadRef = useRef<string | null>(null);
   const doneRef = useRef(false);
   const savingRef = useRef(false);
   const snapshotRef = useRef(signal);
@@ -75,15 +78,17 @@ export function useDraftAutosave({
           // orphan gets reconciled by sync
         }
         draftIdRef.current = null;
+        adoptedThreadRef.current = null;
       }
       const res = await gmailApi.saveDraft({
         accountId: account,
         draftId: draftIdRef.current ?? undefined,
         ...payload,
-        threadId: threadRef.current,
+        threadId: threadRef.current ?? adoptedThreadRef.current ?? undefined,
       });
       draftIdRef.current = res.draftId;
       draftAccountRef.current = account;
+      if (!threadRef.current && res.threadId) adoptedThreadRef.current = res.threadId;
       snapshotRef.current = snapshotAtSave;
       setSaveState("saved");
     } catch (err) {

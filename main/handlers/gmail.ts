@@ -611,7 +611,7 @@ export function registerGmailHandlers(): void {
           mailStore.deleteOtherDraftsInThread(accountId, res.threadId, res.messageId);
         }
       }
-      return { draftId: res.draftId };
+      return { draftId: res.draftId, messageId: res.messageId, threadId: res.threadId };
     } catch (err) {
       console.log("[gmail:saveDraft] error", { error: String(err) });
       throw err;

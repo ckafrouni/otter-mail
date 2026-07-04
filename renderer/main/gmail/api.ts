@@ -192,7 +192,9 @@ export const gmailApi = {
   sendMessage: (params: SendMessageParams): Promise<{ ok: boolean }> =>
     ipc("gmail:sendMessage", params),
 
-  saveDraft: (params: SaveDraftParams): Promise<{ draftId: string }> =>
+  saveDraft: (
+    params: SaveDraftParams,
+  ): Promise<{ draftId: string; messageId?: string; threadId?: string }> =>
     ipc("gmail:saveDraft", params),
 
   deleteDraft: (accountId: string, draftId: string): Promise<{ ok: boolean }> =>
