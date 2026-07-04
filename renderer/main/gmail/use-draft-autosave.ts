@@ -97,23 +97,33 @@ export function useDraftAutosave({
     } catch (err) {
       console.log("[useDraftAutosave:saveFailed]", { error: String(err) });
       setSaveState("error");
-      setTimeout(() => void saveRef.current(), 5000);
+      setTimeout(() => void triggerRef.current(), 5000);
     } finally {
       savingRef.current = false;
     }
   };
   const saveRef = useRef(save);
   saveRef.current = save;
+  // The in-flight save, so finalize can await the unmount flush before
+  // deleting (send path closes the composer first, optimistically).
+  const pendingRef = useRef<Promise<void> | null>(null);
+  const trigger = () => {
+    const p = saveRef.current();
+    pendingRef.current = p;
+    return p;
+  };
+  const triggerRef = useRef(trigger);
+  triggerRef.current = trigger;
 
   useEffect(() => {
-    const timer = setTimeout(() => void saveRef.current(), 1500);
+    const timer = setTimeout(() => void triggerRef.current(), 1500);
     return () => clearTimeout(timer);
   }, [signal]);
 
   // Flush the last edits and refresh the lists once, on the way out.
   useEffect(
     () => () => {
-      void Promise.resolve(saveRef.current()).finally(() => refreshRef.current());
+      void Promise.resolve(triggerRef.current()).finally(() => refreshRef.current());
     },
     [],
   );
@@ -121,6 +131,8 @@ export function useDraftAutosave({
   /** Stop autosaving (send/discard); optionally delete the persisted draft. */
   const finalize = async (opts?: { deleteDraft?: boolean }) => {
     doneRef.current = true;
+    // A flush kicked off by unmounting may still be creating the draft.
+    if (pendingRef.current) await pendingRef.current;
     if (opts?.deleteDraft && draftIdRef.current && draftAccountRef.current) {
       try {
         await gmailApi.deleteDraft(draftAccountRef.current, draftIdRef.current);

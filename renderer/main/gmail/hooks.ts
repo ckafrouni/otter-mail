@@ -137,10 +137,41 @@ export function useCreateLabel() {
       console.log("[hooks:useCreateLabel] creating label", { accountId, name });
       return gmailApi.createLabel(accountId, name);
     },
-    onSuccess: (_data, { accountId }) => {
+    // Optimistic: the label shows up in the sidebar instantly under a pending
+    // id; reconciliation swaps in the real id.
+    onMutate: async ({ accountId, name }) => {
+      await qc.cancelQueries({ queryKey: queryKeys.labels(accountId) });
+      const prev = qc.getQueryData<GmailLabel[]>(queryKeys.labels(accountId));
+      qc.setQueryData<GmailLabel[]>(queryKeys.labels(accountId), (old) => [
+        ...(old ?? []),
+        { id: `pending:${name}`, name, type: "user" },
+      ]);
+      return { prev };
+    },
+    onError: (_err, { accountId }, context) => {
+      if (context?.prev) qc.setQueryData(queryKeys.labels(accountId), context.prev);
+    },
+    onSettled: (_data, _err, { accountId }) => {
       void qc.invalidateQueries({ queryKey: queryKeys.labels(accountId) });
     },
   });
+}
+
+/** Optimistically drop a thread's rows from every message-list cache. */
+export function usePruneThreadRows() {
+  const qc = useQueryClient();
+  return (accountId: string, threadId: string) => {
+    const inThread = (m: GmailMessageSummary) =>
+      (m.threadId || m.id) === threadId && (m.accountId ?? accountId) === accountId;
+    const prune = (old: InfiniteData<ListMessagesResult> | undefined) =>
+      removeMessagesFromInfiniteData(old, inThread);
+    for (const [key] of qc.getQueriesData({ queryKey: ["gmail:messages", accountId] })) {
+      qc.setQueryData(key, prune);
+    }
+    for (const [key] of qc.getQueriesData({ queryKey: ["gmail:combinedMessages"] })) {
+      qc.setQueryData(key, prune);
+    }
+  };
 }
 
 // ---- Messages (paginated) ----

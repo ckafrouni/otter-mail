@@ -815,6 +815,9 @@ function InlineComposer({
     const body = `${plain}${quoted}`;
     const bodyHtml = `<div dir="auto">${html}${textToHtml(quoted)}</div>`;
     console.log("[MessageReader:inlineSend]", { mode, threadId });
+    // Optimistic: close now — the unmount flush keeps a draft backup, so a
+    // failed send degrades to "still in Drafts" instead of lost work.
+    onClose();
     sendMessage
       .mutateAsync({
         accountId,
@@ -828,14 +831,8 @@ function InlineComposer({
         ...(mode === "forward" ? {} : { threadId, replyToMessageId: lastMessage.id }),
       })
       .then(
-        async () => {
-          await draft.finalize({ deleteDraft: true });
-          onClose();
-        },
-        () => {
-          draft.reopen();
-          toast.error("Could not send the message");
-        },
+        () => void draft.finalize({ deleteDraft: true }),
+        () => toast.error("Couldn't send — kept in Drafts"),
       );
   };
 
@@ -896,7 +893,8 @@ function InlineComposer({
             label="Discard"
             className="size-6"
             onClick={() => {
-              void draft.finalize({ deleteDraft: true }).then(onClose);
+              onClose();
+              void draft.finalize({ deleteDraft: true });
             }}
           >
             <XIcon className="size-3.5" />

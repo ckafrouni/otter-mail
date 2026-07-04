@@ -107,6 +107,9 @@ export function NewMessageView({
   const handleSend = () => {
     if (!canSend || !fromAccount) return;
     console.log("[NewMessageView:send]", { from: fromAccount.id, to });
+    // Optimistic: close now; the unmount flush keeps a draft backup, so a
+    // failed send degrades to "still in Drafts" instead of lost work.
+    onClose();
     sendMessage
       .mutateAsync({
         accountId: fromAccount.id,
@@ -122,12 +125,8 @@ export function NewMessageView({
         async () => {
           await draft.finalize({ deleteDraft: true });
           toast.success("Sent");
-          onClose();
         },
-        () => {
-          draft.reopen();
-          toast.error("Could not send the message");
-        },
+        () => toast.error("Couldn't send — kept in Drafts"),
       );
   };
 
@@ -152,7 +151,8 @@ export function NewMessageView({
           <IconBtn
             label="Delete draft"
             onClick={() => {
-              void draft.finalize({ deleteDraft: true }).then(onClose);
+              onClose();
+              void draft.finalize({ deleteDraft: true });
             }}
           >
             <Trash2Icon className="size-4" />

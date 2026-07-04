@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "@glaze/core/components";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileIcon, SendHorizontalIcon, Trash2Icon, XIcon } from "lucide-react";
-import { useSendMessage } from "./hooks";
+import { usePruneThreadRows, useSendMessage } from "./hooks";
 import { gmailApi } from "./api";
 import { RichTextArea, textToHtml, type RichTextRef } from "./rich-text";
 import { RecipientInput } from "./recipient-input";
@@ -37,6 +37,7 @@ export function DraftEditor({
   const editorRef = useRef<RichTextRef>(null);
 
   const sendMessage = useSendMessage();
+  const pruneThreadRows = usePruneThreadRows();
 
   // Which Gmail draft owns this message row (drafts.list lookup).
   const draftIdRef = useRef<string | null>(null);
@@ -104,17 +105,25 @@ export function DraftEditor({
     } catch (err) {
       console.log("[DraftEditor:saveFailed]", { error: String(err) });
       setSaveState("error");
-      setTimeout(() => void saveRef.current(), 5000);
+      setTimeout(() => void triggerRef.current(), 5000);
     } finally {
       savingRef.current = false;
     }
   };
   const saveRef = useRef(save);
   saveRef.current = save;
+  const pendingSaveRef = useRef<Promise<void> | null>(null);
+  const trigger = () => {
+    const p = saveRef.current();
+    pendingSaveRef.current = p;
+    return p;
+  };
+  const triggerRef = useRef(trigger);
+  triggerRef.current = trigger;
 
   useEffect(() => {
     if (!draftIdQuery.isFetched) return;
-    const timer = setTimeout(() => void saveRef.current(), 1500);
+    const timer = setTimeout(() => void triggerRef.current(), 1500);
     return () => clearTimeout(timer);
   }, [to, cc, subject, text, draftIdQuery.isFetched]);
 
@@ -123,7 +132,7 @@ export function DraftEditor({
   refreshRef.current = refreshDraftLists;
   useEffect(
     () => () => {
-      void Promise.resolve(saveRef.current()).finally(() => refreshRef.current());
+      void Promise.resolve(triggerRef.current()).finally(() => refreshRef.current());
     },
     [],
   );
@@ -148,7 +157,6 @@ export function DraftEditor({
 
   const handleSend = () => {
     if (!canSend) return;
-    doneRef.current = true;
     setSending(true);
     const plain = editorRef.current?.getText() ?? text;
     const html = `<div dir="auto">${editorRef.current?.getHTML() ?? textToHtml(plain)}</div>`;
@@ -156,6 +164,10 @@ export function DraftEditor({
     const others = threadMessages.filter((m) => !m.labelIds.includes("DRAFT"));
     const last = others[others.length - 1];
     console.log("[DraftEditor:send]", { draftId: draftIdRef.current, threaded: !!last });
+    // Optimistic: the draft row leaves the list and the editor closes now; a
+    // failed send restores the row (the draft still exists server-side).
+    pruneThreadRows(accountId, detail.threadId || detail.id);
+    onDone();
     sendMessage
       .mutateAsync({
         accountId,
@@ -168,6 +180,9 @@ export function DraftEditor({
       })
       .then(
         async () => {
+          doneRef.current = true;
+          // The unmount flush may still be saving a backup — let it land first.
+          if (pendingSaveRef.current) await pendingSaveRef.current;
           const draftId = draftIdRef.current;
           if (draftId) {
             try {
@@ -178,12 +193,10 @@ export function DraftEditor({
           }
           refreshDraftLists();
           toast.success("Sent");
-          onDone();
         },
         () => {
-          doneRef.current = false;
-          setSending(false);
-          toast.error("Could not send the message");
+          refreshDraftLists();
+          toast.error("Couldn't send — kept in Drafts");
         },
       );
   };
@@ -191,6 +204,9 @@ export function DraftEditor({
   const handleDiscard = () => {
     doneRef.current = true;
     console.log("[DraftEditor:discard]", { draftId: draftIdRef.current });
+    // Optimistic: the row disappears and the editor closes immediately.
+    pruneThreadRows(accountId, detail.threadId || detail.id);
+    onDone();
     void (async () => {
       try {
         if (draftIdRef.current) await gmailApi.deleteDraft(accountId, draftIdRef.current);
@@ -198,7 +214,6 @@ export function DraftEditor({
         toast.error("Could not delete the draft");
       }
       refreshDraftLists();
-      onDone();
     })();
   };
 
