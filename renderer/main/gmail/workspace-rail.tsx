@@ -1,9 +1,8 @@
 import type { CSSProperties, ReactNode } from "react";
-import { LayersIcon, PlusIcon, SettingsIcon } from "lucide-react";
+import { LayersIcon, PlusIcon } from "lucide-react";
 import { HintTooltip } from "./te-ui";
 import { COMBINED_ACCOUNT_ID } from "./custom-views";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
-import { gmailApi } from "./api";
 import type { GmailAccount } from "./types";
 
 type WorkspaceRailProps = {
@@ -91,19 +90,6 @@ export function WorkspaceRail({
           className="flex size-9 shrink-0 items-center justify-center rounded-full border border-(--te-outline) text-(--te-muted) hover:border-(--te-outline-hover) hover:text-(--te-strong)"
         >
           <PlusIcon className="size-4.5" />
-        </button>
-      </HintTooltip>
-
-      <div className="flex-1" />
-
-      <HintTooltip label="Settings" hint="⌘,">
-        <button
-          type="button"
-          aria-label="Open Settings"
-          onClick={() => void gmailApi.openSettings({ pane: "general" })}
-          className="flex size-9 shrink-0 items-center justify-center rounded-full text-(--te-muted) hover:bg-(--te-hover) hover:text-(--te-strong)"
-        >
-          <SettingsIcon className="size-5" />
         </button>
       </HintTooltip>
     </div>

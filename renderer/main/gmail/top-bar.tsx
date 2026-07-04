@@ -1,7 +1,15 @@
 import type { RefObject } from "react";
-import { ChevronLeftIcon, ChevronRightIcon, CircleHelpIcon, SearchIcon, XIcon } from "lucide-react";
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  CircleHelpIcon,
+  SearchIcon,
+  SettingsIcon,
+  XIcon,
+} from "lucide-react";
 import { IconBtn, HintTooltip } from "./te-ui";
 import { COMBINED_ACCOUNT_ID } from "./custom-views";
+import { gmailApi } from "./api";
 
 type TopBarProps = {
   canGoBack: boolean;
@@ -88,6 +96,16 @@ export function TopBar({
       <HintTooltip label="Keyboard shortcuts" hint="?">
         <IconBtn label="Help" onClick={onOpenHelp} className="size-7">
           <CircleHelpIcon className="size-4" />
+        </IconBtn>
+      </HintTooltip>
+
+      <HintTooltip label="Settings" hint="⌘,">
+        <IconBtn
+          label="Open Settings"
+          onClick={() => void gmailApi.openSettings({ pane: "general" })}
+          className="size-7"
+        >
+          <SettingsIcon className="size-4" />
         </IconBtn>
       </HintTooltip>
 
