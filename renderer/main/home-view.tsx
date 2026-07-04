@@ -7,7 +7,6 @@ import { NewMessageView } from "./gmail/new-message-view";
 import { CommandPalette } from "./gmail/command-palette";
 import { ShortcutsHelpDialog } from "./gmail/shortcuts-help-dialog";
 import { TopBar } from "./gmail/top-bar";
-import { WorkspaceRail } from "./gmail/workspace-rail";
 import { isTypingTarget } from "./gmail/keyboard";
 import {
   useCredentials,
@@ -552,17 +551,15 @@ export function HomeView() {
           searchRef={searchRef}
           syncing={globalSync.syncing}
           syncLabel={globalSync.label}
+          accounts={accounts}
           selectedAccountId={effectiveAccountId}
+          onSelectAccount={handleSelectAccount}
+          onAddAccount={() => void handleAddAccount()}
           onOpenHelp={() => setHelpOpen(true)}
         />
         <div className="flex min-h-0 flex-1">
-          <WorkspaceRail
-            accounts={accounts}
-            selectedAccountId={effectiveAccountId}
-            onSelectAccount={handleSelectAccount}
-            onAddAccount={() => void handleAddAccount()}
-          />
-          <div className="mb-1.5 mr-1.5 flex min-w-0 flex-1 overflow-hidden rounded-[8px] border border-(--te-border) bg-(--te-card)">
+          {/* Bottom corners run concentric with the 26px window radius (6px margin). */}
+          <div className="mx-1.5 mb-1.5 flex min-w-0 flex-1 overflow-hidden rounded-[8px] rounded-b-[20px] border border-(--te-border) bg-(--te-card)">
             <div style={{ width: sidebarPane.width }} className="shrink-0 overflow-hidden">
               <AccountsSidebar
                 selectedAccountId={effectiveAccountId}

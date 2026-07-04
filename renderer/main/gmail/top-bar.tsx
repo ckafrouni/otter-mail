@@ -1,15 +1,19 @@
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
   CircleHelpIcon,
+  LayersIcon,
+  PlusIcon,
   SearchIcon,
   SettingsIcon,
   XIcon,
 } from "lucide-react";
 import { IconBtn, HintTooltip } from "./te-ui";
 import { COMBINED_ACCOUNT_ID } from "./custom-views";
+import { getAccountColor, getAccountDisplayName } from "./account-style";
 import { gmailApi } from "./api";
+import type { GmailAccount } from "./types";
 
 type TopBarProps = {
   canGoBack: boolean;
@@ -21,9 +25,48 @@ type TopBarProps = {
   searchRef: RefObject<HTMLInputElement | null>;
   syncing: boolean;
   syncLabel: string;
+  accounts: GmailAccount[];
   selectedAccountId: string | null;
+  onSelectAccount: (accountId: string) => void;
+  onAddAccount: () => void;
   onOpenHelp: () => void;
 };
+
+/** Round mailbox-switcher button, sized for the header row. */
+function AccountKnob({
+  label,
+  hint,
+  selected,
+  onClick,
+  children,
+  background,
+}: {
+  label: string;
+  hint?: string;
+  selected?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+  background: string;
+}) {
+  return (
+    <HintTooltip label={label} hint={hint}>
+      <button
+        type="button"
+        aria-label={label}
+        onClick={onClick}
+        className={[
+          "flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white",
+          selected
+            ? "ring-2 ring-(--te-strong) ring-offset-1 ring-offset-(--te-frame)"
+            : "opacity-75 hover:opacity-100",
+        ].join(" ")}
+        style={{ background }}
+      >
+        {children}
+      </button>
+    </HintTooltip>
+  );
+}
 
 export function TopBar({
   canGoBack,
@@ -35,7 +78,10 @@ export function TopBar({
   searchRef,
   syncing,
   syncLabel,
+  accounts,
   selectedAccountId,
+  onSelectAccount,
+  onAddAccount,
   onOpenHelp,
 }: TopBarProps) {
   const isCombined = selectedAccountId === COMBINED_ACCOUNT_ID;
@@ -52,7 +98,44 @@ export function TopBar({
         <ChevronRightIcon className="size-4.5" />
       </IconBtn>
 
-      <span className="te-label hidden pl-2 text-(--te-muted) min-[720px]:block">
+      {/* Mailbox knobs: Combined + one per account, like the old left rail. */}
+      <div className="flex shrink-0 items-center gap-1.5 px-2">
+        {accounts.length > 1 ? (
+          <AccountKnob
+            label="Combined"
+            hint="⌘1"
+            selected={isCombined}
+            onClick={() => onSelectAccount(COMBINED_ACCOUNT_ID)}
+            background="var(--te-strong)"
+          >
+            <LayersIcon className="size-3.5" style={{ color: "var(--te-card)" }} />
+          </AccountKnob>
+        ) : null}
+        {accounts.map((account, i) => (
+          <AccountKnob
+            key={account.id}
+            label={getAccountDisplayName(account)}
+            hint={accounts.length > 1 ? `⌘${i + 2}` : "⌘1"}
+            selected={selectedAccountId === account.id}
+            onClick={() => onSelectAccount(account.id)}
+            background={getAccountColor(account)}
+          >
+            {(getAccountDisplayName(account)[0] ?? "?").toUpperCase()}
+          </AccountKnob>
+        ))}
+        <HintTooltip label="Add Gmail account">
+          <button
+            type="button"
+            aria-label="Add Gmail account"
+            onClick={onAddAccount}
+            className="flex size-6 shrink-0 items-center justify-center rounded-full border border-(--te-outline) text-(--te-muted) hover:border-(--te-outline-hover) hover:text-(--te-strong)"
+          >
+            <PlusIcon className="size-3.5" />
+          </button>
+        </HintTooltip>
+      </div>
+
+      <span className="te-label hidden pl-1 text-(--te-muted) min-[840px]:block">
         gmail inbox
       </span>
 
