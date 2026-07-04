@@ -6,13 +6,14 @@ import {
   DropdownMenuItem,
   toast,
 } from "@glaze/core/components";
-import { ChevronDownIcon, PenLineIcon, SendHorizontalIcon, XIcon } from "lucide-react";
+import { ChevronDownIcon, PenLineIcon, SendHorizontalIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useSendMessage } from "./hooks";
 import { ComposeDialog } from "./compose-dialog";
 import { parseAddressEntry, splitAddressList } from "./address";
 import { getAccountColor } from "./account-style";
 import { IconBtn, HintTooltip } from "./slack-ui";
-import { RichTextArea, type RichTextRef } from "./rich-text";
+import { RichTextArea, textToHtml, type RichTextRef } from "./rich-text";
+import { useDraftAutosave } from "./use-draft-autosave";
 import { RecipientInput } from "./recipient-input";
 import type { GmailAccount } from "./types";
 
@@ -43,6 +44,23 @@ export function NewMessageView({
   const sendMessage = useSendMessage();
 
   const fromAccount = accounts.find((a) => a.id === fromId) ?? accounts[0];
+
+  const draft = useDraftAutosave({
+    accountId: fromAccount?.id ?? null,
+    signal: JSON.stringify({ fromId, to, cc, subject, text }),
+    getPayload: () => {
+      if (!to.trim() && !subject.trim() && !text.trim()) return null;
+      const plain = editorRef.current?.getText() ?? text;
+      const html = editorRef.current?.getHTML() ?? textToHtml(plain);
+      return {
+        to,
+        cc: cc.trim() || undefined,
+        subject,
+        body: plain,
+        bodyHtml: `<div dir="auto">${html}</div>`,
+      };
+    },
+  });
 
   useEffect(() => {
     toRef.current?.focus();
@@ -86,10 +104,17 @@ export function NewMessageView({
         body: editorRef.current?.getText() ?? text,
         bodyHtml: `<div dir="auto">${editorRef.current?.getHTML() ?? ""}</div>`,
       })
-      .then(() => {
-        toast.success("Sent");
-        onClose();
-      }, () => toast.error("Could not send the message"));
+      .then(
+        async () => {
+          await draft.finalize({ deleteDraft: true });
+          toast.success("Sent");
+          onClose();
+        },
+        () => {
+          draft.reopen();
+          toast.error("Could not send the message");
+        },
+      );
   };
 
   if (expanded && fromAccount) {
@@ -113,11 +138,32 @@ export function NewMessageView({
   return (
     <div className="flex h-full min-w-0 flex-col">
       <div className="drag-region flex h-[52px] shrink-0 items-center gap-2 border-b border-(--sk-border) px-4">
-        <div className="min-w-0 flex-1 truncate text-[16px] font-extrabold leading-tight text-(--sk-strong)">
-          New message
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[16px] font-extrabold leading-tight text-(--sk-strong)">
+            New message
+          </div>
+          <div className="truncate text-[11px] leading-tight text-(--sk-muted)">
+            {draft.saveState === "saving"
+              ? "Draft · saving…"
+              : draft.saveState === "saved"
+                ? "Draft · saved"
+                : draft.saveState === "error"
+                  ? "Draft · couldn't save — retrying"
+                  : "Drafts save automatically"}
+          </div>
         </div>
-        <HintTooltip label="Discard" hint="Esc">
-          <IconBtn label="Discard" onClick={onClose}>
+        <HintTooltip label="Delete draft">
+          <IconBtn
+            label="Delete draft"
+            onClick={() => {
+              void draft.finalize({ deleteDraft: true }).then(onClose);
+            }}
+          >
+            <Trash2Icon className="size-4" />
+          </IconBtn>
+        </HintTooltip>
+        <HintTooltip label="Close (keeps the draft)" hint="Esc">
+          <IconBtn label="Close" onClick={onClose}>
             <XIcon className="size-4" />
           </IconBtn>
         </HintTooltip>
@@ -223,7 +269,14 @@ export function NewMessageView({
           />
           <div className="flex items-center gap-1 px-2 pb-1.5">
             <HintTooltip label="Open full composer" hint="Bcc, attachments, drafts…">
-              <IconBtn label="Open full composer" className="size-7" onClick={() => setExpanded(true)}>
+              <IconBtn
+              label="Open full composer"
+              className="size-7"
+              onClick={() => {
+                void draft.finalize({ deleteDraft: true });
+                setExpanded(true);
+              }}
+            >
                 <PenLineIcon className="size-3.5" />
               </IconBtn>
             </HintTooltip>

@@ -47,6 +47,7 @@ import { IconBtn, HintTooltip } from "./slack-ui";
 import { RichTextArea, textToHtml, type RichTextRef } from "./rich-text";
 import { RecipientInput } from "./recipient-input";
 import { DraftEditor } from "./draft-editor";
+import { useDraftAutosave } from "./use-draft-autosave";
 import type {
   ComposeAttachment,
   GmailLabel,
@@ -781,6 +782,25 @@ function InlineComposer({
         ? baseSubject
         : `Re: ${baseSubject}`;
 
+  // Half-written replies/forwards persist as thread drafts.
+  const draft = useDraftAutosave({
+    accountId,
+    threadId,
+    signal: JSON.stringify({ to, cc, subject, text }),
+    getPayload: () => {
+      if (!text.trim()) return null;
+      const plain = editorRef.current?.getText() ?? text;
+      const html = editorRef.current?.getHTML() ?? textToHtml(plain);
+      return {
+        to,
+        cc: cc.trim() || undefined,
+        subject,
+        body: plain,
+        bodyHtml: `<div dir="auto">${html}</div>`,
+      };
+    },
+  });
+
   const hasRecipient = splitAddressList(to).some((e) => parseAddressEntry(e).email.includes("@"));
   const forwardReady = mode !== "forward" || (forwardAttachments != null && lastDetail != null);
   const canSend =
@@ -814,10 +834,20 @@ function InlineComposer({
             }
           : { threadId, replyToMessageId: lastMessage.id }),
       })
-      .then(onClose, () => toast.error("Could not send the message"));
+      .then(
+        async () => {
+          await draft.finalize({ deleteDraft: true });
+          onClose();
+        },
+        () => {
+          draft.reopen();
+          toast.error("Could not send the message");
+        },
+      );
   };
 
   const handleExpand = () => {
+    void draft.finalize({ deleteDraft: true });
     const source = lastDetail ?? lastMessage;
     const quoted = mode === "forward" ? forwardBlock(source) : quotedReplyText(source);
     onExpand({
@@ -880,7 +910,13 @@ function InlineComposer({
               Cc
             </button>
           ) : null}
-          <IconBtn label="Discard" className="size-6" onClick={onClose}>
+          <IconBtn
+            label="Discard"
+            className="size-6"
+            onClick={() => {
+              void draft.finalize({ deleteDraft: true }).then(onClose);
+            }}
+          >
             <XIcon className="size-3.5" />
           </IconBtn>
         </div>
@@ -917,6 +953,13 @@ function InlineComposer({
                   ? `${forwardAttachments.length} attachment${forwardAttachments.length === 1 ? "" : "s"} included`
                   : null}
             </span>
+          ) : null}
+          {draft.saveState === "saving" ? (
+            <span className="pl-1 text-[11px] text-(--sk-faint)">Saving draft…</span>
+          ) : draft.saveState === "saved" ? (
+            <span className="pl-1 text-[11px] text-(--sk-faint)">Draft saved</span>
+          ) : draft.saveState === "error" ? (
+            <span className="pl-1 text-[11px] text-(--red)">Couldn't save draft</span>
           ) : null}
           <span className="flex-1" />
           {canSend ? <span className="pr-1 text-[11px] text-(--sk-faint)">⌘↩ to send</span> : null}
