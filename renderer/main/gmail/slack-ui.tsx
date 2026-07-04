@@ -54,7 +54,7 @@ export function UnreadPill({ count, selected }: { count: number; selected?: bool
   return (
     <span
       className={[
-        "ml-auto shrink-0 text-[12px] font-bold tabular-nums",
+        "ml-auto shrink-0 text-[12px] tabular-nums",
         selected ? "text-(--sk-selected-fg)" : "text-(--sk-badge-bg)",
       ].join(" ")}
     >
