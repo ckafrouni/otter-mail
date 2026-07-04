@@ -303,7 +303,7 @@ export const RichTextArea = forwardRef<
         onInput={emitChange}
         onKeyDown={handleKeyDown}
         className={[
-          "te-scroll max-h-56 w-full overflow-y-auto bg-transparent px-3 py-2.5",
+          "te-scroll max-h-[55vh] w-full overflow-y-auto bg-transparent px-3 py-2.5",
           "text-[15px] leading-relaxed text-(--te-strong) outline-none",
           minHeightClass ?? "min-h-[38px]",
         ].join(" ")}
