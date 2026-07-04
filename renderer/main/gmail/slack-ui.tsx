@@ -48,17 +48,14 @@ export function HintTooltip({
   );
 }
 
-/** Slack-style unread count pill, contrast-inverted against the current theme. */
+/** Unread count: a bare number in the brand color (no pill background). */
 export function UnreadPill({ count, selected }: { count: number; selected?: boolean }) {
   if (count <= 0) return null;
   return (
     <span
       className={[
-        "ml-auto flex h-[18px] min-w-[20px] shrink-0 items-center justify-center rounded-full px-1.5",
-        "text-[11px] font-bold tabular-nums",
-        selected
-          ? "bg-(--sk-selected-fg)/85 text-(--sk-selected)"
-          : "bg-(--sk-badge-bg) text-(--sk-badge-fg)",
+        "ml-auto shrink-0 text-[12px] font-bold tabular-nums",
+        selected ? "text-(--sk-selected-fg)" : "text-(--sk-badge-bg)",
       ].join(" ")}
     >
       {count > 999 ? "999+" : count}

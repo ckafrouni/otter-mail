@@ -970,31 +970,6 @@ function InlineComposer({
   );
 }
 
-/** Gmail-style thread-footer action (shown while the composer is hidden). */
-function ThreadActionButton({
-  icon,
-  label,
-  hint,
-  onClick,
-}: {
-  icon: ReactNode;
-  label: string;
-  hint: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex h-8 items-center gap-1.5 rounded-lg border border-(--sk-border) px-3 text-[13px] font-medium text-(--sk-muted) hover:bg-(--sk-hover) hover:text-(--sk-strong)"
-    >
-      {icon}
-      {label}
-      <span className="text-[11px] text-(--sk-faint)">{hint}</span>
-    </button>
-  );
-}
-
 function ReaderShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-full min-w-0 flex-col">
@@ -1409,39 +1384,16 @@ export function MessageReader({ accountId, messageId, onDeselect }: MessageReade
         </div>
 
         {/* In-thread composer, hidden until replying/forwarding */}
-        {lastRow ? (
-          inline ? (
-            <InlineComposer
-              key={inline}
-              accountId={accountId}
-              mode={inline}
-              lastMessage={lastRow}
-              baseSubject={message.subject}
-              threadId={message.threadId || message.id}
-              onClose={() => setInline(null)}
-            />
-          ) : (
-            <div className="flex shrink-0 items-center gap-2 px-5 pb-4 pt-1">
-              <ThreadActionButton
-                icon={<ReplyIcon className="size-3.5" />}
-                label="Reply"
-                hint="R"
-                onClick={handleReply}
-              />
-              <ThreadActionButton
-                icon={<ReplyAllIcon className="size-3.5" />}
-                label="Reply all"
-                hint="A"
-                onClick={handleReplyAll}
-              />
-              <ThreadActionButton
-                icon={<ForwardIcon className="size-3.5" />}
-                label="Forward"
-                hint="F"
-                onClick={handleForward}
-              />
-            </div>
-          )
+        {lastRow && inline ? (
+          <InlineComposer
+            key={inline}
+            accountId={accountId}
+            mode={inline}
+            lastMessage={lastRow}
+            baseSubject={message.subject}
+            threadId={message.threadId || message.id}
+            onClose={() => setInline(null)}
+          />
         ) : null}
       </div>
 
