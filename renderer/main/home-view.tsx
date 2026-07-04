@@ -604,7 +604,14 @@ export function HomeView() {
                   onClose={() => setComposeOpen(false)}
                 />
               ) : readerAccount ? (
-                <MessageReader accountId={readerAccount} messageId={selectedMessageId} />
+                <MessageReader
+                  accountId={readerAccount}
+                  messageId={selectedMessageId}
+                  onDeselect={() => {
+                    setSelectedMessageId(null);
+                    setReaderAccountId(null);
+                  }}
+                />
               ) : (
                 <div className="flex h-full items-center justify-center">
                   <EmptyState

@@ -62,12 +62,11 @@ function viewIcon(view: MailView): ReactNode {
   return <LayersIcon className="size-4" />;
 }
 
-/** Slack-style sidebar row: muted at rest, bold when unread, inverted pill when selected. */
+/** Slack-style sidebar row: muted at rest, inverted pill when selected; counts live in the badge only. */
 function SkRow({
   icon,
   title,
   selected,
-  unread,
   badge,
   trailing,
   depth = 0,
@@ -76,7 +75,6 @@ function SkRow({
   icon: ReactNode;
   title: string;
   selected?: boolean;
-  unread?: boolean;
   badge?: number;
   trailing?: ReactNode;
   depth?: number;
@@ -92,9 +90,7 @@ function SkRow({
         "group flex h-7 w-full items-center gap-2 rounded-md pr-2 text-left text-[15px] leading-none",
         selected
           ? "bg-(--sk-selected) font-medium text-(--sk-selected-fg)"
-          : unread
-            ? "font-bold text-(--sk-strong) hover:bg-(--sk-hover)"
-            : "text-(--sk-muted) hover:bg-(--sk-hover) hover:text-(--sk-text)",
+          : "text-(--sk-muted) hover:bg-(--sk-hover) hover:text-(--sk-text)",
       ].join(" ")}
     >
       <span className={["shrink-0", selected ? "" : "opacity-80"].join(" ")}>{icon}</span>
@@ -192,7 +188,6 @@ function ViewRow({
           icon={viewIcon(view)}
           title={view.name}
           selected={selected}
-          unread={unreadCount > 0}
           badge={unreadCount}
           onClick={() => {
             console.log("[AccountsSidebar:selectView]", { viewId: view.id });
@@ -286,7 +281,6 @@ function LabelNode({
         title={node.segment}
         depth={depth}
         selected={label ? selectedLabelId === label.id : false}
-        unread={unread > 0}
         badge={unread}
         onClick={
           label
@@ -496,7 +490,6 @@ export function AccountsSidebar({
                   icon={viewIcon(view)}
                   title={view.name}
                   selected={selectedLabelId === view.id}
-                  unread={view.kind !== "drafts" && (viewUnreadCounts[view.id] ?? 0) > 0}
                   badge={viewUnreadCounts[view.id] ?? 0}
                   onClick={() => {
                     console.log("[AccountsSidebar:selectView]", { viewId: view.id });
@@ -528,7 +521,6 @@ export function AccountsSidebar({
                   icon={meta.icon}
                   title={meta.name}
                   selected={selectedLabelId === id}
-                  unread={!isDrafts && unread > 0}
                   badge={isDrafts ? total : unread}
                   onClick={() => {
                     console.log("[AccountsSidebar:selectLabel]", { labelId: id });

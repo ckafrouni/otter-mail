@@ -82,6 +82,7 @@ export type SaveDraftParams = {
   bcc?: string;
   subject: string;
   body: string;
+  bodyHtml?: string;
   threadId?: string;
   attachments?: ComposeAttachment[];
 };
@@ -196,6 +197,12 @@ export const gmailApi = {
 
   deleteDraft: (accountId: string, draftId: string): Promise<{ ok: boolean }> =>
     ipc("gmail:deleteDraft", { accountId, draftId }),
+
+  getDraftForMessage: (
+    accountId: string,
+    messageId: string,
+  ): Promise<{ draftId: string | null }> =>
+    ipc("gmail:getDraftForMessage", { accountId, messageId }),
 
   getAttachment: (params: GetAttachmentParams): Promise<GetAttachmentResult> =>
     ipc("gmail:getAttachment", params),

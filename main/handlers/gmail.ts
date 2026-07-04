@@ -39,6 +39,7 @@ import {
   fetchReplyHeaders,
   fetchMetadataForIds,
   MAX_ATTACHMENT_TOTAL_BYTES,
+  findDraftIdByMessageId,
 } from "../services/gmail-api.js";
 import * as mailStore from "../services/mail-store.js";
 import * as mailSync from "../services/mail-sync.js";
@@ -593,6 +594,7 @@ export function registerGmailHandlers(): void {
         bcc: asString(p?.bcc),
         subject: asString(p?.subject) ?? "",
         body: asString(p?.body) ?? "",
+        bodyHtml: asString(p?.bodyHtml),
         threadId: asString(p?.threadId),
         attachments: parseAttachments(p?.attachments),
       });
@@ -607,6 +609,20 @@ export function registerGmailHandlers(): void {
       return { draftId: res.draftId };
     } catch (err) {
       console.log("[gmail:saveDraft] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:getDraftForMessage — resolve the draft id owning a message row
+  ipcMain.handle("gmail:getDraftForMessage", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    try {
+      const accountId = assertString(p?.accountId, "accountId");
+      const messageId = assertString(p?.messageId, "messageId");
+      const draftId = await findDraftIdByMessageId(accountId, messageId);
+      return { draftId };
+    } catch (err) {
+      console.log("[gmail:getDraftForMessage] error", { error: String(err) });
       throw err;
     }
   });

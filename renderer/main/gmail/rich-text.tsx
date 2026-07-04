@@ -90,9 +90,11 @@ export const RichTextArea = forwardRef<
     onTextChange?: (plainText: string) => void;
     autoFocus?: boolean;
     minHeightClass?: string;
+    /** Seeds the editor once on mount (e.g. resuming a draft). */
+    initialHTML?: string;
   }
 >(function RichTextArea(
-  { placeholder, ariaLabel, onTextChange, autoFocus, minHeightClass },
+  { placeholder, ariaLabel, onTextChange, autoFocus, minHeightClass, initialHTML },
   ref,
 ) {
   const editorRef = useRef<HTMLDivElement>(null);
@@ -125,9 +127,15 @@ export const RichTextArea = forwardRef<
     focus: () => editorRef.current?.focus(),
   }));
 
+  const seededRef = useRef(false);
   useEffect(() => {
+    if (!seededRef.current && initialHTML && editorRef.current) {
+      seededRef.current = true;
+      editorRef.current.innerHTML = initialHTML;
+      emitChange();
+    }
     if (autoFocus) editorRef.current?.focus();
-  }, [autoFocus]);
+  }, [autoFocus, initialHTML]);
 
   const refreshToolbar = () => {
     const el = editorRef.current;

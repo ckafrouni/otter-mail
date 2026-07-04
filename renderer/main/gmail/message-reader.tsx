@@ -46,6 +46,7 @@ import { isTypingTarget } from "./keyboard";
 import { IconBtn, HintTooltip } from "./slack-ui";
 import { RichTextArea, textToHtml, type RichTextRef } from "./rich-text";
 import { RecipientInput } from "./recipient-input";
+import { DraftEditor } from "./draft-editor";
 import type {
   ComposeAttachment,
   GmailLabel,
@@ -56,6 +57,8 @@ import type {
 type MessageReaderProps = {
   accountId: string;
   messageId: string | null;
+  /** Clears the selection (drafts return to the list after send/discard). */
+  onDeselect?: () => void;
 };
 
 type ComposeState = {
@@ -966,7 +969,7 @@ function ReaderShell({ children }: { children: ReactNode }) {
   );
 }
 
-export function MessageReader({ accountId, messageId }: MessageReaderProps) {
+export function MessageReader({ accountId, messageId, onDeselect }: MessageReaderProps) {
   // Reply/reply-all/forward handlers exist only when a message is open; the
   // render below refreshes this ref so the once-mounted listener stays current.
   const readerActions = useRef<{ reply?: () => void; replyAll?: () => void; forward?: () => void }>(
@@ -1086,6 +1089,19 @@ export function MessageReader({ accountId, messageId }: MessageReaderProps) {
           </span>
         </div>
       </ReaderShell>
+    );
+  }
+
+  // Drafts resume in the composer pane instead of rendering read-only.
+  if (message.labelIds.includes("DRAFT")) {
+    return (
+      <DraftEditor
+        key={`${accountId}:${message.id}`}
+        accountId={accountId}
+        detail={message}
+        threadMessages={threadMessages}
+        onDone={onDeselect ?? (() => {})}
+      />
     );
   }
 

@@ -749,6 +749,7 @@ export async function saveDraft(
     bcc?: string;
     subject: string;
     body: string;
+    bodyHtml?: string;
     threadId?: string;
     attachments?: ComposeAttachment[];
   },
@@ -763,6 +764,7 @@ export async function saveDraft(
     bcc: params.bcc,
     subject: params.subject,
     body: params.body,
+    bodyHtml: params.bodyHtml,
     attachments: params.attachments,
   });
   const message: { raw: string; threadId?: string } = { raw: encodeBase64url(raw) };
@@ -777,6 +779,27 @@ export async function saveDraft(
     messageId: res.message?.id,
     threadId: res.message?.threadId,
   };
+}
+
+/** The draft id owning a message id, or null (drafts.list carries message ids). */
+export async function findDraftIdByMessageId(
+  accountId: string,
+  messageId: string,
+): Promise<string | null> {
+  let pageToken: string | undefined;
+  for (let page = 0; page < 5; page++) {
+    const query = new URLSearchParams({ maxResults: "100" });
+    if (pageToken) query.set("pageToken", pageToken);
+    const res = (await gmailFetch(accountId, `/drafts?${query.toString()}`)) as {
+      drafts?: { id: string; message?: { id?: string } }[];
+      nextPageToken?: string;
+    };
+    const hit = (res.drafts ?? []).find((d) => d.message?.id === messageId);
+    if (hit) return hit.id;
+    if (!res.nextPageToken) return null;
+    pageToken = res.nextPageToken;
+  }
+  return null;
 }
 
 export async function deleteDraft(
