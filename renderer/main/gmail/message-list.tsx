@@ -10,7 +10,7 @@ import {
   ContextMenuSub,
 } from "@glaze/core/components";
 import { FlagIcon, ListFilterIcon } from "lucide-react";
-import { IconBtn, HintTooltip } from "./slack-ui";
+import { IconBtn, HintTooltip } from "./te-ui";
 import {
   useMessages,
   useCombinedMessages,
@@ -270,25 +270,25 @@ function MessageRow({
         type="button"
         onClick={onSelect}
         className={[
-          "group my-px flex w-full items-start gap-2.5 rounded-lg px-3 py-2 text-left",
-          selected ? "bg-(--sk-selblue)" : "hover:bg-(--sk-hover)",
+          "group my-px flex w-full items-start gap-2.5 rounded-[6px] px-3 py-2 text-left",
+          selected ? "bg-(--te-sel)" : "hover:bg-(--te-hover)",
         ].join(" ")}
       >
         <div className="flex min-w-0 flex-1 flex-col gap-px">
           <div className="flex items-center justify-between gap-2">
             <span className="flex min-w-0 flex-1 items-center gap-1.5">
               {unread && !selected ? (
-                <span className="size-2 shrink-0 rounded-full bg-(--sk-blue)" aria-hidden />
+                <span className="size-1.5 shrink-0 bg-(--te-blue)" aria-hidden />
               ) : null}
               {message.labelIds.includes("IMPORTANT") ? <ImportantMarker /> : null}
               <span
                 className={[
-                  "min-w-0 truncate text-[15px] leading-snug",
+                  "min-w-0 truncate text-[14px] leading-snug",
                   selected
-                    ? "font-bold text-(--sk-sel-fg)"
+                    ? "font-bold text-(--te-sel-fg)"
                     : unread
-                      ? "font-bold text-(--sk-strong)"
-                      : "font-medium text-(--sk-text)",
+                      ? "font-bold text-(--te-strong)"
+                      : "font-medium text-(--te-text)",
                 ].join(" ")}
               >
                 {message.fromName || message.fromEmail}
@@ -298,14 +298,14 @@ function MessageRow({
               {combinedMeta ? (
                 <span className="flex items-center gap-1 text-[11px]">
                   {combinedMeta.mailbox ? (
-                    <span className={selected ? "text-(--sk-sel-fg)/70" : "text-(--sk-faint)"}>
+                    <span className={selected ? "text-(--te-sel-fg)/70" : "text-(--te-faint)"}>
                       {combinedMeta.mailbox} -
                     </span>
                   ) : null}
                   <span
                     className="font-semibold"
                     style={{
-                      color: selected ? "var(--sk-sel-fg)" : combinedMeta.accountColor,
+                      color: selected ? "var(--te-sel-fg)" : combinedMeta.accountColor,
                     }}
                   >
                     {combinedMeta.accountName}
@@ -315,8 +315,10 @@ function MessageRow({
               {threadCount > 1 ? (
                 <span
                   className={[
-                    "rounded-full px-1.5 py-px text-[11px] font-semibold tabular-nums",
-                    selected ? "bg-(--sk-sel-fg)/25 text-(--sk-sel-fg)" : "bg-(--sk-ctl) text-(--sk-muted)",
+                    "te-num rounded-[3px] px-1 py-px text-[10px]",
+                    selected
+                      ? "bg-(--te-sel-fg)/25 text-(--te-sel-fg)"
+                      : "border border-(--te-outline) text-(--te-muted)",
                   ].join(" ")}
                 >
                   {threadCount}
@@ -324,8 +326,8 @@ function MessageRow({
               ) : null}
               <span
                 className={[
-                  "text-[11px] tabular-nums",
-                  selected ? "text-(--sk-sel-fg)/75" : "text-(--sk-faint)",
+                  "te-num text-[10px]",
+                  selected ? "text-(--te-sel-fg)/75" : "text-(--te-faint)",
                 ].join(" ")}
               >
                 {formatRelativeDate(message.date)}
@@ -334,16 +336,16 @@ function MessageRow({
           </div>
           <span
             className={[
-              "truncate text-[14px] leading-snug",
-              selected ? "text-(--sk-sel-fg)/95" : unread ? "font-semibold text-(--sk-strong)" : "text-(--sk-muted)",
+              "truncate text-[13px] leading-snug",
+              selected ? "text-(--te-sel-fg)/95" : unread ? "font-semibold text-(--te-strong)" : "text-(--te-muted)",
             ].join(" ")}
           >
             {message.subject || "(no subject)"}
           </span>
           <span
             className={[
-              "truncate text-[13px] leading-snug",
-              selected ? "text-(--sk-sel-fg)/70" : "text-(--sk-faint)",
+              "truncate text-[12px] leading-snug",
+              selected ? "text-(--te-sel-fg)/70" : "text-(--te-faint)",
             ].join(" ")}
           >
             {message.snippet || " "}
@@ -367,7 +369,7 @@ function MessageRow({
             aria-label="Unflag"
           >
             <FlagIcon
-              className={["size-4 fill-current", selected ? "text-(--sk-sel-fg)" : "text-(--red)"].join(" ")}
+              className={["size-4 fill-current", selected ? "text-(--te-sel-fg)" : "text-(--red)"].join(" ")}
             />
           </button>
         ) : null}
@@ -678,12 +680,12 @@ export function MessageList({
   return (
     <div className="flex h-full min-w-0 flex-col">
       {/* Header */}
-      <div className="drag-region flex h-[52px] shrink-0 items-center gap-2 border-b border-(--sk-border) px-4">
+      <div className="drag-region flex h-[52px] shrink-0 items-center gap-2 border-b border-(--te-border) px-4">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[16px] font-extrabold leading-tight text-(--sk-strong)">
+          <div className="truncate text-[15px] font-bold leading-tight tracking-tight text-(--te-strong)">
             {mailboxTitle}
           </div>
-          <div className="truncate text-[11px] leading-tight text-(--sk-muted)">
+          <div className="te-label truncate leading-tight text-(--te-muted)">
             {formatMailboxSummary(mailboxTotal, mailboxUnread)}
           </div>
         </div>
@@ -698,25 +700,25 @@ export function MessageList({
         </HintTooltip>
       </div>
 
-      <div className="sk-scroll min-h-0 flex-1 overflow-y-auto py-1.5">
+      <div className="te-scroll min-h-0 flex-1 overflow-y-auto py-1.5">
         {isLoading ? (
           <div className="flex flex-col gap-0">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="flex w-full items-start gap-3 px-5 py-2.5">
                 <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  <div className="h-3.5 w-32 animate-pulse rounded-full bg-(--sk-ctl)" />
-                  <div className="h-3 w-48 animate-pulse rounded-full bg-(--sk-hover)" />
-                  <div className="h-3 w-40 animate-pulse rounded-full bg-(--sk-hover)" />
+                  <div className="h-3.5 w-32 animate-pulse rounded-[3px] bg-(--te-ctl)" />
+                  <div className="h-3 w-48 animate-pulse rounded-[3px] bg-(--te-hover)" />
+                  <div className="h-3 w-40 animate-pulse rounded-[3px] bg-(--te-hover)" />
                 </div>
               </div>
             ))}
           </div>
         ) : visibleMessages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
-            <span className="text-[15px] font-bold text-(--sk-text)">
+            <span className="text-[15px] font-bold text-(--te-text)">
               {unreadOnly ? "No unread messages" : "No messages"}
             </span>
-            <span className="text-[13px] text-(--sk-muted)">
+            <span className="text-[13px] text-(--te-muted)">
               {unreadOnly
                 ? "Everything here has been read."
                 : searchQuery
@@ -749,7 +751,7 @@ export function MessageList({
                   type="button"
                   onClick={handleLoadMore}
                   disabled={isFetchingNextPage}
-                  className="h-7 rounded-md bg-(--sk-ctl) px-3 text-[13px] font-medium text-(--sk-text) hover:bg-(--sk-ctl-hover) disabled:opacity-50"
+                  className="te-label h-7 rounded-[5px] border border-(--te-outline) px-3 text-(--te-text) hover:border-(--te-outline-hover) disabled:opacity-50"
                 >
                   {isFetchingNextPage ? "Loading..." : "Load more"}
                 </button>

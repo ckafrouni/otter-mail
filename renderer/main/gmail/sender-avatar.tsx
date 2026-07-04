@@ -38,7 +38,7 @@ export function SenderAvatar({
   });
   const photo = photoQuery.data?.dataUrl ?? null;
 
-  const sizeClasses = size === "sm" ? "size-6 text-[11px] rounded-md" : "size-9 text-[15px]";
+  const sizeClasses = size === "sm" ? "size-6 text-[11px] rounded-[4px]" : "size-9 text-[15px] rounded-[5px]";
 
   if (photo) {
     return (
@@ -47,7 +47,7 @@ export function SenderAvatar({
         alt=""
         draggable={false}
         className={[
-          "shrink-0 rounded-lg select-none object-cover bg-white",
+          "shrink-0 select-none object-cover bg-white",
           sizeClasses,
           className ?? "",
         ].join(" ")}
@@ -62,7 +62,7 @@ export function SenderAvatar({
   return (
     <span
       className={[
-        "shrink-0 rounded-lg flex items-center justify-center font-bold select-none",
+        "shrink-0 flex items-center justify-center font-bold select-none",
         sizeClasses,
         className ?? "",
       ].join(" ")}

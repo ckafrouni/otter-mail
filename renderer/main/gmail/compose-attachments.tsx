@@ -38,20 +38,20 @@ export function AttachmentChips({
 }) {
   if (!attachments || attachments.length === 0) return null;
   return (
-    <div className="flex flex-wrap items-center gap-1.5 border-t border-(--sk-border) px-3 py-2">
+    <div className="flex flex-wrap items-center gap-1.5 border-t border-(--te-border) px-3 py-2">
       {attachments.map((att, i) => (
         <span
           key={`${att.name}:${i}`}
-          className="flex max-w-56 items-center gap-1.5 rounded-md bg-(--sk-ctl) px-2 py-1 text-[12px] text-(--sk-text)"
+          className="flex max-w-56 items-center gap-1.5 rounded-[4px] border border-(--te-border) bg-(--te-ctl) px-2 py-1 text-[12px] text-(--te-text)"
         >
-          <PaperclipIcon className="size-3 shrink-0 text-(--sk-faint)" />
+          <PaperclipIcon className="size-3 shrink-0 text-(--te-faint)" />
           <span className="min-w-0 truncate">{att.name}</span>
-          <span className="shrink-0 text-(--sk-faint)">{formatBytes(att.size)}</span>
+          <span className="shrink-0 text-(--te-faint)">{formatBytes(att.size)}</span>
           <button
             type="button"
             aria-label={`Remove ${att.name}`}
             onClick={() => onRemove(i)}
-            className="shrink-0 text-(--sk-faint) hover:text-(--sk-strong)"
+            className="shrink-0 text-(--te-faint) hover:text-(--te-strong)"
           >
             <XIcon className="size-3" />
           </button>

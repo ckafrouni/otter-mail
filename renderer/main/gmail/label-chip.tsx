@@ -1,9 +1,8 @@
-import { Badge } from "@glaze/core/components";
 import { ChevronsRightIcon, InboxIcon } from "lucide-react";
 import type { GmailLabel } from "./types";
 
 const PILL =
-  "inline-flex w-fit shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-pill text-small-strong px-1.5 py-0.5";
+  "te-label inline-flex w-fit shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-[3px] px-1.5 py-0.5 leading-none";
 
 /** Gmail's category tabs, chipped in the reader header with Gmail's colors. */
 const CATEGORY_CHIPS: Record<string, { name: string; bg: string }> = {
@@ -41,7 +40,9 @@ export function InboxChip({ selected }: { selected?: boolean }) {
   return (
     <span
       className={`${PILL} ${
-        selected ? "bg-(--sk-sel-fg)/25 text-(--sk-sel-fg)" : "bg-(--sk-ctl) text-(--sk-muted)"
+        selected
+          ? "bg-(--te-sel-fg)/25 text-(--te-sel-fg)"
+          : "border border-(--te-outline) text-(--te-muted)"
       }`}
     >
       <InboxIcon className="size-3" />
@@ -51,17 +52,16 @@ export function InboxChip({ selected }: { selected?: boolean }) {
 }
 
 /**
- * Colored pill for a label. Uncolored labels normally use the neutral Badge,
- * but on a selected (accent-filled) row that is nearly invisible — `selected`
- * switches them to a translucent selection-foreground pill instead.
+ * Colored chip for a label. Uncolored labels get a hairline outline, but on a
+ * selected (accent-filled) row that is nearly invisible — `selected` switches
+ * them to a translucent selection-foreground fill instead.
  */
 export function LabelChip({ label, selected }: { label: GmailLabel; selected?: boolean }) {
   const displayName = label.name.split("/").pop() ?? label.name;
-  const pill = PILL;
   if (label.color) {
     return (
       <span
-        className={pill}
+        className={PILL}
         style={{
           backgroundColor: label.color.backgroundColor,
           color: label.color.textColor,
@@ -73,8 +73,10 @@ export function LabelChip({ label, selected }: { label: GmailLabel; selected?: b
   }
   if (selected) {
     return (
-      <span className={`${pill} bg-(--sk-sel-fg)/25 text-(--sk-sel-fg)`}>{displayName}</span>
+      <span className={`${PILL} bg-(--te-sel-fg)/25 text-(--te-sel-fg)`}>{displayName}</span>
     );
   }
-  return <Badge color="secondary">{displayName}</Badge>;
+  return (
+    <span className={`${PILL} border border-(--te-outline) text-(--te-muted)`}>{displayName}</span>
+  );
 }

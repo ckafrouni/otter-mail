@@ -1,6 +1,6 @@
 import type { RefObject } from "react";
 import { ChevronLeftIcon, ChevronRightIcon, CircleHelpIcon, SearchIcon, XIcon } from "lucide-react";
-import { IconBtn, HintTooltip } from "./slack-ui";
+import { IconBtn, HintTooltip } from "./te-ui";
 import { COMBINED_ACCOUNT_ID } from "./custom-views";
 
 type TopBarProps = {
@@ -35,7 +35,7 @@ export function TopBar({
   return (
     <div
       data-toolbar=""
-      className="drag-region flex h-11 shrink-0 items-center gap-1 bg-(--sk-frame) pl-[84px] pr-2"
+      className="drag-region flex h-11 shrink-0 items-center gap-1 bg-(--te-frame) pl-[84px] pr-2"
     >
       <IconBtn label="Back" disabled={!canGoBack} onClick={onBack} className="size-7">
         <ChevronLeftIcon className="size-4.5" />
@@ -44,9 +44,13 @@ export function TopBar({
         <ChevronRightIcon className="size-4.5" />
       </IconBtn>
 
+      <span className="te-label hidden pl-2 text-(--te-muted) min-[720px]:block">
+        gmail inbox
+      </span>
+
       <div className="flex min-w-0 flex-1 justify-center px-4">
         <div className="relative w-full max-w-[600px]">
-          <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-(--sk-faint)" />
+          <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-(--te-faint)" />
           <input
             ref={searchRef}
             value={searchQuery}
@@ -58,7 +62,7 @@ export function TopBar({
               }
             }}
             placeholder={isCombined ? "Search all mailboxes" : "Search mail"}
-            className="h-7 w-full rounded-md bg-(--sk-ctl) pl-8 pr-8 text-[13px] text-(--sk-strong) outline-none placeholder:text-(--sk-faint) hover:bg-(--sk-ctl-hover) focus:bg-(--sk-ctl-hover) focus:ring-1 focus:ring-(--sk-outline-hover)"
+            className="h-7 w-full rounded-[5px] border border-(--te-outline) bg-(--te-panel) pl-8 pr-8 text-[13px] text-(--te-strong) outline-none placeholder:text-(--te-faint) hover:border-(--te-outline-hover) focus:border-(--te-outline-hover)"
             aria-label="Search mail"
           />
           {searchQuery ? (
@@ -66,7 +70,7 @@ export function TopBar({
               type="button"
               onClick={() => onSearchChange("")}
               aria-label="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-(--sk-faint) hover:text-(--sk-strong)"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-(--te-faint) hover:text-(--te-strong)"
             >
               <XIcon className="size-3.5" />
             </button>
@@ -76,8 +80,8 @@ export function TopBar({
 
       {syncing ? (
         <div className="flex min-w-0 items-center gap-1.5 pr-1">
-          <span className="size-3 shrink-0 animate-spin rounded-full border-2 border-(--sk-muted) border-t-transparent" />
-          <span className="max-w-40 truncate text-[11px] text-(--sk-muted)">{syncLabel}</span>
+          <span className="te-blink size-1.5 shrink-0 bg-(--te-accent)" aria-hidden />
+          <span className="te-label max-w-40 truncate text-(--te-muted)">{syncLabel}</span>
         </div>
       ) : null}
 

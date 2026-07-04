@@ -51,7 +51,7 @@ import { gmailApi } from "./api";
 import { COMBINED_ACCOUNT_ID, useMailViews } from "./custom-views";
 import { buildLabelTree, type LabelTreeNode } from "./label-tree";
 import { getAccountDisplayName } from "./account-style";
-import { UnreadPill, HintTooltip } from "./slack-ui";
+import { UnreadPill, HintTooltip } from "./te-ui";
 
 const LABEL_DRAG_MIME = "application/x-gmail-label";
 
@@ -116,7 +116,7 @@ function viewIcon(view: MailView): ReactNode {
   return <LayersIcon className="size-4" />;
 }
 
-/** Slack-style sidebar row: muted at rest, inverted pill when selected; counts live in the badge only. */
+/** Sidebar row: muted at rest, inverted block when selected; counts live in the badge only. */
 function SkRow({
   icon,
   title,
@@ -146,11 +146,11 @@ function SkRow({
       style={style}
       {...dragProps}
       className={[
-        "group flex h-7 w-full items-center gap-2 rounded-md pr-2 text-left text-[15px] leading-none",
+        "group flex h-7 w-full items-center gap-2 rounded-[5px] pr-2 text-left text-[13px] leading-none",
         selected
-          ? "bg-(--sk-selected) font-medium text-(--sk-selected-fg)"
-          : "text-(--sk-muted) hover:bg-(--sk-hover) hover:text-(--sk-text)",
-        dropActive ? "ring-1 ring-(--sk-blue) bg-(--sk-hover)" : "",
+          ? "bg-(--te-selected) font-medium text-(--te-selected-fg)"
+          : "text-(--te-muted) hover:bg-(--te-hover) hover:text-(--te-text)",
+        dropActive ? "ring-1 ring-(--te-blue) bg-(--te-hover)" : "",
       ].join(" ")}
     >
       <span className={["shrink-0", selected ? "" : "opacity-80"].join(" ")}>{icon}</span>
@@ -183,7 +183,7 @@ function Section({
       <div
         className={[
           "group flex h-6 items-center gap-1 rounded-md pr-2",
-          dropZone?.active ? "ring-1 ring-(--sk-blue) bg-(--sk-hover)" : "",
+          dropZone?.active ? "ring-1 ring-(--te-blue) bg-(--te-hover)" : "",
         ].join(" ")}
         onDragOver={dropZone?.onDragOver}
         onDragLeave={dropZone?.onDragLeave}
@@ -192,7 +192,7 @@ function Section({
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="flex h-6 items-center gap-1 rounded px-1.5 text-[13px] font-medium text-(--sk-faint) hover:text-(--sk-text)"
+          className="te-label flex h-6 items-center gap-1 rounded px-1.5 text-(--te-faint) hover:text-(--te-text)"
           aria-label={`Toggle ${title}`}
         >
           <ChevronDownIcon
@@ -215,7 +215,7 @@ function SectionAddButton({ label, onClick }: { label: string; onClick: () => vo
         type="button"
         aria-label={label}
         onClick={onClick}
-        className="flex size-5 items-center justify-center rounded text-(--sk-muted) hover:bg-(--sk-ctl) hover:text-(--sk-strong)"
+        className="flex size-5 items-center justify-center rounded text-(--te-muted) hover:bg-(--te-ctl) hover:text-(--te-strong)"
       >
         <PlusIcon className="size-3.5" />
       </button>
@@ -223,15 +223,15 @@ function SectionAddButton({ label, onClick }: { label: string; onClick: () => vo
   );
 }
 
-/** Slack's "+ Add channels" style footer row for a section. */
+/** "+ Add …" footer row for a section. */
 function AddRow({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[15px] leading-none text-(--sk-muted) hover:bg-(--sk-hover) hover:text-(--sk-text)"
+      className="flex h-7 w-full items-center gap-2 rounded-[5px] px-2 text-left text-[13px] leading-none text-(--te-muted) hover:bg-(--te-hover) hover:text-(--te-text)"
     >
-      <span className="flex size-4 items-center justify-center rounded bg-(--sk-ctl)">
+      <span className="flex size-4 items-center justify-center rounded bg-(--te-ctl)">
         <PlusIcon className="size-3" />
       </span>
       <span className="truncate">{label}</span>
@@ -275,7 +275,7 @@ function ViewRow({
               aria-label={`Edit ${view.name}`}
               className={[
                 "shrink-0 opacity-0 group-hover:opacity-100",
-                selected ? "text-(--sk-selected-fg)/70" : "text-(--sk-faint) hover:text-(--sk-strong)",
+                selected ? "text-(--te-selected-fg)/70" : "text-(--te-faint) hover:text-(--te-strong)",
               ].join(" ")}
               onClick={(e) => {
                 e.stopPropagation();
@@ -311,7 +311,7 @@ function labelIcon(label?: GmailLabel): ReactNode {
   if (color) {
     return <TagIcon className="size-4 fill-current" style={{ color }} />;
   }
-  return <TagIcon className="size-4 text-(--sk-faint)" />;
+  return <TagIcon className="size-4 text-(--te-faint)" />;
 }
 
 type LabelActions = {
@@ -616,16 +616,16 @@ export function AccountsSidebar({
   return (
     <div className="flex h-full min-w-0 flex-col">
       {/* Header: mailbox switcher + compose */}
-      <div className="drag-region flex h-[52px] shrink-0 items-center justify-between gap-2 border-b border-(--sk-border) px-3">
+      <div className="drag-region flex h-[52px] shrink-0 items-center justify-between gap-2 border-b border-(--te-border) px-3">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
               aria-label="Switch account"
-              className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 hover:bg-(--sk-hover)"
+              className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 hover:bg-(--te-hover)"
             >
-              <span className="truncate text-[17px] font-extrabold text-(--sk-strong)">{mailboxTitle}</span>
-              <ChevronDownIcon className="size-3.5 shrink-0 text-(--sk-muted)" />
+              <span className="truncate text-[15px] font-bold tracking-tight text-(--te-strong)">{mailboxTitle}</span>
+              <ChevronDownIcon className="size-3.5 shrink-0 text-(--te-muted)" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
@@ -666,7 +666,7 @@ export function AccountsSidebar({
           type="button"
           onClick={onCompose}
           aria-label="New message"
-          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-(--sk-selected) text-(--sk-selected-fg) shadow-sm hover:opacity-90"
+          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-(--te-selected) text-(--te-selected-fg) shadow-sm hover:opacity-90"
         >
           <SquarePenIcon className="size-4" />
         </button>
@@ -677,15 +677,15 @@ export function AccountsSidebar({
         <button
           type="button"
           onClick={onOpenSearch}
-          className="flex h-7 w-full items-center gap-2 rounded-md border border-(--sk-outline) px-2 text-[13px] text-(--sk-muted) hover:border-(--sk-outline-hover) hover:text-(--sk-text)"
+          className="flex h-7 w-full items-center gap-2 rounded-[5px] border border-(--te-outline) bg-(--te-panel) px-2 text-[13px] text-(--te-muted) hover:border-(--te-outline-hover) hover:text-(--te-text)"
         >
           <SearchIcon className="size-3.5 shrink-0" />
           <span className="truncate">Find a conversation…</span>
-          <span className="ml-auto shrink-0 text-[11px] text-(--sk-faint)">⌘K</span>
+          <span className="te-num ml-auto shrink-0 text-[11px] text-(--te-faint)">⌘K</span>
         </button>
       </div>
 
-      <div className="sk-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-4 pt-2">
+      <div className="te-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-4 pt-2">
         {isCombined ? (
           <>
             {views
@@ -848,7 +848,7 @@ export function AccountsSidebar({
                 "size-6 rounded-full",
                 colorTarget?.color?.backgroundColor === color.backgroundColor
                   ? "ring-2 ring-accent ring-offset-1"
-                  : "hover:ring-2 hover:ring-(--sk-faint)",
+                  : "hover:ring-2 hover:ring-(--te-faint)",
               ].join(" ")}
               style={{ backgroundColor: color.backgroundColor }}
             />

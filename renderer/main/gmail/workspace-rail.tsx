@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import { LayersIcon, PlusIcon, SettingsIcon } from "lucide-react";
-import { HintTooltip } from "./slack-ui";
+import { HintTooltip } from "./te-ui";
 import { COMBINED_ACCOUNT_ID } from "./custom-views";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
 import { gmailApi } from "./api";
@@ -13,7 +13,8 @@ type WorkspaceRailProps = {
   onAddAccount: () => void;
 };
 
-function RailTile({
+/** Round hardware-button account switcher, like a row of panel knobs. */
+function RailKnob({
   label,
   hint,
   selected,
@@ -35,9 +36,9 @@ function RailTile({
         aria-label={label}
         onClick={onClick}
         className={[
-          "flex size-9 shrink-0 items-center justify-center rounded-lg text-[15px] font-bold text-white",
+          "flex size-9 shrink-0 items-center justify-center rounded-full text-[14px] font-bold text-white",
           selected
-            ? "ring-2 ring-(--sk-strong) ring-offset-2 ring-offset-(--sk-frame)"
+            ? "ring-2 ring-(--te-strong) ring-offset-2 ring-offset-(--te-frame)"
             : "opacity-80 hover:opacity-100",
         ].join(" ")}
         style={style}
@@ -48,7 +49,7 @@ function RailTile({
   );
 }
 
-/** Slack-style workspace rail: Combined + one tile per Gmail account. */
+/** Left device rail: Combined + one knob per Gmail account. */
 export function WorkspaceRail({
   accounts,
   selectedAccountId,
@@ -56,21 +57,21 @@ export function WorkspaceRail({
   onAddAccount,
 }: WorkspaceRailProps) {
   return (
-    <div className="flex w-[60px] shrink-0 flex-col items-center gap-2.5 bg-(--sk-frame) pb-3 pt-1">
+    <div className="flex w-[60px] shrink-0 flex-col items-center gap-2.5 bg-(--te-frame) pb-3 pt-1">
       {accounts.length > 1 ? (
-        <RailTile
+        <RailKnob
           label="Combined"
           hint="⌘1"
           selected={selectedAccountId === COMBINED_ACCOUNT_ID}
           onClick={() => onSelectAccount(COMBINED_ACCOUNT_ID)}
-          style={{ background: "linear-gradient(135deg, #36c5f0 0%, #1164a3 100%)" }}
+          style={{ backgroundColor: "var(--te-strong)", color: "var(--te-card)" }}
         >
           <LayersIcon className="size-4.5" />
-        </RailTile>
+        </RailKnob>
       ) : null}
 
       {accounts.map((account, i) => (
-        <RailTile
+        <RailKnob
           key={account.id}
           label={getAccountDisplayName(account)}
           hint={accounts.length > 1 ? `⌘${i + 2}` : "⌘1"}
@@ -79,7 +80,7 @@ export function WorkspaceRail({
           style={{ backgroundColor: getAccountColor(account) }}
         >
           {(getAccountDisplayName(account)[0] ?? "?").toUpperCase()}
-        </RailTile>
+        </RailKnob>
       ))}
 
       <HintTooltip label="Add Gmail account">
@@ -87,7 +88,7 @@ export function WorkspaceRail({
           type="button"
           aria-label="Add Gmail account"
           onClick={onAddAccount}
-          className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-(--sk-ctl) text-(--sk-muted) hover:bg-(--sk-ctl-hover) hover:text-(--sk-strong)"
+          className="flex size-9 shrink-0 items-center justify-center rounded-full border border-(--te-outline) text-(--te-muted) hover:border-(--te-outline-hover) hover:text-(--te-strong)"
         >
           <PlusIcon className="size-4.5" />
         </button>
@@ -100,7 +101,7 @@ export function WorkspaceRail({
           type="button"
           aria-label="Open Settings"
           onClick={() => void gmailApi.openSettings({ pane: "general" })}
-          className="flex size-9 shrink-0 items-center justify-center rounded-lg text-(--sk-muted) hover:bg-(--sk-hover) hover:text-(--sk-strong)"
+          className="flex size-9 shrink-0 items-center justify-center rounded-full text-(--te-muted) hover:bg-(--te-hover) hover:text-(--te-strong)"
         >
           <SettingsIcon className="size-5" />
         </button>

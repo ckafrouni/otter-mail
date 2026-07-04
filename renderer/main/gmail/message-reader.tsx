@@ -42,7 +42,7 @@ import { SenderAvatar } from "./sender-avatar";
 import { LabelPickerMenu } from "./label-picker-menu";
 import { parseAddressEntry, splitAddressList } from "./address";
 import { isTypingTarget } from "./keyboard";
-import { IconBtn, HintTooltip } from "./slack-ui";
+import { IconBtn, HintTooltip } from "./te-ui";
 import { RichTextArea, textToHtml, type RichTextRef } from "./rich-text";
 import { RecipientInput } from "./recipient-input";
 import {
@@ -94,7 +94,7 @@ function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-/** Slack-style day-divider label: Today, Yesterday, weekday, or a date. */
+/** Day-divider label: Today, Yesterday, weekday, or a date. */
 function formatDayLabel(timestamp: number): string {
   const date = new Date(timestamp);
   const now = new Date();
@@ -133,7 +133,7 @@ body {
   line-height: 1.45;
   word-break: break-word;
 }
-a { color: #1264a3; }
+a { color: #e34500; }
 blockquote { border-left: 3px solid #d6d6d6; padding-left: 12px; margin: 4px 0; color: #555555; }
 </style>`;
 
@@ -146,12 +146,12 @@ function MessageBody({
 }) {
   if (bodyHtml) {
     // Marketing/HTML mail is designed for a white canvas — give it a light
-    // card inside the dark conversation, like an unfurled link in Slack.
+    // card inside the dark conversation, like an unfurled preview card.
     return (
       <iframe
         sandbox="allow-same-origin"
         srcDoc={MESSAGE_BODY_PRELUDE + bodyHtml}
-        className="w-full rounded-lg border border-(--sk-border) bg-white"
+        className="w-full rounded-[6px] border border-(--te-border) bg-white"
         title="Message body"
         onLoad={(e) => {
           const iframe = e.currentTarget;
@@ -165,12 +165,12 @@ function MessageBody({
   }
   if (bodyText) {
     return (
-      <pre className="whitespace-pre-wrap font-sans text-[15px] leading-relaxed text-(--sk-text)">
+      <pre className="whitespace-pre-wrap font-sans text-[15px] leading-relaxed text-(--te-text)">
         {bodyText}
       </pre>
     );
   }
-  return <span className="text-[13px] text-(--sk-muted)">(No message body)</span>;
+  return <span className="text-[13px] text-(--te-muted)">(No message body)</span>;
 }
 
 type MessageAttachment = GmailMessageDetail["attachments"][number];
@@ -313,7 +313,7 @@ function ImageAttachmentTile({
             aria-label={`Open ${attachment.filename}`}
             onClick={handleOpen}
             {...dragProps}
-            className={`h-28 w-36 cursor-pointer overflow-hidden rounded-lg border border-(--sk-border) bg-(--sk-ctl)${opening ? " opacity-60" : ""}`}
+            className={`h-28 w-36 cursor-pointer overflow-hidden rounded-[6px] border border-(--te-border) bg-(--te-ctl)${opening ? " opacity-60" : ""}`}
           >
             {url ? (
               <img
@@ -324,10 +324,10 @@ function ImageAttachmentTile({
               />
             ) : failed ? (
               <div className="flex h-full items-center justify-center">
-                <ImageIcon className="size-6 text-(--sk-faint)" />
+                <ImageIcon className="size-6 text-(--te-faint)" />
               </div>
             ) : (
-              <div className="h-full w-full animate-pulse bg-(--sk-ctl)" />
+              <div className="h-full w-full animate-pulse bg-(--te-ctl)" />
             )}
           </div>
           <button
@@ -340,7 +340,7 @@ function ImageAttachmentTile({
           >
             <DownloadIcon className="size-3.5" />
           </button>
-          <div className="mt-1 truncate text-[11px] text-(--sk-muted)">{attachment.filename}</div>
+          <div className="mt-1 truncate text-[11px] text-(--te-muted)">{attachment.filename}</div>
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
@@ -384,11 +384,11 @@ function FileAttachmentRow({
           aria-label={`Open ${attachment.filename}`}
           onClick={handleOpen}
           {...dragProps}
-          className={`flex cursor-pointer select-none items-center justify-between gap-3 rounded-lg bg-(--sk-ctl) px-3 py-2 hover:bg-(--sk-ctl-hover)${opening ? " opacity-60" : ""}`}
+          className={`flex cursor-pointer select-none items-center justify-between gap-3 rounded-[6px] border border-(--te-border) bg-(--te-ctl) px-3 py-2 hover:bg-(--te-ctl-hover)${opening ? " opacity-60" : ""}`}
         >
           <div className="flex min-w-0 flex-col">
-            <span className="truncate text-[13px] text-(--sk-text)">{attachment.filename}</span>
-            <span className="text-[11px] text-(--sk-faint)">
+            <span className="truncate text-[13px] text-(--te-text)">{attachment.filename}</span>
+            <span className="text-[11px] text-(--te-faint)">
               {attachment.mimeType} · {formatBytes(attachment.size)}
             </span>
           </div>
@@ -400,7 +400,7 @@ function FileAttachmentRow({
               onDownload(messageId, attachment.id, attachment.filename, attachment.mimeType);
             }}
             aria-label={`Download ${attachment.filename}`}
-            className="flex size-7 shrink-0 items-center justify-center rounded-md text-(--sk-muted) hover:bg-(--sk-hover) hover:text-(--sk-strong)"
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-(--te-muted) hover:bg-(--te-hover) hover:text-(--te-strong)"
           >
             <DownloadIcon className="size-4" />
           </button>
@@ -439,7 +439,7 @@ function AttachmentList({
   const files = attachments.filter((a) => !a.mimeType.startsWith("image/"));
   return (
     <div className="mt-2 flex flex-col gap-2">
-      <span className="text-[12px] font-bold text-(--sk-muted)">
+      <span className="te-label text-(--te-muted)">
         {attachments.length} attachment{attachments.length === 1 ? "" : "s"}
       </span>
       {images.length > 0 ? (
@@ -475,8 +475,8 @@ function AttachmentList({
 function DayDivider({ timestamp }: { timestamp: number }) {
   return (
     <div className="relative flex items-center justify-center py-3">
-      <div className="absolute inset-x-0 top-1/2 h-px bg-(--sk-border)" />
-      <span className="relative rounded-full border border-(--sk-border) bg-(--sk-card) px-3 py-1 text-[12px] font-bold text-(--sk-text)">
+      <div className="absolute inset-x-0 top-1/2 h-px bg-(--te-border)" />
+      <span className="te-label relative rounded-[4px] border border-(--te-border) bg-(--te-card) px-2.5 py-1 text-(--te-text)">
         {formatDayLabel(timestamp)}
       </span>
     </div>
@@ -498,24 +498,24 @@ function CollapsedRow({
         type="button"
         onClick={onExpand}
         aria-label="Expand message"
-        className="flex w-full items-center gap-2.5 rounded-lg border border-(--sk-border) bg-(--sk-ctl) px-3 py-2 text-left hover:bg-(--sk-ctl-hover)"
+        className="flex w-full items-center gap-2.5 rounded-[6px] border border-(--te-border) bg-(--te-ctl) px-3 py-2 text-left hover:bg-(--te-ctl-hover)"
       >
         <SenderAvatar name={summary.fromName} email={summary.fromEmail} accountId={accountId} size="sm" />
         <span
           className={[
             "shrink-0 text-[13px] leading-snug",
-            summary.unread ? "font-bold text-(--sk-strong)" : "font-semibold text-(--sk-text)",
+            summary.unread ? "font-bold text-(--te-strong)" : "font-semibold text-(--te-text)",
           ].join(" ")}
         >
           {summary.fromName || summary.fromEmail}
         </span>
-        <span className="min-w-0 flex-1 truncate text-[13px] text-(--sk-faint)">
+        <span className="min-w-0 flex-1 truncate text-[13px] text-(--te-faint)">
           {summary.snippet}
         </span>
-        <span className="shrink-0 text-[11px] tabular-nums text-(--sk-faint)">
+        <span className="te-num shrink-0 text-[10px] text-(--te-faint)">
           {formatTime(summary.date)}
         </span>
-        <ChevronDownIcon className="size-3.5 shrink-0 -rotate-90 text-(--sk-faint)" />
+        <ChevronDownIcon className="size-3.5 shrink-0 -rotate-90 text-(--te-faint)" />
       </button>
     </div>
   );
@@ -571,28 +571,28 @@ function ExpandedRow({
           className="flex w-full items-baseline gap-2 text-left"
           aria-label={onCollapse ? "Collapse message" : undefined}
         >
-          <span className="truncate text-[15px] font-bold leading-snug text-(--sk-strong)">
+          <span className="truncate text-[15px] font-bold leading-snug text-(--te-strong)">
             {summary.fromName || summary.fromEmail}
           </span>
           <span
-            className="shrink-0 text-[11px] tabular-nums text-(--sk-faint)"
+            className="te-num shrink-0 text-[10px] text-(--te-faint)"
             title={formatFullDate(summary.date)}
           >
             {formatTime(summary.date)}
           </span>
           {onCollapse ? (
-            <ChevronDownIcon className="size-3.5 shrink-0 rotate-180 self-center text-(--sk-faint) opacity-0 group-hover:opacity-100" />
+            <ChevronDownIcon className="size-3.5 shrink-0 rotate-180 self-center text-(--te-faint) opacity-0 group-hover:opacity-100" />
           ) : null}
         </button>
-        <div className="truncate text-[12px] text-(--sk-faint)" title={`to ${summary.to}`}>
+        <div className="truncate text-[12px] text-(--te-faint)" title={`to ${summary.to}`}>
           to {summary.to}
           {detail?.cc ? ` · cc ${detail.cc}` : ""}
         </div>
         <div className="mt-1.5">
           {detailQuery.isLoading ? (
             <div className="flex flex-col gap-2">
-              <div className="h-4 w-3/4 animate-pulse rounded-full bg-(--sk-ctl)" />
-              <div className="h-4 w-1/2 animate-pulse rounded-full bg-(--sk-hover)" />
+              <div className="h-4 w-3/4 animate-pulse rounded-[3px] bg-(--te-ctl)" />
+              <div className="h-4 w-1/2 animate-pulse rounded-[3px] bg-(--te-hover)" />
             </div>
           ) : detail ? (
             <>
@@ -605,7 +605,7 @@ function ExpandedRow({
               />
             </>
           ) : (
-            <span className="text-[13px] text-(--sk-muted)">Could not load this message.</span>
+            <span className="text-[13px] text-(--te-muted)">Could not load this message.</span>
           )}
         </div>
       </div>
@@ -848,7 +848,7 @@ function InlineComposer({
   return (
     <div className="shrink-0 px-5 pb-4 pt-1" data-inline-compose="">
       <div
-        className="rounded-lg border border-(--sk-outline) bg-(--sk-panel) focus-within:border-(--sk-outline-hover)"
+        className="rounded-[6px] border border-(--te-outline) bg-(--te-panel) focus-within:border-(--te-outline-hover)"
         onKeyDown={(e) => {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
@@ -856,11 +856,11 @@ function InlineComposer({
           }
         }}
       >
-        <div className="flex items-center gap-2 border-b border-(--sk-border) px-3 py-1.5">
-          <span className="shrink-0 rounded bg-(--sk-ctl) px-1.5 py-0.5 text-[11px] font-bold text-(--sk-muted)">
+        <div className="flex items-center gap-2 border-b border-(--te-border) px-3 py-1.5">
+          <span className="te-label shrink-0 rounded-[3px] bg-(--te-strong) px-1.5 py-1 text-(--te-card)">
             {INLINE_MODE_LABEL[mode]}
           </span>
-          <span className="shrink-0 text-[12px] text-(--sk-faint)">To</span>
+          <span className="te-label shrink-0 text-(--te-faint)">To</span>
           <RecipientInput
             ref={toRef}
             value={to}
@@ -875,7 +875,7 @@ function InlineComposer({
             <button
               type="button"
               onClick={() => setCcVisible(true)}
-              className="shrink-0 text-[11px] text-(--sk-faint) hover:text-(--sk-strong)"
+              className="shrink-0 text-[11px] text-(--te-faint) hover:text-(--te-strong)"
             >
               Cc
             </button>
@@ -884,7 +884,7 @@ function InlineComposer({
             <button
               type="button"
               onClick={() => setBccVisible(true)}
-              className="shrink-0 text-[11px] text-(--sk-faint) hover:text-(--sk-strong)"
+              className="shrink-0 text-[11px] text-(--te-faint) hover:text-(--te-strong)"
             >
               Bcc
             </button>
@@ -901,8 +901,8 @@ function InlineComposer({
           </IconBtn>
         </div>
         {ccVisible ? (
-          <div className="flex items-center gap-2 border-b border-(--sk-border) px-3 py-1.5">
-            <span className="shrink-0 text-[12px] text-(--sk-faint)">Cc</span>
+          <div className="flex items-center gap-2 border-b border-(--te-border) px-3 py-1.5">
+            <span className="te-label shrink-0 text-(--te-faint)">Cc</span>
             <RecipientInput
               value={cc}
               onChange={(v) => {
@@ -914,8 +914,8 @@ function InlineComposer({
           </div>
         ) : null}
         {bccVisible ? (
-          <div className="flex items-center gap-2 border-b border-(--sk-border) px-3 py-1.5">
-            <span className="shrink-0 text-[12px] text-(--sk-faint)">Bcc</span>
+          <div className="flex items-center gap-2 border-b border-(--te-border) px-3 py-1.5">
+            <span className="te-label shrink-0 text-(--te-faint)">Bcc</span>
             <RecipientInput value={bcc} onChange={setBcc} ariaLabel="Bcc" />
           </div>
         ) : null}
@@ -944,23 +944,23 @@ function InlineComposer({
             </IconBtn>
           </HintTooltip>
           {mode === "forward" && attachments == null ? (
-            <span className="pl-1 text-[11px] text-(--sk-faint)">Loading attachments…</span>
+            <span className="te-label pl-1 text-(--te-faint)">Loading attachments…</span>
           ) : null}
           {draft.saveState === "saving" ? (
-            <span className="pl-1 text-[11px] text-(--sk-faint)">Saving draft…</span>
+            <span className="te-label pl-1 text-(--te-faint)">Saving draft…</span>
           ) : draft.saveState === "saved" ? (
-            <span className="pl-1 text-[11px] text-(--sk-faint)">Draft saved</span>
+            <span className="te-label pl-1 text-(--te-faint)">Draft saved</span>
           ) : draft.saveState === "error" ? (
-            <span className="pl-1 text-[11px] text-(--red)">Couldn't save draft</span>
+            <span className="te-label pl-1 text-(--red)">Couldn't save draft</span>
           ) : null}
           <span className="flex-1" />
-          {canSend ? <span className="pr-1 text-[11px] text-(--sk-faint)">⌘↩ to send</span> : null}
+          {canSend ? <span className="te-label pr-1 text-(--te-faint)">⌘↩ send</span> : null}
           <button
             type="button"
             onClick={handleSend}
             disabled={!canSend}
             aria-label="Send"
-            className="flex h-7 w-9 items-center justify-center rounded-md bg-(--sk-green) text-white hover:brightness-110 disabled:bg-(--sk-ctl) disabled:text-(--sk-faint)"
+            className="flex h-7 w-9 items-center justify-center rounded-[5px] bg-(--te-accent) text-white hover:brightness-110 disabled:bg-(--te-ctl) disabled:text-(--te-faint)"
           >
             <SendHorizontalIcon className="size-4" />
           </button>
@@ -973,7 +973,7 @@ function InlineComposer({
 function ReaderShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-full min-w-0 flex-col">
-      <div className="drag-region h-[52px] shrink-0 border-b border-(--sk-border)" />
+      <div className="drag-region h-[52px] shrink-0 border-b border-(--te-border)" />
       {children}
     </div>
   );
@@ -1067,8 +1067,8 @@ export function MessageReader({ accountId, messageId, onDeselect }: MessageReade
     return (
       <ReaderShell>
         <div className="flex flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
-          <span className="text-[15px] font-bold text-(--sk-text)">Select a conversation</span>
-          <span className="text-[13px] text-(--sk-muted)">
+          <span className="text-[15px] font-bold text-(--te-text)">Select a conversation</span>
+          <span className="text-[13px] text-(--te-muted)">
             Choose a message from the list to read it here.
           </span>
         </div>
@@ -1080,9 +1080,9 @@ export function MessageReader({ accountId, messageId, onDeselect }: MessageReade
     return (
       <ReaderShell>
         <div className="flex flex-col gap-3 p-5">
-          <div className="h-5 w-64 animate-pulse rounded-full bg-(--sk-ctl)" />
-          <div className="h-4 w-48 animate-pulse rounded-full bg-(--sk-hover)" />
-          <div className="h-4 w-40 animate-pulse rounded-full bg-(--sk-hover)" />
+          <div className="h-5 w-64 animate-pulse rounded-[3px] bg-(--te-ctl)" />
+          <div className="h-4 w-48 animate-pulse rounded-[3px] bg-(--te-hover)" />
+          <div className="h-4 w-40 animate-pulse rounded-[3px] bg-(--te-hover)" />
         </div>
       </ReaderShell>
     );
@@ -1092,8 +1092,8 @@ export function MessageReader({ accountId, messageId, onDeselect }: MessageReade
     return (
       <ReaderShell>
         <div className="flex flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
-          <span className="text-[15px] font-bold text-(--sk-text)">Could not load message</span>
-          <span className="text-[13px] text-(--sk-muted)">
+          <span className="text-[15px] font-bold text-(--te-text)">Could not load message</span>
+          <span className="text-[13px] text-(--te-muted)">
             The message could not be retrieved. Try again.
           </span>
         </div>
@@ -1266,16 +1266,16 @@ export function MessageReader({ accountId, messageId, onDeselect }: MessageReade
     });
   };
 
-  const groupDivider = <span className="mx-1 h-5 w-px shrink-0 bg-(--sk-border)" aria-hidden />;
+  const groupDivider = <span className="mx-1 h-5 w-px shrink-0 bg-(--te-border)" aria-hidden />;
 
   return (
     <>
       <div className="flex h-full min-w-0 flex-col">
         {/* Conversation header */}
-        <div className="drag-region flex h-[52px] shrink-0 items-center gap-1 border-b border-(--sk-border) px-4">
+        <div className="drag-region flex h-[52px] shrink-0 items-center gap-1 border-b border-(--te-border) px-4">
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
-              <span className="truncate text-[16px] font-extrabold leading-tight text-(--sk-strong)">
+              <span className="truncate text-[15px] font-bold leading-tight tracking-tight text-(--te-strong)">
                 {message.subject || "(no subject)"}
               </span>
               {message.labelIds.includes("INBOX") ||
@@ -1292,7 +1292,7 @@ export function MessageReader({ accountId, messageId, onDeselect }: MessageReade
                 </span>
               ) : null}
             </div>
-            <div className="truncate text-[11px] leading-tight text-(--sk-muted)">
+            <div className="te-label truncate leading-tight text-(--te-muted)">
               {isThread ? `${rows.length} messages` : formatFullDate(message.date)}
             </div>
           </div>
@@ -1362,7 +1362,7 @@ export function MessageReader({ accountId, messageId, onDeselect }: MessageReade
         </div>
 
         {/* Conversation */}
-        <div className="sk-scroll min-h-0 flex-1 overflow-y-auto pb-2">
+        <div className="te-scroll min-h-0 flex-1 overflow-y-auto pb-2">
           {rows.map((m, i) => {
             const prev = rows[i - 1];
             const newDay = !prev || dayKey(prev.date) !== dayKey(m.date);
@@ -1372,7 +1372,7 @@ export function MessageReader({ accountId, messageId, onDeselect }: MessageReade
               <div key={m.id}>
                 {newDay ? <DayDivider timestamp={m.date} /> : null}
                 {!newDay && isExpanded && prevExpanded ? (
-                  <div className="mx-5 my-1 border-t border-(--sk-border)" />
+                  <div className="mx-5 my-1 border-t border-(--te-border)" />
                 ) : null}
                 {isExpanded ? (
                   <ExpandedRow

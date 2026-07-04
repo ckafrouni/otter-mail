@@ -73,7 +73,7 @@ function useStoredWidth(key: string, def: number, min: number, max: number) {
 
 function PaneResizer({ onPointerDown }: { onPointerDown: (e: ReactPointerEvent) => void }) {
   return (
-    <div className="relative w-px shrink-0 bg-(--sk-border)">
+    <div className="relative w-px shrink-0 bg-(--te-border)">
       <div
         onPointerDown={onPointerDown}
         className="absolute inset-y-0 -left-[3px] z-10 w-[7px] cursor-col-resize"
@@ -359,7 +359,7 @@ export function HomeView() {
   // refreshes all accounts via its own list handler (sentinel isn't a real account).
   useAccountSync(isCombined ? null : effectiveAccountId);
 
-  // Slack-style workspace branding: selections, badges, the compose button and
+  // Per-account branding: selections, badges, the compose button and
   // the SDK accent all take the active account's color (Combined keeps the
   // neutral defaults). Set on the document root so portaled dialogs/menus
   // rebrand too; inline properties win over the injected theme rule.
@@ -372,13 +372,13 @@ export function HomeView() {
     const props = [
       "--accent",
       "--accent-contrast",
-      "--sk-selblue",
-      "--sk-sel-fg",
-      "--sk-selected",
-      "--sk-selected-fg",
-      "--sk-badge-bg",
-      "--sk-badge-fg",
-      "--sk-blue",
+      "--te-sel",
+      "--te-sel-fg",
+      "--te-selected",
+      "--te-selected-fg",
+      "--te-badge-bg",
+      "--te-badge-fg",
+      "--te-blue",
     ];
     if (!brand) {
       for (const p of props) root.removeProperty(p);
@@ -387,13 +387,13 @@ export function HomeView() {
     const contrast = getAccountContrastColor(brand);
     root.setProperty("--accent", brand);
     root.setProperty("--accent-contrast", contrast);
-    root.setProperty("--sk-selblue", brand);
-    root.setProperty("--sk-sel-fg", contrast);
-    root.setProperty("--sk-selected", brand);
-    root.setProperty("--sk-selected-fg", contrast);
-    root.setProperty("--sk-badge-bg", brand);
-    root.setProperty("--sk-badge-fg", contrast);
-    root.setProperty("--sk-blue", brand);
+    root.setProperty("--te-sel", brand);
+    root.setProperty("--te-sel-fg", contrast);
+    root.setProperty("--te-selected", brand);
+    root.setProperty("--te-selected-fg", contrast);
+    root.setProperty("--te-badge-bg", brand);
+    root.setProperty("--te-badge-fg", contrast);
+    root.setProperty("--te-blue", brand);
   }, [brand]);
 
   // Resolve the selected view to concrete per-account rules.
@@ -490,7 +490,7 @@ export function HomeView() {
   // (a) Loading credentials
   if (credentialsQuery.isLoading) {
     return (
-      <div className="h-full flex items-center justify-center bg-(--sk-card)">
+      <div className="h-full flex items-center justify-center bg-(--te-card)">
         <div className="size-6 rounded-full border-2 border-accent border-t-transparent animate-spin" />
       </div>
     );
@@ -499,7 +499,7 @@ export function HomeView() {
   // (a) No credentials configured
   if (!credentials?.hasCredentials) {
     return (
-      <div className="h-full flex items-center justify-center bg-(--sk-card)">
+      <div className="h-full flex items-center justify-center bg-(--te-card)">
         <EmptyState
           title="Set up Gmail"
           description="Configure your Google OAuth credentials in Settings to connect Gmail accounts."
@@ -516,7 +516,7 @@ export function HomeView() {
   // (b) Credentials set but no accounts connected
   if (!accountsQuery.isLoading && accounts.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center bg-(--sk-card)">
+      <div className="h-full flex items-center justify-center bg-(--te-card)">
         <EmptyState
           title="Connect your Gmail account"
           description="Sign in with Google to start reading your emails."
@@ -538,10 +538,10 @@ export function HomeView() {
   const readerAccount = readerAccountId ?? (isCombined ? firstRealAccountId : effectiveAccountId);
   const hasListTarget = isCombined || effectiveAccountId != null;
 
-  // (c) Slack-style frame: top bar, workspace rail, floating content card.
+  // (c) Device frame: top bar, workspace rail, faceplate content card.
   return (
     <>
-      <div className="flex h-full flex-col bg-(--sk-frame) text-(--sk-text)">
+      <div className="flex h-full flex-col bg-(--te-frame) text-(--te-text)">
         <TopBar
           canGoBack={nav.idx > 0}
           canGoForward={nav.idx < nav.stack.length - 1}
@@ -562,7 +562,7 @@ export function HomeView() {
             onSelectAccount={handleSelectAccount}
             onAddAccount={() => void handleAddAccount()}
           />
-          <div className="mb-1.5 mr-1.5 flex min-w-0 flex-1 overflow-hidden rounded-lg border border-(--sk-border) bg-(--sk-card)">
+          <div className="mb-1.5 mr-1.5 flex min-w-0 flex-1 overflow-hidden rounded-[8px] border border-(--te-border) bg-(--te-card)">
             <div style={{ width: sidebarPane.width }} className="shrink-0 overflow-hidden">
               <AccountsSidebar
                 selectedAccountId={effectiveAccountId}

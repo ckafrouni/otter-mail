@@ -66,10 +66,10 @@ function ToolBtn({
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
       className={[
-        "flex size-6 shrink-0 items-center justify-center rounded",
+        "flex size-6 shrink-0 items-center justify-center rounded-[4px]",
         active
-          ? "bg-(--sk-ctl) text-(--sk-strong)"
-          : "text-(--sk-muted) hover:bg-(--sk-hover) hover:text-(--sk-strong)",
+          ? "bg-(--te-ctl) text-(--te-strong)"
+          : "text-(--te-muted) hover:bg-(--te-hover) hover:text-(--te-strong)",
       ].join(" ")}
     >
       {children}
@@ -78,9 +78,9 @@ function ToolBtn({
 }
 
 /**
- * Slack/Gmail-style rich-text area: contentEditable body with a formatting
- * strip (execCommand — deprecated but the exact engine Gmail's composer grew
- * up on, and fully supported by WebKit). Uncontrolled; read via the ref.
+ * Gmail-style rich-text area: contentEditable body with a formatting strip
+ * (execCommand — deprecated but the exact engine Gmail's composer grew up
+ * on, and fully supported by WebKit). Uncontrolled; read via the ref.
  */
 export const RichTextArea = forwardRef<
   RichTextRef,
@@ -163,7 +163,7 @@ export const RichTextArea = forwardRef<
     refreshToolbar();
   };
 
-  // Gmail/Slack formatting shortcuts. stopPropagation keeps app-level
+  // Gmail formatting shortcuts. stopPropagation keeps app-level
   // listeners (⌘K palette, ⌘digit account switch) out of the way while typing.
   const handleKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
@@ -222,7 +222,7 @@ export const RichTextArea = forwardRef<
 
   return (
     <div className="flex min-w-0 flex-col">
-      <div className="flex items-center gap-0.5 border-b border-(--sk-border) px-2 py-1">
+      <div className="flex items-center gap-0.5 border-b border-(--te-border) px-2 py-1">
         <ToolBtn label="Bold (⌘B)" active={toolbar.bold} onClick={() => exec("bold")}>
           <BoldIcon className="size-3.5" />
         </ToolBtn>
@@ -239,11 +239,11 @@ export const RichTextArea = forwardRef<
         <ToolBtn label="Strikethrough (⇧⌘X)" active={toolbar.strike} onClick={() => exec("strikeThrough")}>
           <StrikethroughIcon className="size-3.5" />
         </ToolBtn>
-        <span className="mx-1 h-4 w-px shrink-0 bg-(--sk-border)" aria-hidden />
+        <span className="mx-1 h-4 w-px shrink-0 bg-(--te-border)" aria-hidden />
         <ToolBtn label="Link (⌘K)" onClick={openLinkInput}>
           <Link2Icon className="size-3.5" />
         </ToolBtn>
-        <span className="mx-1 h-4 w-px shrink-0 bg-(--sk-border)" aria-hidden />
+        <span className="mx-1 h-4 w-px shrink-0 bg-(--te-border)" aria-hidden />
         <ToolBtn label="Bulleted list (⇧⌘8)" onClick={() => exec("insertUnorderedList")}>
           <ListIcon className="size-3.5" />
         </ToolBtn>
@@ -253,15 +253,15 @@ export const RichTextArea = forwardRef<
         <ToolBtn label="Quote (⇧⌘9)" onClick={() => exec("formatBlock", "blockquote")}>
           <TextQuoteIcon className="size-3.5" />
         </ToolBtn>
-        <span className="mx-1 h-4 w-px shrink-0 bg-(--sk-border)" aria-hidden />
+        <span className="mx-1 h-4 w-px shrink-0 bg-(--te-border)" aria-hidden />
         <ToolBtn label="Clear formatting (⌘\\)" onClick={() => exec("removeFormat")}>
           <RemoveFormattingIcon className="size-3.5" />
         </ToolBtn>
       </div>
 
       {linkOpen ? (
-        <div className="flex items-center gap-2 border-b border-(--sk-border) px-3 py-1.5">
-          <span className="shrink-0 text-[12px] text-(--sk-faint)">Link</span>
+        <div className="flex items-center gap-2 border-b border-(--te-border) px-3 py-1.5">
+          <span className="te-label shrink-0 text-(--te-faint)">Link</span>
           <input
             value={linkUrl}
             onChange={(e) => setLinkUrl(e.target.value)}
@@ -279,12 +279,12 @@ export const RichTextArea = forwardRef<
             placeholder="https://example.com"
             aria-label="Link URL"
             autoFocus
-            className="min-w-0 flex-1 bg-transparent text-[13px] text-(--sk-strong) outline-none placeholder:text-(--sk-faint)"
+            className="min-w-0 flex-1 bg-transparent text-[13px] text-(--te-strong) outline-none placeholder:text-(--te-faint)"
           />
           <button
             type="button"
             onClick={applyLink}
-            className="shrink-0 text-[11px] font-semibold text-(--sk-blue) hover:brightness-110"
+            className="te-label shrink-0 text-(--te-blue) hover:brightness-110"
           >
             Apply
           </button>
@@ -303,8 +303,8 @@ export const RichTextArea = forwardRef<
         onInput={emitChange}
         onKeyDown={handleKeyDown}
         className={[
-          "sk-scroll max-h-56 w-full overflow-y-auto bg-transparent px-3 py-2.5",
-          "text-[15px] leading-relaxed text-(--sk-strong) outline-none",
+          "te-scroll max-h-56 w-full overflow-y-auto bg-transparent px-3 py-2.5",
+          "text-[15px] leading-relaxed text-(--te-strong) outline-none",
           minHeightClass ?? "min-h-[38px]",
         ].join(" ")}
       />

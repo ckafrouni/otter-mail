@@ -17,7 +17,7 @@ import {
 import { useSendMessage } from "./hooks";
 import { parseAddressEntry, splitAddressList } from "./address";
 import { getAccountColor } from "./account-style";
-import { IconBtn, HintTooltip } from "./slack-ui";
+import { IconBtn, HintTooltip } from "./te-ui";
 import { RichTextArea, textToHtml, type RichTextRef } from "./rich-text";
 import {
   AttachmentChips,
@@ -29,8 +29,8 @@ import { RecipientInput } from "./recipient-input";
 import type { ComposeAttachment, GmailAccount } from "./types";
 
 /**
- * Slack-style "new chat": replaces the reader pane when composing a fresh
- * email — recipients, subject, attachments, and body in the docked composer,
+ * "New chat" pane: replaces the reader when composing a fresh email —
+ * recipients, subject, attachments, and body in the docked composer,
  * autosaving to a Gmail draft as you type.
  */
 export function NewMessageView({
@@ -132,12 +132,12 @@ export function NewMessageView({
 
   return (
     <div className="flex h-full min-w-0 flex-col">
-      <div className="drag-region flex h-[52px] shrink-0 items-center gap-2 border-b border-(--sk-border) px-4">
+      <div className="drag-region flex h-[52px] shrink-0 items-center gap-2 border-b border-(--te-border) px-4">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[16px] font-extrabold leading-tight text-(--sk-strong)">
+          <div className="truncate text-[15px] font-bold leading-tight tracking-tight text-(--te-strong)">
             New message
           </div>
-          <div className="truncate text-[11px] leading-tight text-(--sk-muted)">
+          <div className="te-label truncate leading-tight text-(--te-muted)">
             {draft.saveState === "saving"
               ? "Draft · saving…"
               : draft.saveState === "saved"
@@ -166,18 +166,18 @@ export function NewMessageView({
       </div>
 
       <div className="flex flex-1 flex-col items-center justify-center gap-1.5 px-6 text-center">
-        <span className="flex size-11 items-center justify-center rounded-xl bg-(--sk-ctl)">
-          <PenLineIcon className="size-5 text-(--sk-muted)" />
+        <span className="flex size-11 items-center justify-center rounded-full border border-(--te-outline)">
+          <PenLineIcon className="size-5 text-(--te-muted)" />
         </span>
-        <span className="pt-1 text-[15px] font-bold text-(--sk-text)">Start a new conversation</span>
-        <span className="text-[13px] text-(--sk-muted)">
+        <span className="pt-1 text-[15px] font-bold text-(--te-text)">Start a new conversation</span>
+        <span className="text-[13px] text-(--te-muted)">
           Add recipients and a subject, then say hi.
         </span>
       </div>
 
       <div className="shrink-0 px-5 pb-4 pt-1" data-inline-compose="">
         <div
-          className="rounded-lg border border-(--sk-outline) bg-(--sk-panel) focus-within:border-(--sk-outline-hover)"
+          className="rounded-[6px] border border-(--te-outline) bg-(--te-panel) focus-within:border-(--te-outline-hover)"
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();
@@ -186,21 +186,21 @@ export function NewMessageView({
           }}
         >
           {accounts.length > 1 && fromAccount ? (
-            <div className="flex items-center gap-2 border-b border-(--sk-border) px-3 py-1.5">
-              <span className="shrink-0 text-[12px] text-(--sk-faint)">From</span>
+            <div className="flex items-center gap-2 border-b border-(--te-border) px-3 py-1.5">
+              <span className="te-label shrink-0 text-(--te-faint)">From</span>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
                     aria-label="Send from"
-                    className="flex min-w-0 items-center gap-1.5 rounded px-1 py-0.5 text-[13px] text-(--sk-text) hover:bg-(--sk-hover)"
+                    className="flex min-w-0 items-center gap-1.5 rounded px-1 py-0.5 text-[13px] text-(--te-text) hover:bg-(--te-hover)"
                   >
                     <span
                       className="size-2 shrink-0 rounded-full"
                       style={{ backgroundColor: getAccountColor(fromAccount) }}
                     />
                     <span className="truncate">{fromAccount.email}</span>
-                    <ChevronDownIcon className="size-3 shrink-0 text-(--sk-faint)" />
+                    <ChevronDownIcon className="size-3 shrink-0 text-(--te-faint)" />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
@@ -220,8 +220,8 @@ export function NewMessageView({
             </div>
           ) : null}
 
-          <div className="flex items-center gap-2 border-b border-(--sk-border) px-3 py-1.5">
-            <span className="shrink-0 text-[12px] text-(--sk-faint)">To</span>
+          <div className="flex items-center gap-2 border-b border-(--te-border) px-3 py-1.5">
+            <span className="te-label shrink-0 text-(--te-faint)">To</span>
             <RecipientInput
               ref={toRef}
               value={to}
@@ -233,7 +233,7 @@ export function NewMessageView({
               <button
                 type="button"
                 onClick={() => setCcVisible(true)}
-                className="shrink-0 text-[11px] text-(--sk-faint) hover:text-(--sk-strong)"
+                className="shrink-0 text-[11px] text-(--te-faint) hover:text-(--te-strong)"
               >
                 Cc
               </button>
@@ -242,32 +242,32 @@ export function NewMessageView({
               <button
                 type="button"
                 onClick={() => setBccVisible(true)}
-                className="shrink-0 text-[11px] text-(--sk-faint) hover:text-(--sk-strong)"
+                className="shrink-0 text-[11px] text-(--te-faint) hover:text-(--te-strong)"
               >
                 Bcc
               </button>
             ) : null}
           </div>
           {ccVisible ? (
-            <div className="flex items-center gap-2 border-b border-(--sk-border) px-3 py-1.5">
-              <span className="shrink-0 text-[12px] text-(--sk-faint)">Cc</span>
+            <div className="flex items-center gap-2 border-b border-(--te-border) px-3 py-1.5">
+              <span className="te-label shrink-0 text-(--te-faint)">Cc</span>
               <RecipientInput value={cc} onChange={setCc} ariaLabel="Cc" />
             </div>
           ) : null}
           {bccVisible ? (
-            <div className="flex items-center gap-2 border-b border-(--sk-border) px-3 py-1.5">
-              <span className="shrink-0 text-[12px] text-(--sk-faint)">Bcc</span>
+            <div className="flex items-center gap-2 border-b border-(--te-border) px-3 py-1.5">
+              <span className="te-label shrink-0 text-(--te-faint)">Bcc</span>
               <RecipientInput value={bcc} onChange={setBcc} ariaLabel="Bcc" />
             </div>
           ) : null}
-          <div className="flex items-center gap-2 border-b border-(--sk-border) px-3 py-1.5">
-            <span className="shrink-0 text-[12px] text-(--sk-faint)">Subject</span>
+          <div className="flex items-center gap-2 border-b border-(--te-border) px-3 py-1.5">
+            <span className="te-label shrink-0 text-(--te-faint)">Subject</span>
             <input
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               placeholder="What's this about?"
               aria-label="Subject"
-              className="min-w-0 flex-1 bg-transparent text-[13px] text-(--sk-strong) outline-none placeholder:text-(--sk-faint)"
+              className="min-w-0 flex-1 bg-transparent text-[13px] text-(--te-strong) outline-none placeholder:text-(--te-faint)"
             />
           </div>
 
@@ -297,13 +297,13 @@ export function NewMessageView({
               </IconBtn>
             </HintTooltip>
             <span className="flex-1" />
-            {canSend ? <span className="pr-1 text-[11px] text-(--sk-faint)">⌘↩ to send</span> : null}
+            {canSend ? <span className="te-label pr-1 text-(--te-faint)">⌘↩ send</span> : null}
             <button
               type="button"
               onClick={handleSend}
               disabled={!canSend}
               aria-label="Send"
-              className="flex h-7 w-9 items-center justify-center rounded-md bg-(--sk-green) text-white hover:brightness-110 disabled:bg-(--sk-ctl) disabled:text-(--sk-faint)"
+              className="flex h-7 w-9 items-center justify-center rounded-[5px] bg-(--te-accent) text-white hover:brightness-110 disabled:bg-(--te-ctl) disabled:text-(--te-faint)"
             >
               <SendHorizontalIcon className="size-4" />
             </button>

@@ -2,16 +2,16 @@ import { Outlet } from "@tanstack/react-router";
 import * as React from "react";
 import { Status, injectActiveTheme } from "@glaze/core/components";
 import { useConnection, useEnvironment } from "@glaze/core/hooks";
-import { SLACK_DARK_THEME, SLACK_LIGHT_THEME } from "./gmail/slack-theme";
+import { TE_DARK_THEME, TE_LIGHT_THEME } from "./gmail/te-theme";
 
-// Follow the system appearance with the matching Slack skin. Replaces
+// Follow the system appearance with the matching TE skin. Replaces
 // useTheme(): its accent sync would let the macOS accent override the
 // theme's, and the theme injection owns the `dark` class instead.
-function applySlackTheme() {
+function applyTeTheme() {
   const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  injectActiveTheme(dark ? SLACK_DARK_THEME : SLACK_LIGHT_THEME);
+  injectActiveTheme(dark ? TE_DARK_THEME : TE_LIGHT_THEME);
 }
-applySlackTheme();
+applyTeTheme();
 
 export function RootView() {
   // IPC connection and environment
@@ -21,7 +21,7 @@ export function RootView() {
   // Re-skin live when macOS switches appearance (auto light/dark).
   React.useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => applySlackTheme();
+    const onChange = () => applyTeTheme();
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, []);
