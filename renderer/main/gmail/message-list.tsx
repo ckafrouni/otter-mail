@@ -24,7 +24,7 @@ import {
   useLabelResolver,
   useSyncAccountLabels,
 } from "./hooks";
-import { LabelChip, InboxChip } from "./label-chip";
+import { LabelChip, InboxChip, ImportantMarker } from "./label-chip";
 import { LabelOverlay, type LabelOverlayMode } from "./label-overlay";
 import { renderLabelMenuNodes } from "./label-picker-menu";
 import {
@@ -280,6 +280,7 @@ function MessageRow({
               {unread && !selected ? (
                 <span className="size-2 shrink-0 rounded-full bg-(--sk-blue)" aria-hidden />
               ) : null}
+              {message.labelIds.includes("IMPORTANT") ? <ImportantMarker /> : null}
               <span
                 className={[
                   "min-w-0 truncate text-[15px] leading-snug",

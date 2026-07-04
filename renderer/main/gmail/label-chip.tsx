@@ -1,9 +1,40 @@
 import { Badge } from "@glaze/core/components";
-import { InboxIcon } from "lucide-react";
+import { ChevronsRightIcon, InboxIcon } from "lucide-react";
 import type { GmailLabel } from "./types";
 
 const PILL =
   "inline-flex w-fit shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-pill text-small-strong px-1.5 py-0.5";
+
+/** Gmail's category tabs, chipped in the reader header with Gmail's colors. */
+const CATEGORY_CHIPS: Record<string, { name: string; bg: string }> = {
+  CATEGORY_SOCIAL: { name: "Social", bg: "#1a73e8" },
+  CATEGORY_PROMOTIONS: { name: "Promotions", bg: "#188038" },
+  CATEGORY_UPDATES: { name: "Updates", bg: "#e37400" },
+  CATEGORY_FORUMS: { name: "Forums", bg: "#7627bb" },
+};
+
+export function CategoryChip({ id }: { id: string }) {
+  const meta = CATEGORY_CHIPS[id];
+  if (!meta) return null;
+  return (
+    <span className={PILL} style={{ backgroundColor: meta.bg, color: "#ffffff" }}>
+      {meta.name}
+    </span>
+  );
+}
+
+export function isCategoryLabelId(id: string): boolean {
+  return id in CATEGORY_CHIPS;
+}
+
+/** Gmail's yellow importance marker. */
+export function ImportantMarker() {
+  return (
+    <span title="Marked important" aria-label="Important" className="shrink-0">
+      <ChevronsRightIcon className="size-3.5" strokeWidth={3} style={{ color: "#f4b400" }} />
+    </span>
+  );
+}
 
 /** "Still in the inbox" marker, shown when browsing non-inbox views. */
 export function InboxChip({ selected }: { selected?: boolean }) {

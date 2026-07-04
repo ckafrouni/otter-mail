@@ -37,7 +37,7 @@ import {
   useSendMessage,
 } from "./hooks";
 import { gmailApi } from "./api";
-import { LabelChip } from "./label-chip";
+import { CategoryChip, InboxChip, LabelChip, isCategoryLabelId } from "./label-chip";
 import { SenderAvatar } from "./sender-avatar";
 import { LabelPickerMenu } from "./label-picker-menu";
 import { parseAddressEntry, splitAddressList } from "./address";
@@ -1278,8 +1278,14 @@ export function MessageReader({ accountId, messageId, onDeselect }: MessageReade
               <span className="truncate text-[16px] font-extrabold leading-tight text-(--sk-strong)">
                 {message.subject || "(no subject)"}
               </span>
-              {messageLabels.length > 0 ? (
+              {message.labelIds.includes("INBOX") ||
+              message.labelIds.some(isCategoryLabelId) ||
+              messageLabels.length > 0 ? (
                 <span className="flex max-w-[45%] shrink-0 items-center gap-1 overflow-hidden">
+                  {message.labelIds.includes("INBOX") ? <InboxChip /> : null}
+                  {message.labelIds.filter(isCategoryLabelId).map((id) => (
+                    <CategoryChip key={id} id={id} />
+                  ))}
                   {messageLabels.map((label) => (
                     <LabelChip key={label.id} label={label} />
                   ))}
