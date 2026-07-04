@@ -152,6 +152,16 @@ export const gmailApi = {
   createLabel: (accountId: string, name: string): Promise<GmailLabel> =>
     ipc("gmail:createLabel", { accountId, name }),
 
+  updateLabel: (params: {
+    accountId: string;
+    labelId: string;
+    name?: string;
+    color?: { backgroundColor: string; textColor: string };
+  }): Promise<{ ok: boolean }> => ipc("gmail:updateLabel", params),
+
+  deleteLabel: (accountId: string, labelId: string): Promise<{ ok: boolean }> =>
+    ipc("gmail:deleteLabel", { accountId, labelId }),
+
   listMessages: (params: ListMessagesParams): Promise<ListMessagesResult> =>
     ipc("gmail:listMessages", params),
 

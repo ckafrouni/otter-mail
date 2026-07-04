@@ -40,6 +40,8 @@ import {
   fetchMetadataForIds,
   MAX_ATTACHMENT_TOTAL_BYTES,
   findDraftIdByMessageId,
+  updateLabel,
+  deleteLabel,
 } from "../services/gmail-api.js";
 import * as mailStore from "../services/mail-store.js";
 import * as mailSync from "../services/mail-sync.js";
@@ -232,6 +234,47 @@ export function registerGmailHandlers(): void {
   });
 
   // gmail:listMessages
+  // gmail:updateLabel — rename (cascades to nested labels) and/or recolor
+  ipcMain.handle("gmail:updateLabel", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:updateLabel]", { accountId: p?.accountId, labelId: p?.labelId, name: p?.name });
+    try {
+      const accountId = assertString(p?.accountId, "accountId");
+      const labelId = assertString(p?.labelId, "labelId");
+      const name = asString(p?.name);
+      const colorRaw = p?.color as Record<string, unknown> | undefined;
+      const color = colorRaw
+        ? {
+            backgroundColor: assertString(colorRaw.backgroundColor, "color.backgroundColor"),
+            textColor: assertString(colorRaw.textColor, "color.textColor"),
+          }
+        : undefined;
+      await updateLabel(accountId, { labelId, name, color });
+      mailStore.upsertLabels(accountId, await listLabels(accountId));
+      return { ok: true };
+    } catch (err) {
+      console.log("[gmail:updateLabel] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:deleteLabel — removes the label everywhere (sub-labels survive)
+  ipcMain.handle("gmail:deleteLabel", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:deleteLabel]", { accountId: p?.accountId, labelId: p?.labelId });
+    try {
+      const accountId = assertString(p?.accountId, "accountId");
+      const labelId = assertString(p?.labelId, "labelId");
+      await deleteLabel(accountId, labelId);
+      mailStore.clearLabelMappings(accountId, labelId);
+      mailStore.upsertLabels(accountId, await listLabels(accountId));
+      return { ok: true };
+    } catch (err) {
+      console.log("[gmail:deleteLabel] error", { error: String(err) });
+      throw err;
+    }
+  });
+
   ipcMain.handle("gmail:listMessages", async (_event, params: unknown) => {
     const p = params as Record<string, unknown>;
     console.log("[gmail:listMessages]", {

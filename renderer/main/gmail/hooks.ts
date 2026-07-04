@@ -157,6 +157,72 @@ export function useCreateLabel() {
   });
 }
 
+export function useUpdateLabel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: {
+      accountId: string;
+      labelId: string;
+      name?: string;
+      color?: { backgroundColor: string; textColor: string };
+    }) => {
+      console.log("[hooks:useUpdateLabel]", params);
+      return gmailApi.updateLabel(params);
+    },
+    // Optimistic: rename/recolor in the labels cache immediately, cascading
+    // renames to nested labels the way the backend does.
+    onMutate: async ({ accountId, labelId, name, color }) => {
+      await qc.cancelQueries({ queryKey: queryKeys.labels(accountId) });
+      const prev = qc.getQueryData<GmailLabel[]>(queryKeys.labels(accountId));
+      qc.setQueryData<GmailLabel[]>(queryKeys.labels(accountId), (old) => {
+        if (!old) return old;
+        const source = old.find((l) => l.id === labelId);
+        if (!source) return old;
+        const oldName = source.name;
+        return old.map((l) => {
+          if (l.id === labelId) return { ...l, ...(name ? { name } : {}), ...(color ? { color } : {}) };
+          if (name && l.name.startsWith(`${oldName}/`)) {
+            return { ...l, name: `${name}${l.name.slice(oldName.length)}` };
+          }
+          return l;
+        });
+      });
+      return { prev };
+    },
+    onError: (_err, { accountId }, context) => {
+      if (context?.prev) qc.setQueryData(queryKeys.labels(accountId), context.prev);
+    },
+    onSettled: (_data, _err, { accountId }) => {
+      void qc.invalidateQueries({ queryKey: queryKeys.labels(accountId) });
+    },
+  });
+}
+
+export function useDeleteLabel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ accountId, labelId }: { accountId: string; labelId: string }) => {
+      console.log("[hooks:useDeleteLabel]", { accountId, labelId });
+      return gmailApi.deleteLabel(accountId, labelId);
+    },
+    onMutate: async ({ accountId, labelId }) => {
+      await qc.cancelQueries({ queryKey: queryKeys.labels(accountId) });
+      const prev = qc.getQueryData<GmailLabel[]>(queryKeys.labels(accountId));
+      qc.setQueryData<GmailLabel[]>(queryKeys.labels(accountId), (old) =>
+        old?.filter((l) => l.id !== labelId),
+      );
+      return { prev };
+    },
+    onError: (_err, { accountId }, context) => {
+      if (context?.prev) qc.setQueryData(queryKeys.labels(accountId), context.prev);
+    },
+    onSettled: (_data, _err, { accountId }) => {
+      void qc.invalidateQueries({ queryKey: queryKeys.labels(accountId) });
+      void qc.invalidateQueries({ queryKey: ["gmail:combinedCounts"] });
+    },
+  });
+}
+
 /** Optimistically drop a thread's rows from every message-list cache. */
 export function usePruneThreadRows() {
   const qc = useQueryClient();

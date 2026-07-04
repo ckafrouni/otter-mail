@@ -1,4 +1,9 @@
-import { useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useState,
+  type CSSProperties,
+  type DragEvent as ReactDragEvent,
+  type ReactNode,
+} from "react";
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -13,6 +18,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  Text,
   toast,
 } from "@glaze/core/components";
 import {
@@ -31,13 +37,61 @@ import {
   SearchIcon,
   SquarePenIcon,
 } from "lucide-react";
-import { useAccounts, useLabels, useAddAccount, useCreateLabel, useViewUnreadCounts } from "./hooks";
+import {
+  useAccounts,
+  useLabels,
+  useAddAccount,
+  useCreateLabel,
+  useUpdateLabel,
+  useDeleteLabel,
+  useViewUnreadCounts,
+} from "./hooks";
 import type { GmailLabel, MailView } from "./types";
 import { gmailApi } from "./api";
 import { COMBINED_ACCOUNT_ID, useMailViews } from "./custom-views";
 import { buildLabelTree, type LabelTreeNode } from "./label-tree";
 import { getAccountDisplayName } from "./account-style";
 import { UnreadPill, HintTooltip } from "./slack-ui";
+
+const LABEL_DRAG_MIME = "application/x-gmail-label";
+
+type LabelDragPayload = { id: string; name: string };
+
+type RowDragProps = {
+  draggable?: boolean;
+  onDragStart?: (e: ReactDragEvent<HTMLButtonElement>) => void;
+  onDragOver?: (e: ReactDragEvent<HTMLButtonElement>) => void;
+  onDragLeave?: (e: ReactDragEvent<HTMLButtonElement>) => void;
+  onDrop?: (e: ReactDragEvent<HTMLButtonElement>) => void;
+};
+
+/** Gmail's labels API only accepts colors from its fixed palette. */
+const GMAIL_LABEL_COLORS: { backgroundColor: string; textColor: string }[] = [
+  { backgroundColor: "#fb4c2f", textColor: "#ffffff" },
+  { backgroundColor: "#cc3a21", textColor: "#ffffff" },
+  { backgroundColor: "#efa093", textColor: "#000000" },
+  { backgroundColor: "#ff7537", textColor: "#ffffff" },
+  { backgroundColor: "#ffad47", textColor: "#000000" },
+  { backgroundColor: "#ffd6a2", textColor: "#000000" },
+  { backgroundColor: "#fad165", textColor: "#000000" },
+  { backgroundColor: "#fcda83", textColor: "#000000" },
+  { backgroundColor: "#16a766", textColor: "#ffffff" },
+  { backgroundColor: "#149e60", textColor: "#ffffff" },
+  { backgroundColor: "#43d692", textColor: "#000000" },
+  { backgroundColor: "#89d3b2", textColor: "#000000" },
+  { backgroundColor: "#4a86e8", textColor: "#ffffff" },
+  { backgroundColor: "#3c78d8", textColor: "#ffffff" },
+  { backgroundColor: "#285bac", textColor: "#ffffff" },
+  { backgroundColor: "#a4c2f4", textColor: "#000000" },
+  { backgroundColor: "#a479e2", textColor: "#ffffff" },
+  { backgroundColor: "#8e63ce", textColor: "#ffffff" },
+  { backgroundColor: "#b99aff", textColor: "#000000" },
+  { backgroundColor: "#f691b3", textColor: "#000000" },
+  { backgroundColor: "#e07798", textColor: "#ffffff" },
+  { backgroundColor: "#666666", textColor: "#ffffff" },
+  { backgroundColor: "#999999", textColor: "#ffffff" },
+  { backgroundColor: "#cccccc", textColor: "#000000" },
+];
 
 const SIDEBAR_SYSTEM_ORDER = ["INBOX", "STARRED", "SENT", "DRAFT", "IMPORTANT", "SPAM", "TRASH"];
 
@@ -71,6 +125,8 @@ function SkRow({
   trailing,
   depth = 0,
   onClick,
+  dragProps,
+  dropActive,
 }: {
   icon: ReactNode;
   title: string;
@@ -79,6 +135,8 @@ function SkRow({
   trailing?: ReactNode;
   depth?: number;
   onClick?: () => void;
+  dragProps?: RowDragProps;
+  dropActive?: boolean;
 }) {
   const style: CSSProperties = { paddingLeft: 8 + depth * 18 };
   return (
@@ -86,11 +144,13 @@ function SkRow({
       type="button"
       onClick={onClick}
       style={style}
+      {...dragProps}
       className={[
         "group flex h-7 w-full items-center gap-2 rounded-md pr-2 text-left text-[15px] leading-none",
         selected
           ? "bg-(--sk-selected) font-medium text-(--sk-selected-fg)"
           : "text-(--sk-muted) hover:bg-(--sk-hover) hover:text-(--sk-text)",
+        dropActive ? "ring-1 ring-(--sk-blue) bg-(--sk-hover)" : "",
       ].join(" ")}
     >
       <span className={["shrink-0", selected ? "" : "opacity-80"].join(" ")}>{icon}</span>
@@ -105,15 +165,30 @@ function Section({
   title,
   action,
   children,
+  dropZone,
 }: {
   title: string;
   action?: ReactNode;
   children: ReactNode;
+  dropZone?: {
+    active: boolean;
+    onDragOver: (e: ReactDragEvent<HTMLDivElement>) => void;
+    onDragLeave: (e: ReactDragEvent<HTMLDivElement>) => void;
+    onDrop: (e: ReactDragEvent<HTMLDivElement>) => void;
+  };
 }) {
   const [open, setOpen] = useState(true);
   return (
     <div className="mt-4">
-      <div className="group flex h-6 items-center gap-1 pr-2">
+      <div
+        className={[
+          "group flex h-6 items-center gap-1 rounded-md pr-2",
+          dropZone?.active ? "ring-1 ring-(--sk-blue) bg-(--sk-hover)" : "",
+        ].join(" ")}
+        onDragOver={dropZone?.onDragOver}
+        onDragLeave={dropZone?.onDragLeave}
+        onDrop={dropZone?.onDrop}
+      >
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
@@ -239,58 +314,121 @@ function labelIcon(label?: GmailLabel): ReactNode {
   return <TagIcon className="size-4 text-(--sk-faint)" />;
 }
 
+type LabelActions = {
+  onRename: (label: GmailLabel) => void;
+  onRecolor: (label: GmailLabel) => void;
+  onDelete: (label: GmailLabel) => void;
+  onMove: (source: LabelDragPayload, targetParentName: string | null) => void;
+};
+
 function LabelNode({
   node,
   depth,
   selectedLabelId,
   onSelectLabel,
+  actions,
 }: {
   node: LabelTreeNode;
   depth: number;
   selectedLabelId: string;
   onSelectLabel: (labelId: string) => void;
+  actions: LabelActions;
 }): ReactNode {
   const [open, setOpen] = useState(true);
+  const [dropActive, setDropActive] = useState(false);
   const { label, children } = node;
   const unread = label?.unread && label.unread > 0 ? label.unread : 0;
   const hasChildren = children.length > 0;
 
+  // Drag to nest: rows are both sources and targets. Drop payloads aren't
+  // readable during dragover, so self/descendant checks happen on drop.
+  const dragProps: RowDragProps | undefined = label
+    ? {
+        draggable: true,
+        onDragStart: (e) => {
+          e.dataTransfer.setData(
+            LABEL_DRAG_MIME,
+            JSON.stringify({ id: label.id, name: label.name } satisfies LabelDragPayload),
+          );
+          e.dataTransfer.effectAllowed = "move";
+        },
+        onDragOver: (e) => {
+          if (!e.dataTransfer.types.includes(LABEL_DRAG_MIME)) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          setDropActive(true);
+        },
+        onDragLeave: () => setDropActive(false),
+        onDrop: (e) => {
+          setDropActive(false);
+          const raw = e.dataTransfer.getData(LABEL_DRAG_MIME);
+          if (!raw) return;
+          e.preventDefault();
+          actions.onMove(JSON.parse(raw) as LabelDragPayload, label.name);
+        },
+      }
+    : undefined;
+
+  const row = (
+    <SkRow
+      icon={
+        hasChildren ? (
+          <span
+            role="button"
+            tabIndex={-1}
+            aria-label={open ? `Collapse ${node.segment}` : `Expand ${node.segment}`}
+            className="flex items-center"
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpen((o) => !o);
+            }}
+          >
+            <ChevronDownIcon
+              className={["size-4 transition-transform", open ? "" : "-rotate-90"].join(" ")}
+            />
+          </span>
+        ) : (
+          labelIcon(label)
+        )
+      }
+      title={node.segment}
+      depth={depth}
+      selected={label ? selectedLabelId === label.id : false}
+      badge={unread}
+      dragProps={dragProps}
+      dropActive={dropActive}
+      onClick={
+        label
+          ? () => {
+              console.log("[AccountsSidebar:selectLabel]", { labelId: label.id });
+              onSelectLabel(label.id);
+            }
+          : () => setOpen((o) => !o)
+      }
+    />
+  );
+
   return (
     <>
-      <SkRow
-        icon={
-          hasChildren ? (
-            <span
-              role="button"
-              tabIndex={-1}
-              aria-label={open ? `Collapse ${node.segment}` : `Expand ${node.segment}`}
-              className="flex items-center"
-              onClick={(e) => {
-                e.stopPropagation();
-                setOpen((o) => !o);
-              }}
-            >
-              <ChevronDownIcon
-                className={["size-4 transition-transform", open ? "" : "-rotate-90"].join(" ")}
-              />
-            </span>
-          ) : (
-            labelIcon(label)
-          )
-        }
-        title={node.segment}
-        depth={depth}
-        selected={label ? selectedLabelId === label.id : false}
-        badge={unread}
-        onClick={
-          label
-            ? () => {
-                console.log("[AccountsSidebar:selectLabel]", { labelId: label.id });
-                onSelectLabel(label.id);
-              }
-            : () => setOpen((o) => !o)
-        }
-      />
+      {label ? (
+        <ContextMenu>
+          <ContextMenuTrigger>{row}</ContextMenuTrigger>
+          <ContextMenuContent>
+            <ContextMenuItem icon="pencil" onSelect={() => actions.onRename(label)}>
+              Rename…
+            </ContextMenuItem>
+            <ContextMenuItem icon="paintpalette" onSelect={() => actions.onRecolor(label)}>
+              Change Color…
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem icon="trash" color="red" onSelect={() => actions.onDelete(label)}>
+              Delete Label
+            </ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
+      ) : (
+        row
+      )}
       {open
         ? children.map((child) => (
             <LabelNode
@@ -299,6 +437,7 @@ function LabelNode({
               depth={depth + 1}
               selectedLabelId={selectedLabelId}
               onSelectLabel={onSelectLabel}
+              actions={actions}
             />
           ))
         : null}
@@ -334,6 +473,13 @@ export function AccountsSidebar({
 
   const [createLabelOpen, setCreateLabelOpen] = useState(false);
   const [newLabelName, setNewLabelName] = useState("");
+  const updateLabel = useUpdateLabel();
+  const deleteLabelMutation = useDeleteLabel();
+  const [renameTarget, setRenameTarget] = useState<GmailLabel | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [colorTarget, setColorTarget] = useState<GmailLabel | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<GmailLabel | null>(null);
+  const [rootDropActive, setRootDropActive] = useState(false);
 
   const accounts = accountsQuery.data ?? [];
   const labels: GmailLabel[] = labelsQuery.data ?? [];
@@ -384,6 +530,66 @@ export function AccountsSidebar({
     } catch {
       toast.error("Failed to create label");
     }
+  };
+
+  const handleMoveLabel = (source: LabelDragPayload, targetParentName: string | null) => {
+    if (!selectedAccountId) return;
+    if (
+      targetParentName &&
+      (targetParentName === source.name || targetParentName.startsWith(`${source.name}/`))
+    ) {
+      toast.error("Can't nest a label inside itself");
+      return;
+    }
+    const segment = source.name.split("/").pop() ?? source.name;
+    const newName = targetParentName ? `${targetParentName}/${segment}` : segment;
+    if (newName === source.name) return;
+    console.log("[AccountsSidebar:moveLabel]", { from: source.name, to: newName });
+    updateLabel
+      .mutateAsync({ accountId: selectedAccountId, labelId: source.id, name: newName })
+      .catch(() => toast.error("Could not move the label"));
+  };
+
+  const handleRenameConfirm = () => {
+    const name = renameValue.trim();
+    const target = renameTarget;
+    setRenameTarget(null);
+    if (!target || !name || !selectedAccountId || name === target.name) return;
+    console.log("[AccountsSidebar:renameLabel]", { from: target.name, to: name });
+    updateLabel
+      .mutateAsync({ accountId: selectedAccountId, labelId: target.id, name })
+      .catch(() => toast.error("Could not rename the label"));
+  };
+
+  const handlePickColor = (color: { backgroundColor: string; textColor: string }) => {
+    const target = colorTarget;
+    setColorTarget(null);
+    if (!target || !selectedAccountId) return;
+    console.log("[AccountsSidebar:recolorLabel]", { label: target.name, color: color.backgroundColor });
+    updateLabel
+      .mutateAsync({ accountId: selectedAccountId, labelId: target.id, color })
+      .catch(() => toast.error("Could not change the color"));
+  };
+
+  const handleDeleteConfirm = () => {
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    if (!target || !selectedAccountId) return;
+    if (selectedLabelId === target.id) onSelectLabel("INBOX");
+    console.log("[AccountsSidebar:deleteLabel]", { label: target.name });
+    deleteLabelMutation
+      .mutateAsync({ accountId: selectedAccountId, labelId: target.id })
+      .catch(() => toast.error("Could not delete the label"));
+  };
+
+  const labelActions: LabelActions = {
+    onRename: (label) => {
+      setRenameValue(label.name);
+      setRenameTarget(label);
+    },
+    onRecolor: (label) => setColorTarget(label),
+    onDelete: (label) => setDeleteTarget(label),
+    onMove: handleMoveLabel,
   };
 
   const openViewEditor = (viewId: string) => {
@@ -543,6 +749,23 @@ export function AccountsSidebar({
                 action={
                   <SectionAddButton label="Add label" onClick={() => setCreateLabelOpen(true)} />
                 }
+                dropZone={{
+                  active: rootDropActive,
+                  onDragOver: (e) => {
+                    if (!e.dataTransfer.types.includes(LABEL_DRAG_MIME)) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    setRootDropActive(true);
+                  },
+                  onDragLeave: () => setRootDropActive(false),
+                  onDrop: (e) => {
+                    setRootDropActive(false);
+                    const raw = e.dataTransfer.getData(LABEL_DRAG_MIME);
+                    if (!raw) return;
+                    e.preventDefault();
+                    handleMoveLabel(JSON.parse(raw) as LabelDragPayload, null);
+                  },
+                }}
               >
                 {userLabelTree.map((node) => (
                   <LabelNode
@@ -551,6 +774,7 @@ export function AccountsSidebar({
                     depth={0}
                     selectedLabelId={selectedLabelId}
                     onSelectLabel={onSelectLabel}
+                    actions={labelActions}
                   />
                 ))}
               </Section>
@@ -580,6 +804,72 @@ export function AccountsSidebar({
             autoFocus
           />
         </Field>
+      </Dialog>
+
+      <Dialog
+        open={renameTarget != null}
+        onOpenChange={(o) => {
+          if (!o) setRenameTarget(null);
+        }}
+        title="Rename Label"
+        confirmLabel="Rename"
+        confirmVariant="accent"
+        confirmDisabled={!renameValue.trim()}
+        onConfirm={handleRenameConfirm}
+      >
+        <Field label="Name" orientation="vertical">
+          <Input
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            placeholder="e.g. 90 Ops/alerts"
+            autoFocus
+          />
+        </Field>
+        <Text variant="mini" color="tertiary">
+          Use / to nest, e.g. "90 Ops/alerts". Nested labels move along.
+        </Text>
+      </Dialog>
+
+      <Dialog
+        open={colorTarget != null}
+        onOpenChange={(o) => {
+          if (!o) setColorTarget(null);
+        }}
+        title={colorTarget ? `Color for "${colorTarget.name.split("/").pop()}"` : "Label Color"}
+      >
+        <div className="grid grid-cols-8 gap-2 py-1">
+          {GMAIL_LABEL_COLORS.map((color) => (
+            <button
+              key={color.backgroundColor}
+              type="button"
+              aria-label={`Use ${color.backgroundColor}`}
+              onClick={() => handlePickColor(color)}
+              className={[
+                "size-6 rounded-full",
+                colorTarget?.color?.backgroundColor === color.backgroundColor
+                  ? "ring-2 ring-accent ring-offset-1"
+                  : "hover:ring-2 hover:ring-(--sk-faint)",
+              ].join(" ")}
+              style={{ backgroundColor: color.backgroundColor }}
+            />
+          ))}
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={deleteTarget != null}
+        onOpenChange={(o) => {
+          if (!o) setDeleteTarget(null);
+        }}
+        title="Delete Label"
+        confirmLabel="Delete"
+        confirmVariant="accent"
+        onConfirm={handleDeleteConfirm}
+      >
+        <Text variant="small">
+          Delete "{deleteTarget?.name}"? It is removed from every message; the messages themselves
+          and any nested labels are kept.
+        </Text>
       </Dialog>
     </div>
   );

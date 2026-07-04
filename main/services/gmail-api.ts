@@ -138,6 +138,53 @@ export async function createLabel(accountId: string, name: string): Promise<Gmai
   return { id: data.id, name: data.name, type: "user" };
 }
 
+// ── updateLabel / deleteLabel ────────────────────────────────────────────────
+
+/**
+ * Rename and/or recolor a label. Gmail nests by "/" path but a patch does not
+ * move children, so renames cascade to every nested label.
+ */
+export async function updateLabel(
+  accountId: string,
+  params: { labelId: string; name?: string; color?: { backgroundColor: string; textColor: string } },
+): Promise<{ ok: true }> {
+  const body: Record<string, unknown> = {};
+  if (params.name) body.name = params.name;
+  if (params.color) body.color = params.color;
+
+  let children: { id: string; name: string }[] = [];
+  let oldName: string | undefined;
+  if (params.name) {
+    const list = (await gmailFetch(accountId, "/labels")) as {
+      labels?: { id: string; name: string; type: string }[];
+    };
+    oldName = (list.labels ?? []).find((l) => l.id === params.labelId)?.name;
+    if (oldName) {
+      const prefix = `${oldName}/`;
+      children = (list.labels ?? []).filter((l) => l.type === "user" && l.name.startsWith(prefix));
+    }
+  }
+
+  await gmailFetch(accountId, `/labels/${params.labelId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+  if (params.name && oldName) {
+    for (const child of children) {
+      await gmailFetch(accountId, `/labels/${child.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: `${params.name}${child.name.slice(oldName.length)}` }),
+      });
+    }
+  }
+  return { ok: true };
+}
+
+export async function deleteLabel(accountId: string, labelId: string): Promise<{ ok: true }> {
+  await gmailFetch(accountId, `/labels/${labelId}`, { method: "DELETE" });
+  return { ok: true };
+}
+
 // ── parseFrom ─────────────────────────────────────────────────────────────────
 
 function parseFrom(from: string): { fromName: string; fromEmail: string } {

@@ -903,6 +903,13 @@ export function getSyncState(accountId: string): SyncStateRow {
   };
 }
 
+/** Drops a deleted label's message mappings (sync reconciles the rest). */
+export function clearLabelMappings(accountId: string, labelId: string): void {
+  getDb()
+    .prepare("DELETE FROM message_labels WHERE accountId = ? AND labelId = ?")
+    .run(accountId, labelId);
+}
+
 export function getKv(key: string): string | null {
   const d = getDb();
   const row = d.prepare("SELECT value FROM kv WHERE key = ?").get(key) as unknown as
