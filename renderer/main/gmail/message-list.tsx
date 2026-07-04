@@ -24,7 +24,7 @@ import {
   useLabelResolver,
   useSyncAccountLabels,
 } from "./hooks";
-import { LabelChip } from "./label-chip";
+import { LabelChip, InboxChip } from "./label-chip";
 import { LabelOverlay, type LabelOverlayMode } from "./label-overlay";
 import { renderLabelMenuNodes } from "./label-picker-menu";
 import {
@@ -146,6 +146,8 @@ type MessageRowProps = {
   resolveLabel: ResolveLabel;
   /** Mailbox + account line shown next to the date, only in Combined view. */
   combinedMeta: CombinedMeta | null;
+  /** Mark rows still in the inbox (shown when browsing non-inbox views). */
+  showInboxChip: boolean;
 };
 
 function MessageRow({
@@ -155,6 +157,7 @@ function MessageRow({
   accountId,
   resolveLabel,
   combinedMeta,
+  showInboxChip,
 }: MessageRowProps) {
   const modifyMessage = useModifyMessage();
   const modifyThread = useModifyThread();
@@ -346,6 +349,9 @@ function MessageRow({
           </span>
           {/* Fixed-height single-line chip strip so every row measures the same. */}
           <div className="mt-0.5 flex h-5 items-center gap-1 overflow-hidden">
+            {showInboxChip && message.labelIds.includes("INBOX") ? (
+              <InboxChip selected={selected} />
+            ) : null}
             {messageLabels.map((label) => (
               <LabelChip key={label.id} label={label} selected={selected} />
             ))}
@@ -664,6 +670,10 @@ export function MessageList({
 
   const isLoading = messagesQuery.isLoading;
 
+  // Outside the Inbox (labels, views, search), rows still in the inbox say so.
+  const inInboxContext =
+    !searching && (isCombined ? combined.viewId === INBOX_VIEW_ID : labelId === "INBOX");
+
   return (
     <div className="flex h-full min-w-0 flex-col">
       {/* Header */}
@@ -729,6 +739,7 @@ export function MessageList({
                 accountId={accountId}
                 resolveLabel={resolveLabel}
                 combinedMeta={resolveCombinedMeta(message, combined, accounts, resolveLabel)}
+                showInboxChip={!inInboxContext}
               />
             ))}
             {hasNextPage ? (
