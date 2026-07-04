@@ -1,5 +1,11 @@
 import type { ReactNode, RefObject } from "react";
 import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+} from "@glaze/core/components";
+import {
   ChevronLeftIcon,
   ChevronRightIcon,
   CircleHelpIcon,
@@ -41,6 +47,7 @@ function AccountKnob({
   onClick,
   children,
   background,
+  menu,
 }: {
   label: string;
   hint?: string;
@@ -48,24 +55,31 @@ function AccountKnob({
   onClick: () => void;
   children: ReactNode;
   background: string;
+  /** Right-click items (settings deep links). */
+  menu: ReactNode;
 }) {
   return (
-    <HintTooltip label={label} hint={hint}>
-      <button
-        type="button"
-        aria-label={label}
-        onClick={onClick}
-        className={[
-          "flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white",
-          selected
-            ? "ring-2 ring-(--te-strong) ring-offset-1 ring-offset-(--te-frame)"
-            : "opacity-75 hover:opacity-100",
-        ].join(" ")}
-        style={{ background }}
-      >
-        {children}
-      </button>
-    </HintTooltip>
+    <ContextMenu>
+      <ContextMenuTrigger>
+        <HintTooltip label={label} hint={hint}>
+          <button
+            type="button"
+            aria-label={label}
+            onClick={onClick}
+            className={[
+              "flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white",
+              selected
+                ? "ring-2 ring-(--te-strong) ring-offset-1 ring-offset-(--te-frame)"
+                : "opacity-75 hover:opacity-100",
+            ].join(" ")}
+            style={{ background }}
+          >
+            {children}
+          </button>
+        </HintTooltip>
+      </ContextMenuTrigger>
+      <ContextMenuContent>{menu}</ContextMenuContent>
+    </ContextMenu>
   );
 }
 
@@ -109,6 +123,24 @@ export function TopBar({
             selected={isCombined}
             onClick={() => onSelectAccount(COMBINED_ACCOUNT_ID)}
             background="var(--te-strong)"
+            menu={
+              <>
+                <ContextMenuItem
+                  icon="slider.horizontal.3"
+                  onSelect={() =>
+                    void gmailApi.openSettings({ pane: "views", mailbox: COMBINED_ACCOUNT_ID })
+                  }
+                >
+                  Manage Views…
+                </ContextMenuItem>
+                <ContextMenuItem
+                  icon="gearshape"
+                  onSelect={() => void gmailApi.openSettings({ pane: "general" })}
+                >
+                  Settings…
+                </ContextMenuItem>
+              </>
+            }
           >
             <LayersIcon className="size-3.5" style={{ color: "var(--te-card)" }} />
           </AccountKnob>
@@ -121,6 +153,24 @@ export function TopBar({
             selected={selectedAccountId === account.id}
             onClick={() => onSelectAccount(account.id)}
             background={getAccountColor(account)}
+            menu={
+              <>
+                <ContextMenuItem
+                  icon="person.crop.circle"
+                  onSelect={() => void gmailApi.openSettings({ pane: "accounts" })}
+                >
+                  Account Settings…
+                </ContextMenuItem>
+                <ContextMenuItem
+                  icon="slider.horizontal.3"
+                  onSelect={() =>
+                    void gmailApi.openSettings({ pane: "views", mailbox: account.id })
+                  }
+                >
+                  Manage Views…
+                </ContextMenuItem>
+              </>
+            }
           >
             {(getAccountDisplayName(account)[0] ?? "?").toUpperCase()}
           </AccountKnob>
