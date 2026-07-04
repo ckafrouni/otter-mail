@@ -70,12 +70,12 @@ function useStoredWidth(key: string, def: number, min: number, max: number) {
   return { width, start };
 }
 
-/** The 6px gap between panel cards doubles as the resize handle. */
+/** The 4px gap between panel cards doubles as the resize handle. */
 function PaneResizer({ onPointerDown }: { onPointerDown: (e: ReactPointerEvent) => void }) {
   return (
     <div
       onPointerDown={onPointerDown}
-      className="group flex w-1.5 shrink-0 cursor-col-resize justify-center"
+      className="group flex w-1 shrink-0 cursor-col-resize justify-center"
       aria-hidden
     >
       <div className="w-px group-hover:bg-(--te-outline)" />
@@ -561,11 +561,11 @@ export function HomeView() {
           onAddAccount={() => void handleAddAccount()}
           onOpenHelp={() => setHelpOpen(true)}
         />
-        {/* Outer bottom corners run concentric with the 26px window radius (6px margin). */}
-        <div className="flex min-h-0 flex-1 px-1.5 pb-1.5">
+        {/* Outer bottom corners run concentric with the 26px window radius (4px margin). */}
+        <div className="flex min-h-0 flex-1 px-1 pb-1">
           <div
             style={{ width: sidebarPane.width }}
-            className={`${PANEL_CARD} shrink-0 rounded-bl-[20px]`}
+            className={`${PANEL_CARD} shrink-0 rounded-bl-[22px]`}
           >
             <AccountsSidebar
               selectedAccountId={effectiveAccountId}
@@ -599,7 +599,7 @@ export function HomeView() {
               <PaneResizer onPointerDown={listPane.start} />
             </>
           ) : null}
-          <div className={`${PANEL_CARD} min-w-0 flex-1 rounded-br-[20px]`}>
+          <div className={`${PANEL_CARD} min-w-0 flex-1 rounded-br-[22px]`}>
             {composeOpen && composeAccountId ? (
               <NewMessageView
                 accounts={accounts}
