@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { gmailApi } from "./api";
+import type { ComposeAttachment } from "./types";
 
 export type DraftSaveState = "idle" | "saving" | "saved" | "error";
 
@@ -25,9 +26,11 @@ export function useDraftAutosave({
   getPayload: () => {
     to: string;
     cc?: string;
+    bcc?: string;
     subject: string;
     body: string;
     bodyHtml: string;
+    attachments?: ComposeAttachment[];
   } | null;
 }) {
   const qc = useQueryClient();

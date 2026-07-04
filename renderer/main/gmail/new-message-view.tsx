@@ -6,22 +6,32 @@ import {
   DropdownMenuItem,
   toast,
 } from "@glaze/core/components";
-import { ChevronDownIcon, PenLineIcon, SendHorizontalIcon, Trash2Icon, XIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  PaperclipIcon,
+  PenLineIcon,
+  SendHorizontalIcon,
+  Trash2Icon,
+  XIcon,
+} from "lucide-react";
 import { useSendMessage } from "./hooks";
-import { ComposeDialog } from "./compose-dialog";
 import { parseAddressEntry, splitAddressList } from "./address";
 import { getAccountColor } from "./account-style";
 import { IconBtn, HintTooltip } from "./slack-ui";
 import { RichTextArea, textToHtml, type RichTextRef } from "./rich-text";
+import {
+  AttachmentChips,
+  attachmentSignature,
+  pickComposeAttachments,
+} from "./compose-attachments";
 import { useDraftAutosave } from "./use-draft-autosave";
 import { RecipientInput } from "./recipient-input";
-import type { GmailAccount } from "./types";
+import type { ComposeAttachment, GmailAccount } from "./types";
 
 /**
  * Slack-style "new chat": replaces the reader pane when composing a fresh
- * email — recipients, subject, and body in the docked composer. The pen
- * button hands the draft to the full ComposeDialog (Bcc, attachments,
- * autosaved drafts).
+ * email — recipients, subject, attachments, and body in the docked composer,
+ * autosaving to a Gmail draft as you type.
  */
 export function NewMessageView({
   accounts,
@@ -36,9 +46,11 @@ export function NewMessageView({
   const [to, setTo] = useState("");
   const [cc, setCc] = useState("");
   const [ccVisible, setCcVisible] = useState(false);
+  const [bcc, setBcc] = useState("");
+  const [bccVisible, setBccVisible] = useState(false);
   const [subject, setSubject] = useState("");
   const [text, setText] = useState("");
-  const [expanded, setExpanded] = useState(false);
+  const [attachments, setAttachments] = useState<ComposeAttachment[]>([]);
   const toRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<RichTextRef>(null);
   const sendMessage = useSendMessage();
@@ -47,17 +59,19 @@ export function NewMessageView({
 
   const draft = useDraftAutosave({
     accountId: fromAccount?.id ?? null,
-    signal: JSON.stringify({ fromId, to, cc, subject, text }),
+    signal: JSON.stringify({ fromId, to, cc, bcc, subject, text, att: attachmentSignature(attachments) }),
     getPayload: () => {
-      if (!to.trim() && !subject.trim() && !text.trim()) return null;
+      if (!to.trim() && !subject.trim() && !text.trim() && attachments.length === 0) return null;
       const plain = editorRef.current?.getText() ?? text;
       const html = editorRef.current?.getHTML() ?? textToHtml(plain);
       return {
         to,
         cc: cc.trim() || undefined,
+        bcc: bcc.trim() || undefined,
         subject,
         body: plain,
         bodyHtml: `<div dir="auto">${html}</div>`,
+        attachments: attachments.length > 0 ? attachments : undefined,
       };
     },
   });
@@ -66,13 +80,11 @@ export function NewMessageView({
     toRef.current?.focus();
   }, []);
 
-  // Escape discards the draft (capture phase beats home-view's Escape
-  // handling; the expanded dialog keeps its own Escape behavior).
-  const expandedRef = useRef(expanded);
-  expandedRef.current = expanded;
+  // Escape closes, keeping the autosaved draft (capture phase beats
+  // home-view's Escape handling).
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || expandedRef.current) return;
+      if (e.key !== "Escape") return;
       const el = e.target as Element | null;
       if (el && typeof el.closest === "function" && el.closest('[role="dialog"]')) return;
       // An open autocomplete popup owns Escape (it dismisses itself).
@@ -100,9 +112,11 @@ export function NewMessageView({
         accountId: fromAccount.id,
         to,
         cc: cc.trim() || undefined,
+        bcc: bcc.trim() || undefined,
         subject: subject.trim() || "(no subject)",
         body: editorRef.current?.getText() ?? text,
-        bodyHtml: `<div dir="auto">${editorRef.current?.getHTML() ?? ""}</div>`,
+        bodyHtml: `<div dir="auto">${editorRef.current?.getHTML() ?? textToHtml(text)}</div>`,
+        attachments: attachments.length > 0 ? attachments : undefined,
       })
       .then(
         async () => {
@@ -116,24 +130,6 @@ export function NewMessageView({
         },
       );
   };
-
-  if (expanded && fromAccount) {
-    return (
-      <ComposeDialog
-        accountId={fromAccount.id}
-        open
-        onOpenChange={(open) => {
-          if (!open) onClose();
-        }}
-        prefill={{
-          to,
-          cc: cc.trim() || undefined,
-          subject,
-          body: text,
-        }}
-      />
-    );
-  }
 
   return (
     <div className="flex h-full min-w-0 flex-col">
@@ -242,11 +238,26 @@ export function NewMessageView({
                 Cc
               </button>
             ) : null}
+            {!bccVisible ? (
+              <button
+                type="button"
+                onClick={() => setBccVisible(true)}
+                className="shrink-0 text-[11px] text-(--sk-faint) hover:text-(--sk-strong)"
+              >
+                Bcc
+              </button>
+            ) : null}
           </div>
           {ccVisible ? (
             <div className="flex items-center gap-2 border-b border-(--sk-border) px-3 py-1.5">
               <span className="shrink-0 text-[12px] text-(--sk-faint)">Cc</span>
               <RecipientInput value={cc} onChange={setCc} ariaLabel="Cc" />
+            </div>
+          ) : null}
+          {bccVisible ? (
+            <div className="flex items-center gap-2 border-b border-(--sk-border) px-3 py-1.5">
+              <span className="shrink-0 text-[12px] text-(--sk-faint)">Bcc</span>
+              <RecipientInput value={bcc} onChange={setBcc} ariaLabel="Bcc" />
             </div>
           ) : null}
           <div className="flex items-center gap-2 border-b border-(--sk-border) px-3 py-1.5">
@@ -267,17 +278,22 @@ export function NewMessageView({
             onTextChange={setText}
             minHeightClass="min-h-[72px]"
           />
+          <AttachmentChips
+            attachments={attachments}
+            onRemove={(i) => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+          />
           <div className="flex items-center gap-1 px-2 pb-1.5">
-            <HintTooltip label="Open full composer" hint="Bcc, attachments, drafts…">
+            <HintTooltip label="Attach files">
               <IconBtn
-              label="Open full composer"
-              className="size-7"
-              onClick={() => {
-                void draft.finalize({ deleteDraft: true });
-                setExpanded(true);
-              }}
-            >
-                <PenLineIcon className="size-3.5" />
+                label="Attach files"
+                className="size-7"
+                onClick={() => {
+                  void pickComposeAttachments(attachments).then((picked) => {
+                    if (picked.length > 0) setAttachments((prev) => [...prev, ...picked]);
+                  });
+                }}
+              >
+                <PaperclipIcon className="size-3.5" />
               </IconBtn>
             </HintTooltip>
             <span className="flex-1" />

@@ -17,7 +17,7 @@ import {
   ImageIcon,
   MailIcon,
   MailOpenIcon,
-  PenLineIcon,
+  PaperclipIcon,
   ReplyIcon,
   ReplyAllIcon,
   SendHorizontalIcon,
@@ -37,7 +37,6 @@ import {
   useSendMessage,
 } from "./hooks";
 import { gmailApi } from "./api";
-import { ComposeDialog, type ComposePrefill } from "./compose-dialog";
 import { LabelChip } from "./label-chip";
 import { SenderAvatar } from "./sender-avatar";
 import { LabelPickerMenu } from "./label-picker-menu";
@@ -46,6 +45,11 @@ import { isTypingTarget } from "./keyboard";
 import { IconBtn, HintTooltip } from "./slack-ui";
 import { RichTextArea, textToHtml, type RichTextRef } from "./rich-text";
 import { RecipientInput } from "./recipient-input";
+import {
+  AttachmentChips,
+  attachmentSignature,
+  pickComposeAttachments,
+} from "./compose-attachments";
 import { DraftEditor } from "./draft-editor";
 import { useDraftAutosave } from "./use-draft-autosave";
 import type {
@@ -60,12 +64,6 @@ type MessageReaderProps = {
   messageId: string | null;
   /** Clears the selection (drafts return to the list after send/discard). */
   onDeselect?: () => void;
-};
-
-type ComposeState = {
-  title: string;
-  prefill: ComposePrefill;
-  replyTo?: { threadId: string; messageId: string };
 };
 
 type DownloadAttachment = (
@@ -664,10 +662,6 @@ function computeReply(
   return { to: fromSelf ? last.to : last.fromEmail, cc: undefined };
 }
 
-function quotedReplyText(source: GmailMessageSummary & { bodyText?: string | null }): string {
-  return `\n\n---\nOn ${formatFullDate(source.date)}, ${source.fromName || source.fromEmail} wrote:\n${source.bodyText ?? ""}`;
-}
-
 function forwardBlock(source: GmailMessageSummary & { bodyText?: string | null }): string {
   const fromDisplay = source.fromName
     ? `${source.fromName} <${source.fromEmail}>`
@@ -677,8 +671,7 @@ function forwardBlock(source: GmailMessageSummary & { bodyText?: string | null }
 
 /**
  * The in-thread composer: reply, reply-all, or forward the latest message
- * without leaving the conversation. The pen button lifts the draft into the
- * full ComposeDialog (Bcc, extra attachments, subject edits).
+ * without leaving the conversation, autosaving to a thread draft as you type.
  */
 function InlineComposer({
   accountId,
@@ -687,7 +680,6 @@ function InlineComposer({
   baseSubject,
   threadId,
   onClose,
-  onExpand,
 }: {
   accountId: string;
   mode: InlineMode;
@@ -695,15 +687,18 @@ function InlineComposer({
   baseSubject: string;
   threadId: string;
   onClose: () => void;
-  onExpand: (state: ComposeState) => void;
 }) {
   const [text, setText] = useState("");
   const [to, setTo] = useState("");
   const [cc, setCc] = useState("");
   const [ccVisible, setCcVisible] = useState(false);
+  const [bcc, setBcc] = useState("");
+  const [bccVisible, setBccVisible] = useState(false);
   const recipientsDirty = useRef(false);
-  // null = still fetching the original files (forward only).
-  const [forwardAttachments, setForwardAttachments] = useState<ComposeAttachment[] | null>(null);
+  // null = still fetching the forwarded original's files.
+  const [attachments, setAttachments] = useState<ComposeAttachment[] | null>(
+    mode === "forward" ? null : [],
+  );
   const editorRef = useRef<RichTextRef>(null);
   const toRef = useRef<HTMLInputElement>(null);
   const sendMessage = useSendMessage();
@@ -732,18 +727,19 @@ function InlineComposer({
     setCcVisible(!!r.cc);
   }, [mode, lastMessage, lastDetail, ownEmail]);
 
-  // Forward carries the original attachments along.
+  // Forward seeds the original's attachments; other modes keep manual picks.
   useEffect(() => {
-    if (mode !== "forward" || !lastDetail) {
-      setForwardAttachments(mode === "forward" ? null : []);
+    if (mode !== "forward") return;
+    if (!lastDetail) {
+      setAttachments(null);
       return;
     }
     if (lastDetail.attachments.length === 0) {
-      setForwardAttachments([]);
+      setAttachments([]);
       return;
     }
     let cancelled = false;
-    setForwardAttachments(null);
+    setAttachments(null);
     void (async () => {
       try {
         const out: ComposeAttachment[] = [];
@@ -755,10 +751,10 @@ function InlineComposer({
           });
           out.push({ name: att.filename, mimeType: att.mimeType, size: data.size, base64: data.base64 });
         }
-        if (!cancelled) setForwardAttachments(out);
+        if (!cancelled) setAttachments(out);
       } catch {
         if (!cancelled) {
-          setForwardAttachments([]);
+          setAttachments([]);
           toast.error("Could not load the original attachments");
         }
       }
@@ -786,23 +782,25 @@ function InlineComposer({
   const draft = useDraftAutosave({
     accountId,
     threadId,
-    signal: JSON.stringify({ to, cc, subject, text }),
+    signal: JSON.stringify({ to, cc, bcc, subject, text, att: attachmentSignature(attachments) }),
     getPayload: () => {
-      if (!text.trim()) return null;
+      if (!text.trim() || attachments == null) return null;
       const plain = editorRef.current?.getText() ?? text;
       const html = editorRef.current?.getHTML() ?? textToHtml(plain);
       return {
         to,
         cc: cc.trim() || undefined,
+        bcc: bcc.trim() || undefined,
         subject,
         body: plain,
         bodyHtml: `<div dir="auto">${html}</div>`,
+        attachments: attachments.length > 0 ? attachments : undefined,
       };
     },
   });
 
   const hasRecipient = splitAddressList(to).some((e) => parseAddressEntry(e).email.includes("@"));
-  const forwardReady = mode !== "forward" || (forwardAttachments != null && lastDetail != null);
+  const forwardReady = attachments != null && (mode !== "forward" || lastDetail != null);
   const canSend =
     !sendMessage.isPending &&
     hasRecipient &&
@@ -822,17 +820,12 @@ function InlineComposer({
         accountId,
         to,
         cc: cc.trim() || undefined,
+        bcc: bcc.trim() || undefined,
         subject,
         body,
         bodyHtml,
-        ...(mode === "forward"
-          ? {
-              attachments:
-                forwardAttachments && forwardAttachments.length > 0
-                  ? forwardAttachments
-                  : undefined,
-            }
-          : { threadId, replyToMessageId: lastMessage.id }),
+        attachments: attachments && attachments.length > 0 ? attachments : undefined,
+        ...(mode === "forward" ? {} : { threadId, replyToMessageId: lastMessage.id }),
       })
       .then(
         async () => {
@@ -844,26 +837,6 @@ function InlineComposer({
           toast.error("Could not send the message");
         },
       );
-  };
-
-  const handleExpand = () => {
-    void draft.finalize({ deleteDraft: true });
-    const source = lastDetail ?? lastMessage;
-    const quoted = mode === "forward" ? forwardBlock(source) : quotedReplyText(source);
-    onExpand({
-      title: INLINE_MODE_LABEL[mode],
-      prefill: {
-        to,
-        cc: cc.trim() || undefined,
-        subject,
-        body: `${text}${quoted}`,
-        attachments:
-          mode === "forward" && forwardAttachments && forwardAttachments.length > 0
-            ? forwardAttachments
-            : undefined,
-      },
-      replyTo: mode === "forward" ? undefined : { threadId, messageId: lastMessage.id },
-    });
   };
 
   const senderFirstName =
@@ -910,6 +883,15 @@ function InlineComposer({
               Cc
             </button>
           ) : null}
+          {!bccVisible ? (
+            <button
+              type="button"
+              onClick={() => setBccVisible(true)}
+              className="shrink-0 text-[11px] text-(--sk-faint) hover:text-(--sk-strong)"
+            >
+              Bcc
+            </button>
+          ) : null}
           <IconBtn
             label="Discard"
             className="size-6"
@@ -933,26 +915,38 @@ function InlineComposer({
             />
           </div>
         ) : null}
+        {bccVisible ? (
+          <div className="flex items-center gap-2 border-b border-(--sk-border) px-3 py-1.5">
+            <span className="shrink-0 text-[12px] text-(--sk-faint)">Bcc</span>
+            <RecipientInput value={bcc} onChange={setBcc} ariaLabel="Bcc" />
+          </div>
+        ) : null}
         <RichTextArea
           ref={editorRef}
           placeholder={placeholder}
           ariaLabel={INLINE_MODE_LABEL[mode]}
           onTextChange={setText}
         />
+        <AttachmentChips
+          attachments={attachments}
+          onRemove={(i) => setAttachments((prev) => (prev ?? []).filter((_, j) => j !== i))}
+        />
         <div className="flex items-center gap-1 px-2 pb-1.5">
-          <HintTooltip label="Open full composer" hint="Bcc, attachments…">
-            <IconBtn label="Open full composer" className="size-7" onClick={handleExpand}>
-              <PenLineIcon className="size-3.5" />
+          <HintTooltip label="Attach files">
+            <IconBtn
+              label="Attach files"
+              className="size-7"
+              onClick={() => {
+                void pickComposeAttachments(attachments ?? []).then((picked) => {
+                  if (picked.length > 0) setAttachments((prev) => [...(prev ?? []), ...picked]);
+                });
+              }}
+            >
+              <PaperclipIcon className="size-3.5" />
             </IconBtn>
           </HintTooltip>
-          {mode === "forward" ? (
-            <span className="pl-1 text-[11px] text-(--sk-faint)">
-              {forwardAttachments == null
-                ? "Loading attachments…"
-                : forwardAttachments.length > 0
-                  ? `${forwardAttachments.length} attachment${forwardAttachments.length === 1 ? "" : "s"} included`
-                  : null}
-            </span>
+          {mode === "forward" && attachments == null ? (
+            <span className="pl-1 text-[11px] text-(--sk-faint)">Loading attachments…</span>
           ) : null}
           {draft.saveState === "saving" ? (
             <span className="pl-1 text-[11px] text-(--sk-faint)">Saving draft…</span>
@@ -1053,7 +1047,6 @@ export function MessageReader({ accountId, messageId, onDeselect }: MessageReade
   const threadMessages = threadQuery.data ?? [];
   const isThread = threadMessages.length > 1;
 
-  const [compose, setCompose] = useState<ComposeState | null>(null);
   const [inline, setInline] = useState<InlineMode | null>(null);
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set());
   const seededRef = useRef<string | null>(null);
@@ -1428,10 +1421,6 @@ export function MessageReader({ accountId, messageId, onDeselect }: MessageReade
               baseSubject={message.subject}
               threadId={message.threadId || message.id}
               onClose={() => setInline(null)}
-              onExpand={(state) => {
-                setCompose(state);
-                setInline(null);
-              }}
             />
           ) : (
             <div className="flex shrink-0 items-center gap-2 px-5 pb-4 pt-1">
@@ -1458,18 +1447,6 @@ export function MessageReader({ accountId, messageId, onDeselect }: MessageReade
         ) : null}
       </div>
 
-      {compose ? (
-        <ComposeDialog
-          accountId={accountId}
-          open
-          onOpenChange={(open) => {
-            if (!open) setCompose(null);
-          }}
-          title={compose.title}
-          prefill={compose.prefill}
-          replyTo={compose.replyTo}
-        />
-      ) : null}
     </>
   );
 }
