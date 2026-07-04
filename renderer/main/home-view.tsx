@@ -70,17 +70,21 @@ function useStoredWidth(key: string, def: number, min: number, max: number) {
   return { width, start };
 }
 
+/** The 6px gap between panel cards doubles as the resize handle. */
 function PaneResizer({ onPointerDown }: { onPointerDown: (e: ReactPointerEvent) => void }) {
   return (
-    <div className="relative w-px shrink-0 bg-(--te-border)">
-      <div
-        onPointerDown={onPointerDown}
-        className="absolute inset-y-0 -left-[3px] z-10 w-[7px] cursor-col-resize"
-        aria-hidden
-      />
+    <div
+      onPointerDown={onPointerDown}
+      className="group flex w-1.5 shrink-0 cursor-col-resize justify-center"
+      aria-hidden
+    >
+      <div className="w-px group-hover:bg-(--te-outline)" />
     </div>
   );
 }
+
+/** Panel card on the device-body frame. */
+const PANEL_CARD = "overflow-hidden rounded-[8px] border border-(--te-border) bg-(--te-card)";
 
 export function HomeView() {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
@@ -557,67 +561,68 @@ export function HomeView() {
           onAddAccount={() => void handleAddAccount()}
           onOpenHelp={() => setHelpOpen(true)}
         />
-        <div className="flex min-h-0 flex-1">
-          {/* Bottom corners run concentric with the 26px window radius (6px margin). */}
-          <div className="mx-1.5 mb-1.5 flex min-w-0 flex-1 overflow-hidden rounded-[8px] rounded-b-[20px] border border-(--te-border) bg-(--te-card)">
-            <div style={{ width: sidebarPane.width }} className="shrink-0 overflow-hidden">
-              <AccountsSidebar
-                selectedAccountId={effectiveAccountId}
-                onSelectAccount={handleSelectAccount}
-                selectedLabelId={selectedLabelId}
-                onSelectLabel={handleSelectLabel}
-                views={views}
-                onCompose={() => setComposeOpen(true)}
-                onOpenSearch={() => setPaletteOpen(true)}
-              />
-            </div>
-            <PaneResizer onPointerDown={sidebarPane.start} />
-            {hasListTarget ? (
-              <>
-                <div style={{ width: listPane.width }} className="shrink-0 overflow-hidden">
-                  <MessageList
-                    accountId={(isCombined ? firstRealAccountId : effectiveAccountId) ?? ""}
-                    labelId={selectedLabelId}
-                    combined={combined}
-                    accountIds={accountIds}
-                    accounts={accounts}
-                    selectedMessageId={selectedMessageId}
-                    onSelectMessage={handleSelectMessage}
-                    onDeselect={() => {
-                      setSelectedMessageId(null);
-                      setReaderAccountId(null);
-                    }}
-                    searchQuery={searchQuery}
-                  />
-                </div>
-                <PaneResizer onPointerDown={listPane.start} />
-              </>
-            ) : null}
-            <div className="min-w-0 flex-1">
-              {composeOpen && composeAccountId ? (
-                <NewMessageView
+        {/* Outer bottom corners run concentric with the 26px window radius (6px margin). */}
+        <div className="flex min-h-0 flex-1 px-1.5 pb-1.5">
+          <div
+            style={{ width: sidebarPane.width }}
+            className={`${PANEL_CARD} shrink-0 rounded-bl-[20px]`}
+          >
+            <AccountsSidebar
+              selectedAccountId={effectiveAccountId}
+              onSelectAccount={handleSelectAccount}
+              selectedLabelId={selectedLabelId}
+              onSelectLabel={handleSelectLabel}
+              views={views}
+              onCompose={() => setComposeOpen(true)}
+              onOpenSearch={() => setPaletteOpen(true)}
+            />
+          </div>
+          <PaneResizer onPointerDown={sidebarPane.start} />
+          {hasListTarget ? (
+            <>
+              <div style={{ width: listPane.width }} className={`${PANEL_CARD} shrink-0`}>
+                <MessageList
+                  accountId={(isCombined ? firstRealAccountId : effectiveAccountId) ?? ""}
+                  labelId={selectedLabelId}
+                  combined={combined}
+                  accountIds={accountIds}
                   accounts={accounts}
-                  defaultAccountId={composeAccountId}
-                  onClose={() => setComposeOpen(false)}
-                />
-              ) : readerAccount ? (
-                <MessageReader
-                  accountId={readerAccount}
-                  messageId={selectedMessageId}
+                  selectedMessageId={selectedMessageId}
+                  onSelectMessage={handleSelectMessage}
                   onDeselect={() => {
                     setSelectedMessageId(null);
                     setReaderAccountId(null);
                   }}
+                  searchQuery={searchQuery}
                 />
-              ) : (
-                <div className="flex h-full items-center justify-center">
-                  <EmptyState
-                    title="No account selected"
-                    description="Select an account from the rail."
-                  />
-                </div>
-              )}
-            </div>
+              </div>
+              <PaneResizer onPointerDown={listPane.start} />
+            </>
+          ) : null}
+          <div className={`${PANEL_CARD} min-w-0 flex-1 rounded-br-[20px]`}>
+            {composeOpen && composeAccountId ? (
+              <NewMessageView
+                accounts={accounts}
+                defaultAccountId={composeAccountId}
+                onClose={() => setComposeOpen(false)}
+              />
+            ) : readerAccount ? (
+              <MessageReader
+                accountId={readerAccount}
+                messageId={selectedMessageId}
+                onDeselect={() => {
+                  setSelectedMessageId(null);
+                  setReaderAccountId(null);
+                }}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center">
+                <EmptyState
+                  title="No account selected"
+                  description="Select an account from the top bar."
+                />
+              </div>
+            )}
           </div>
         </div>
       </div>
