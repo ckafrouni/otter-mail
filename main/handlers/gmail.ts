@@ -321,21 +321,39 @@ export function registerGmailHandlers(): void {
 
   // gmail:searchMessages — instant local full-text search (FTS5 over the mail
   // cache). accountId omitted = search every account; message-level rows.
+  // labelId/rules restrict to the current view; starred/important/
+  // hasAttachments/withinDays are structured filters that also work with an
+  // empty q.
   ipcMain.handle("gmail:searchMessages", async (_event, params: unknown) => {
     const p = params as Record<string, unknown>;
     console.log("[gmail:searchMessages]", {
       q: p?.q,
       accountId: p?.accountId,
+      labelId: p?.labelId,
+      ruleCount: Array.isArray(p?.rules) ? p.rules.length : undefined,
+      starred: p?.starred,
+      important: p?.important,
+      hasAttachments: p?.hasAttachments,
+      withinDays: p?.withinDays,
       pageToken: p?.pageToken,
     });
     try {
-      const q = assertString(p?.q, "q");
+      const q = asString(p?.q) ?? "";
       const accountId = asString(p?.accountId) ?? null;
+      const labelId = asString(p?.labelId);
+      const rules = p?.rules === undefined ? undefined : parseRules(p.rules);
       const pageToken = asString(p?.pageToken);
       const maxResults = asNumber(p?.maxResults) ?? LOCAL_PAGE_SIZE;
       const offset = pageToken ? Number.parseInt(pageToken, 10) || 0 : 0;
 
-      const page = mailStore.searchMessages(q, accountId, offset, maxResults);
+      const page = mailStore.searchMessages(q, accountId, offset, maxResults, {
+        labelId,
+        rules,
+        starred: p?.starred === true || undefined,
+        important: p?.important === true || undefined,
+        hasAttachments: p?.hasAttachments === true || undefined,
+        withinDays: asNumber(p?.withinDays),
+      });
       return {
         messages: page.messages,
         nextPageToken: page.hasMore ? String(offset + maxResults) : undefined,

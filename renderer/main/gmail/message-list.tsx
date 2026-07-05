@@ -9,6 +9,11 @@ import {
   ContextMenuSeparator,
   ContextMenuSub,
   Dialog,
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+  DropdownMenuSeparator,
   Text,
 } from "@glaze/core/components";
 import {
@@ -19,7 +24,9 @@ import {
   MailIcon,
   MailOpenIcon,
   RotateCcwIcon,
+  SearchIcon,
   ShieldCheckIcon,
+  SlidersHorizontalIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react";
@@ -480,6 +487,46 @@ function MessageRow({
   );
 }
 
+/** Structured criteria of the view filter bar, compiled into the scoped search. */
+type ViewFilters = {
+  starred: boolean;
+  important: boolean;
+  hasAttachments: boolean;
+  withinDays: number | null;
+};
+
+const NO_FILTERS: ViewFilters = {
+  starred: false,
+  important: false,
+  hasAttachments: false,
+  withinDays: null,
+};
+
+const WITHIN_DAYS_OPTIONS: { days: number; label: string }[] = [
+  { days: 1, label: "Last 24 hours" },
+  { days: 7, label: "Last 7 days" },
+  { days: 30, label: "Last 30 days" },
+];
+
+function withinDaysLabel(days: number): string {
+  return WITHIN_DAYS_OPTIONS.find((o) => o.days === days)?.label ?? `Last ${days} days`;
+}
+
+/** Removable filter token shown inside the filter bar. */
+function FilterPill({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onRemove}
+      aria-label={`Remove filter: ${label}`}
+      className="te-label flex shrink-0 items-center gap-1 rounded-[4px] border border-(--te-outline) px-1.5 py-0.5 text-(--te-muted) hover:bg-(--te-hover) hover:text-(--te-strong)"
+    >
+      {label}
+      <XIcon className="size-3" />
+    </button>
+  );
+}
+
 /** "260 messages, 7 unread" — omits the unread clause when nothing is unread. */
 function formatMailboxSummary(total: number, unread: number): string {
   const messages = `${total.toLocaleString()} message${total === 1 ? "" : "s"}`;
@@ -503,8 +550,31 @@ export function MessageList({
 
   // Search is local (FTS5 over the mail cache): account-scoped in account mode,
   // across every account in Combined mode. Results are message-level rows.
+  // Two entry points: the TopBar search (app-wide) and the header's filter bar
+  // (same FTS, restricted to the current view, plus structured criteria that
+  // work with an empty query); an active filter wins.
   const debouncedQuery = useDebouncedValue(searchQuery.trim(), 150);
-  const searching = debouncedQuery.length > 0;
+  const globalSearching = debouncedQuery.length > 0;
+
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filterQuery, setFilterQuery] = useState("");
+  const [filters, setFilters] = useState<ViewFilters>(NO_FILTERS);
+  const filtersActive =
+    filters.starred || filters.important || filters.hasAttachments || filters.withinDays != null;
+  const debouncedFilter = useDebouncedValue(filterOpen ? filterQuery.trim() : "", 150);
+  const filtering = filterOpen && (debouncedFilter.length > 0 || filtersActive);
+  const searching = filtering || globalSearching;
+
+  const closeFilter = () => {
+    setFilterOpen(false);
+    setFilterQuery("");
+    setFilters(NO_FILTERS);
+  };
+  // Picking a criterion opens the bar so the active tokens stay visible.
+  const patchFilters = (patch: Partial<ViewFilters>) => {
+    setFilters((f) => ({ ...f, ...patch }));
+    setFilterOpen(true);
+  };
 
   // All hooks are always called (rules of hooks); the inactive ones are disabled.
   const accountMessages = useMessages(isCombined || searching ? null : accountId, labelId);
@@ -513,8 +583,30 @@ export function MessageList({
     combined?.viewId ?? "",
     isCombined && !searching,
   );
-  const searchResults = useSearchMessages(debouncedQuery, isCombined ? null : accountId, searching);
-  const messagesQuery = searching ? searchResults : isCombined ? combinedMessages : accountMessages;
+  const searchResults = useSearchMessages(
+    debouncedQuery,
+    isCombined ? null : accountId,
+    globalSearching && !filtering,
+  );
+  const filterResults = useSearchMessages(
+    debouncedFilter,
+    isCombined ? null : accountId,
+    filtering,
+    {
+      ...(combined ? { rules: combined.rules } : { labelId }),
+      starred: filters.starred || undefined,
+      important: filters.important || undefined,
+      hasAttachments: filters.hasAttachments || undefined,
+      withinDays: filters.withinDays ?? undefined,
+    },
+  );
+  const messagesQuery = filtering
+    ? filterResults
+    : globalSearching
+      ? searchResults
+      : isCombined
+        ? combinedMessages
+        : accountMessages;
 
   const resolveLabel = useLabelResolver(isCombined ? accountIds : [accountId]);
   // Combined mode has no single "active account" to drive per-account label
@@ -928,9 +1020,11 @@ export function MessageList({
 
   const isLoading = messagesQuery.isLoading;
 
-  // Outside the Inbox (labels, views, search), rows still in the inbox say so.
+  // Outside the Inbox (labels, views, global search), rows still in the inbox
+  // say so. The view filter stays inside the current view, so its rows carry
+  // the view's labels by construction — no chip needed there.
   const inInboxContext =
-    !searching && (isCombined ? combined.viewId === INBOX_VIEW_ID : labelId === "INBOX");
+    !globalSearching && (isCombined ? combined.viewId === INBOX_VIEW_ID : labelId === "INBOX");
 
   return (
     <div className="relative flex h-full min-w-0 flex-col">
@@ -944,6 +1038,52 @@ export function MessageList({
             {formatMailboxSummary(mailboxTotal, mailboxUnread)}
           </div>
         </div>
+        <HintTooltip label={filterOpen ? "Hide search" : "Search this mailbox"}>
+          <IconBtn
+            label={filterOpen ? "Hide search" : "Search this mailbox"}
+            active={filterOpen}
+            onClick={() => (filterOpen ? closeFilter() : setFilterOpen(true))}
+          >
+            <SearchIcon className="size-4" />
+          </IconBtn>
+        </HintTooltip>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <IconBtn label="Filters" active={filtersActive}>
+              <SlidersHorizontalIcon className="size-4" />
+            </IconBtn>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuCheckboxItem
+              checked={filters.starred}
+              onCheckedChange={(c) => patchFilters({ starred: c })}
+            >
+              Flagged
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={filters.important}
+              onCheckedChange={(c) => patchFilters({ important: c })}
+            >
+              Important
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={filters.hasAttachments}
+              onCheckedChange={(c) => patchFilters({ hasAttachments: c })}
+            >
+              With Attachments
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuSeparator />
+            {WITHIN_DAYS_OPTIONS.map((o) => (
+              <DropdownMenuCheckboxItem
+                key={o.days}
+                checked={filters.withinDays === o.days}
+                onCheckedChange={(c) => patchFilters({ withinDays: c ? o.days : null })}
+              >
+                {o.label}
+              </DropdownMenuCheckboxItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <HintTooltip label={unreadOnly ? "Show all messages" : "Filter unread"}>
           <IconBtn
             label={unreadOnly ? "Show all messages" : "Filter unread"}
@@ -954,6 +1094,51 @@ export function MessageList({
           </IconBtn>
         </HintTooltip>
       </div>
+
+      {filterOpen ? (
+        <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-1.5 border-b border-(--te-border) px-4 py-1.5">
+          <SearchIcon className="size-3.5 shrink-0 text-(--te-faint)" />
+          {filters.starred ? (
+            <FilterPill label="Flagged" onRemove={() => patchFilters({ starred: false })} />
+          ) : null}
+          {filters.important ? (
+            <FilterPill label="Important" onRemove={() => patchFilters({ important: false })} />
+          ) : null}
+          {filters.hasAttachments ? (
+            <FilterPill
+              label="Attachments"
+              onRemove={() => patchFilters({ hasAttachments: false })}
+            />
+          ) : null}
+          {filters.withinDays != null ? (
+            <FilterPill
+              label={withinDaysLabel(filters.withinDays)}
+              onRemove={() => patchFilters({ withinDays: null })}
+            />
+          ) : null}
+          <input
+            autoFocus
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.stopPropagation();
+                closeFilter();
+              }
+            }}
+            placeholder={`Search in ${mailboxTitle}`}
+            className="h-6 min-w-24 flex-1 bg-transparent text-[13px] text-(--te-text) outline-none placeholder:text-(--te-faint)"
+          />
+          <button
+            type="button"
+            onClick={closeFilter}
+            aria-label="Clear search and filters"
+            className="shrink-0 text-(--te-faint) hover:text-(--te-strong)"
+          >
+            <XIcon className="size-3.5" />
+          </button>
+        </div>
+      ) : null}
 
       <div
         ref={scrollRef}
@@ -983,9 +1168,11 @@ export function MessageList({
             <span className="text-[13px] text-(--te-muted)">
               {unreadOnly
                 ? "Everything here has been read."
-                : searchQuery
-                  ? "No messages match your search."
-                  : "This label is empty."}
+                : filtering
+                  ? "No messages match your filters."
+                  : searchQuery
+                    ? "No messages match your search."
+                    : "This label is empty."}
             </span>
           </div>
         ) : (

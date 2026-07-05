@@ -715,27 +715,73 @@ function toFtsMatch(query: string): string | null {
   return tokens.map((t, i) => `"${t}"${i === tokens.length - 1 ? "*" : ""}`).join(" ");
 }
 
-/** Local message-level search; accountId null searches every account. */
+export type SearchScope = {
+  /** Restrict to one label (view filter, account mode). */
+  labelId?: string;
+  /** Restrict to a Combined view's rules (carry their own spam/trash semantics). */
+  rules?: ViewRule[];
+  starred?: boolean;
+  important?: boolean;
+  hasAttachments?: boolean;
+  /** Only messages newer than N days. */
+  withinDays?: number;
+};
+
+/**
+ * Local message-level search; accountId null searches every account. The scope
+ * restricts results to the current view and/or structured filters — filters
+ * work with an empty query too (browse-the-view-filtered), so the FTS match is
+ * an optional condition rather than the query's spine.
+ */
 export function searchMessages(
   queryText: string,
   accountId: string | null,
   offset: number,
   limit: number,
+  scope?: SearchScope,
 ): { messages: GmailMessageSummary[]; hasMore: boolean } {
   const match = toFtsMatch(queryText);
-  if (!match) return { messages: [], hasMore: false };
+  const hasFilters = Boolean(
+    scope?.starred || scope?.important || scope?.hasAttachments || scope?.withinDays,
+  );
+  if (!match && !hasFilters) return { messages: [], hasMore: false };
+  if (scope?.rules && scope.rules.length === 0) return { messages: [], hasMore: false };
   const d = getDb();
-  const params: (string | number)[] = [match];
-  let accountClause = "";
+  const conds: string[] = [];
+  const params: (string | number)[] = [];
+  if (match) {
+    conds.push("m.rowid IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)");
+    params.push(match);
+  }
   if (accountId) {
-    accountClause = "AND m.accountId = ?";
+    conds.push("m.accountId = ?");
     params.push(accountId);
+  }
+  if (scope?.rules) {
+    const { clause, params: ruleParams } = rulesWhere(scope.rules);
+    conds.push(`(${clause})`);
+    params.push(...ruleParams);
+  } else if (scope?.labelId) {
+    conds.push(HAS_LABEL);
+    params.push(scope.labelId);
+    if (scope.labelId !== "SPAM" && scope.labelId !== "TRASH") conds.push(NOT_SPAM_TRASH);
+  } else {
+    conds.push(NOT_SPAM_TRASH);
+  }
+  if (scope?.starred) conds.push("m.starred = 1");
+  if (scope?.important) {
+    conds.push(HAS_LABEL);
+    params.push("IMPORTANT");
+  }
+  if (scope?.hasAttachments) conds.push("m.hasAttachments = 1");
+  if (scope?.withinDays) {
+    conds.push("m.date >= ?");
+    params.push(Date.now() - scope.withinDays * 86_400_000);
   }
   const rows = d
     .prepare(`
-      SELECT m.* FROM messages_fts
-      JOIN messages m ON m.rowid = messages_fts.rowid
-      WHERE messages_fts MATCH ? ${accountClause} AND ${NOT_SPAM_TRASH}
+      SELECT m.* FROM messages m
+      WHERE ${conds.join(" AND ")}
       ORDER BY m.date DESC
       LIMIT ? OFFSET ?
     `)

@@ -29,9 +29,19 @@ export type ListMessagesResult = {
 };
 
 export type SearchMessagesParams = {
+  /** May be empty when structured filters are set. */
   q: string;
   /** Omit to search every account (Combined mode / command palette). */
   accountId?: string;
+  /** Restrict to messages carrying this label (view filter, account mode). */
+  labelId?: string;
+  /** Restrict to messages matching these rules (view filter, Combined mode). */
+  rules?: ViewRule[];
+  starred?: boolean;
+  important?: boolean;
+  hasAttachments?: boolean;
+  /** Only messages newer than N days. */
+  withinDays?: number;
   pageToken?: string;
   maxResults?: number;
 };

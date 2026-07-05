@@ -36,7 +36,8 @@ export const queryKeys = {
   labels: (accountId: string) => ["gmail:labels", accountId] as const,
   messages: (accountId: string, labelId?: string) =>
     ["gmail:messages", accountId, labelId] as const,
-  search: (accountId: string, q: string) => ["gmail:searchMessages", accountId, q] as const,
+  search: (accountId: string, q: string, scope?: SearchScope | null) =>
+    ["gmail:searchMessages", accountId, q, scope ?? null] as const,
   message: (accountId: string, messageId: string) =>
     ["gmail:message", accountId, messageId] as const,
   thread: (accountId: string, threadId: string) =>
@@ -281,10 +282,33 @@ export function useDebouncedValue<T>(value: T, delayMs: number): T {
 }
 
 /**
+ * View restriction + structured filters for search: a label in account mode,
+ * rules in Combined, plus flag/importance/attachment/date criteria that work
+ * with an empty query too.
+ */
+export type SearchScope = {
+  labelId?: string;
+  rules?: ViewRule[];
+  starred?: boolean;
+  important?: boolean;
+  hasAttachments?: boolean;
+  withinDays?: number;
+};
+
+/**
  * Instant local full-text search (FTS5 over the mail cache). Message-level
  * rows; accountId null searches every account (Combined mode / palette).
+ * `scope` restricts results to the current view (the list's filter search).
  */
-export function useSearchMessages(q: string, accountId: string | null, enabled = true) {
+export function useSearchMessages(
+  q: string,
+  accountId: string | null,
+  enabled = true,
+  scope?: SearchScope,
+) {
+  const hasFilters = Boolean(
+    scope?.starred || scope?.important || scope?.hasAttachments || scope?.withinDays,
+  );
   return useInfiniteQuery<
     ListMessagesResult,
     Error,
@@ -292,19 +316,25 @@ export function useSearchMessages(q: string, accountId: string | null, enabled =
     ReturnType<typeof queryKeys.search>,
     string | undefined
   >({
-    queryKey: queryKeys.search(accountId ?? "", q),
+    queryKey: queryKeys.search(accountId ?? "", q, scope),
     queryFn: ({ pageParam }) => {
-      console.log("[hooks:useSearchMessages] searching", { accountId, q, pageToken: pageParam });
+      console.log("[hooks:useSearchMessages] searching", { accountId, q, scope, pageToken: pageParam });
       return gmailApi.searchMessages({
         q,
         accountId: accountId ?? undefined,
+        labelId: scope?.labelId,
+        rules: scope?.rules,
+        starred: scope?.starred,
+        important: scope?.important,
+        hasAttachments: scope?.hasAttachments,
+        withinDays: scope?.withinDays,
         pageToken: pageParam,
         maxResults: 50,
       });
     },
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage.nextPageToken,
-    enabled: enabled && q.trim().length > 0,
+    enabled: enabled && (q.trim().length > 0 || hasFilters),
     staleTime: STALE_TIME,
   });
 }
