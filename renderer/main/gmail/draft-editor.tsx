@@ -2,12 +2,19 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "@glaze/core/components";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileIcon, PaperclipIcon, SendHorizontalIcon, Trash2Icon, XIcon } from "lucide-react";
-import { usePruneThreadRows, useSendMessage } from "./hooks";
+import { useGetAttachment, usePruneThreadRows, useSendMessage } from "./hooks";
 import { gmailApi } from "./api";
 import { RichTextArea, textToHtml, type RichTextRef } from "./rich-text";
 import { RecipientInput } from "./recipient-input";
 import { IconBtn, HintTooltip } from "./te-ui";
 import { parseAddressEntry, splitAddressList } from "./address";
+import {
+  CollapsedRow,
+  DayDivider,
+  ExpandedRow,
+  dayKey,
+  type DownloadAttachment,
+} from "./message-reader";
 import {
   AttachmentChips,
   attachmentSignature,
@@ -45,6 +52,48 @@ export function DraftEditor({
 
   const sendMessage = useSendMessage();
   const pruneThreadRows = usePruneThreadRows();
+  const getAttachment = useGetAttachment();
+
+  // Reply drafts show their conversation above the composer, exactly like the
+  // reader's in-thread reply flow. The draft itself stays out of the cards —
+  // its content IS the composer.
+  const conversation = threadMessages.filter((m) => !m.labelIds.includes("DRAFT"));
+  const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(
+    () => new Set(conversation.length > 0 ? [conversation[conversation.length - 1].id] : []),
+  );
+  const toggleExpanded = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  // Open on the latest message, like a fresh reply.
+  const conversationRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = conversationRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, []);
+
+  const handleDownloadAttachment: DownloadAttachment = (messageId, attachmentId, filename, mimeType) => {
+    console.log("[DraftEditor:downloadAttachment]", { messageId, filename });
+    void (async () => {
+      try {
+        const result = await getAttachment.mutateAsync({
+          accountId,
+          messageId,
+          attachmentId,
+          filename,
+          mimeType,
+        });
+        if (result.saved && result.path) toast.success(`Saved to ${result.path}`);
+        else toast.error("Failed to save attachment");
+      } catch {
+        toast.error("Could not download attachment");
+      }
+    })();
+  };
 
   // The draft's files must be back in memory before any save: saveDraft
   // rewrites the whole message, so a save without them silently drops the
@@ -309,15 +358,44 @@ export function DraftEditor({
         </HintTooltip>
       </div>
 
-      <div className="flex flex-1 flex-col items-center justify-center gap-1.5 px-6 text-center">
-        <span className="flex size-11 items-center justify-center rounded-full border border-(--te-outline)">
-          <FileIcon className="size-5 text-(--te-muted)" />
-        </span>
-        <span className="pt-1 text-[15px] font-bold text-(--te-text)">Pick up where you left off</span>
-        <span className="text-[13px] text-(--te-muted)">
-          Changes save back to this draft as you type.
-        </span>
-      </div>
+      {conversation.length > 0 ? (
+        <div ref={conversationRef} className="te-scroll min-h-0 flex-1 overflow-y-auto pb-2">
+          {conversation.map((m, i) => {
+            const prev = conversation[i - 1];
+            const newDay = !prev || dayKey(prev.date) !== dayKey(m.date);
+            const isExpanded = expandedIds.has(m.id);
+            const prevExpanded = prev ? expandedIds.has(prev.id) : false;
+            return (
+              <div key={m.id}>
+                {newDay ? <DayDivider timestamp={m.date} /> : null}
+                {!newDay && isExpanded && prevExpanded ? (
+                  <div className="mx-5 my-1 border-t border-(--te-border)" />
+                ) : null}
+                {isExpanded ? (
+                  <ExpandedRow
+                    accountId={accountId}
+                    summary={m}
+                    onCollapse={() => toggleExpanded(m.id)}
+                    onDownload={handleDownloadAttachment}
+                  />
+                ) : (
+                  <CollapsedRow accountId={accountId} summary={m} onExpand={() => toggleExpanded(m.id)} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="flex flex-1 flex-col items-center justify-center gap-1.5 px-6 text-center">
+          <span className="flex size-11 items-center justify-center rounded-full border border-(--te-outline)">
+            <FileIcon className="size-5 text-(--te-muted)" />
+          </span>
+          <span className="pt-1 text-[15px] font-bold text-(--te-text)">Pick up where you left off</span>
+          <span className="text-[13px] text-(--te-muted)">
+            Changes save back to this draft as you type.
+          </span>
+        </div>
+      )}
 
       <div className="shrink-0 px-5 pb-4 pt-1" data-inline-compose="">
         <div

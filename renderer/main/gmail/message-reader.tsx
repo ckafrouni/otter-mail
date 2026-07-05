@@ -76,7 +76,7 @@ type MessageReaderProps = {
   onAdvance?: () => void;
 };
 
-type DownloadAttachment = (
+export type DownloadAttachment = (
   messageId: string,
   attachmentId: string,
   filename: string,
@@ -120,7 +120,7 @@ function formatDayLabel(timestamp: number): string {
   });
 }
 
-function dayKey(timestamp: number): string {
+export function dayKey(timestamp: number): string {
   const d = new Date(timestamp);
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
@@ -484,7 +484,9 @@ function AttachmentList({
   );
 }
 
-function DayDivider({ timestamp }: { timestamp: number }) {
+// DayDivider/CollapsedRow/ExpandedRow are shared with DraftEditor, which
+// renders the same conversation above its composer.
+export function DayDivider({ timestamp }: { timestamp: number }) {
   return (
     <div className="relative flex items-center justify-center py-3">
       <div className="absolute inset-x-0 top-1/2 h-px bg-(--te-border)" />
@@ -495,7 +497,7 @@ function DayDivider({ timestamp }: { timestamp: number }) {
   );
 }
 
-function CollapsedRow({
+export function CollapsedRow({
   accountId,
   summary,
   onExpand,
@@ -533,7 +535,7 @@ function CollapsedRow({
   );
 }
 
-function ExpandedRow({
+export function ExpandedRow({
   accountId,
   summary,
   onCollapse,
