@@ -8,7 +8,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
 
-import { app, BrowserWindow, Menu, logger, initDevToolsButtonState } from "@glaze/core/backend";
+import { app, BrowserWindow, Menu, ipcMain, logger, initDevToolsButtonState } from "@glaze/core/backend";
 
 import { registerHandlers } from "./handlers/index.js";
 import { syncAllAccounts } from "./services/mail-sync.js";
@@ -159,6 +159,29 @@ async function setupApplicationMenu() {
     { role: "fileMenu" },
     { role: "editMenu" },
     { role: "viewMenu" },
+    {
+      // WKWebView consumes ⌘[/⌘] before the page sees a keydown, so history
+      // navigation has to be intercepted here at the menu level.
+      label: "Go",
+      submenu: [
+        {
+          label: "Back",
+          icon: "chevron.left",
+          accelerator: "Command+[",
+          click: () => {
+            ipcMain.broadcast("nav:back");
+          },
+        },
+        {
+          label: "Forward",
+          icon: "chevron.right",
+          accelerator: "Command+]",
+          click: () => {
+            ipcMain.broadcast("nav:forward");
+          },
+        },
+      ],
+    },
     {
       label: "Mailbox",
       submenu: [

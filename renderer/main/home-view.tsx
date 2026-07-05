@@ -350,14 +350,14 @@ export function HomeView() {
   const navActionsRef = useRef({ back: goBack, forward: goForward });
   navActionsRef.current = { back: goBack, forward: goForward };
   useEffect(() => {
-    const down = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
-      if (e.key !== "[" && e.key !== "]") return;
-      if (isTypingTarget(e)) return;
-      e.preventDefault();
-      if (e.key === "[") navActionsRef.current.back();
-      else navActionsRef.current.forward();
-    };
+    // The menu accelerators (main/index.ts "Go") broadcast these; a DOM
+    // keydown never arrives for ⌘[/⌘] because the webview consumes it.
+    const unsubBack = window.glazeAPI.glaze.ipc.onNotification("nav:back", () =>
+      navActionsRef.current.back(),
+    );
+    const unsubForward = window.glazeAPI.glaze.ipc.onNotification("nav:forward", () =>
+      navActionsRef.current.forward(),
+    );
     const mouse = (e: MouseEvent) => {
       if (e.button === 3) {
         e.preventDefault();
@@ -367,10 +367,10 @@ export function HomeView() {
         navActionsRef.current.forward();
       }
     };
-    window.addEventListener("keydown", down);
     window.addEventListener("mouseup", mouse);
     return () => {
-      window.removeEventListener("keydown", down);
+      unsubBack();
+      unsubForward();
       window.removeEventListener("mouseup", mouse);
     };
   }, []);
