@@ -9,7 +9,16 @@ import {
   ContextMenuSeparator,
   ContextMenuSub,
 } from "@glaze/core/components";
-import { FlagIcon, ListFilterIcon } from "lucide-react";
+import {
+  ArchiveIcon,
+  ArchiveXIcon,
+  FlagIcon,
+  ListFilterIcon,
+  MailIcon,
+  MailOpenIcon,
+  Trash2Icon,
+  XIcon,
+} from "lucide-react";
 import { IconBtn, HintTooltip } from "./te-ui";
 import {
   useMessages,
@@ -143,7 +152,9 @@ function formatRelativeDate(timestamp: number): string {
 type MessageRowProps = {
   message: GmailMessageSummary;
   selected: boolean;
-  onSelect: () => void;
+  /** Part of the cmd/shift multi-selection. */
+  checked: boolean;
+  onRowClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
   /** Fallback owner id when a summary has no accountId (e.g. live search results). */
   accountId: string;
   resolveLabel: ResolveLabel;
@@ -156,7 +167,8 @@ type MessageRowProps = {
 function MessageRow({
   message,
   selected,
-  onSelect,
+  checked,
+  onRowClick,
   accountId,
   resolveLabel,
   combinedMeta,
@@ -281,10 +293,18 @@ function MessageRow({
       <button
         ref={rowRef}
         type="button"
-        onClick={onSelect}
+        onClick={onRowClick}
+        // shift-click must not start a text selection
+        onMouseDown={(e) => {
+          if (e.shiftKey) e.preventDefault();
+        }}
         className={[
           "group my-px flex w-full items-start gap-2.5 rounded-[6px] px-3 py-2 text-left",
-          selected ? "bg-(--te-sel)" : "hover:bg-(--te-hover)",
+          selected
+            ? "bg-(--te-sel)"
+            : checked
+              ? "bg-(--te-hover) ring-1 ring-inset ring-(--te-outline-hover)"
+              : "hover:bg-(--te-hover)",
         ].join(" ")}
       >
         <div className="flex min-w-0 flex-1 flex-col gap-px">
@@ -531,6 +551,127 @@ export function MessageList({
 
   const [labelOverlay, setLabelOverlay] = useState<LabelOverlayMode | null>(null);
 
+  // Cmd/shift multi-selection (bulk action bar). Anchor = last plain/cmd click,
+  // falling back to the open message, so shift-click ranges feel native.
+  const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
+  const anchorRef = useRef<string | null>(null);
+  const clearChecked = () => {
+    setChecked(new Set());
+    anchorRef.current = null;
+  };
+  useEffect(() => {
+    clearChecked();
+  }, [labelId, combined?.viewId, searching, unreadOnly]);
+
+  const checkedRef = useRef(checked);
+  checkedRef.current = checked;
+  // Capture phase: Escape clears the multi-selection before home-view's
+  // Escape closes the reader.
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || checkedRef.current.size === 0 || isTypingTarget(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setChecked(new Set());
+      anchorRef.current = null;
+    };
+    window.addEventListener("keydown", down, true);
+    return () => window.removeEventListener("keydown", down, true);
+  }, []);
+
+  const toggleChecked = (id: string) => {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    anchorRef.current = id;
+  };
+
+  const rangeSelect = (id: string) => {
+    const ids = visibleMessages.map((m) => m.id);
+    const from = anchorRef.current ?? selectedMessageId ?? id;
+    const a = ids.indexOf(from);
+    const b = ids.indexOf(id);
+    if (a === -1 || b === -1) {
+      toggleChecked(id);
+      return;
+    }
+    const [lo, hi] = a < b ? [a, b] : [b, a];
+    setChecked((prev) => {
+      const next = new Set(prev);
+      for (let i = lo; i <= hi; i++) next.add(ids[i]);
+      return next;
+    });
+  };
+
+  const handleRowClick = (e: React.MouseEvent, message: GmailMessageSummary) => {
+    if (e.metaKey || e.ctrlKey) {
+      toggleChecked(message.id);
+      return;
+    }
+    if (e.shiftKey) {
+      rangeSelect(message.id);
+      return;
+    }
+    clearChecked();
+    anchorRef.current = message.id;
+    console.log("[MessageList:selectMessage]", { messageId: message.id });
+    onSelectMessage(message.id, message.accountId ?? accountId);
+  };
+
+  const checkedRows = visibleMessages.filter((m) => checked.has(m.id));
+  const bulk = (label: string, run: (m: GmailMessageSummary) => void) => {
+    console.log("[MessageList:bulk]", { action: label, count: checkedRows.length });
+    for (const m of checkedRows) run(m);
+    clearChecked();
+  };
+  const bulkArchive = () =>
+    bulk("archive", (m) =>
+      void listModifyThread.mutateAsync({
+        accountId: m.accountId ?? accountId,
+        threadId: m.threadId || m.id,
+        removeLabelIds: ["INBOX"],
+      }),
+    );
+  const bulkTrash = () =>
+    bulk("trash", (m) =>
+      void listTrashThread.mutateAsync({
+        accountId: m.accountId ?? accountId,
+        threadId: m.threadId || m.id,
+      }),
+    );
+  const bulkJunk = () =>
+    bulk("junk", (m) =>
+      void listModifyThread.mutateAsync({
+        accountId: m.accountId ?? accountId,
+        threadId: m.threadId || m.id,
+        addLabelIds: ["SPAM"],
+        removeLabelIds: ["INBOX"],
+      }),
+    );
+  const bulkMarkRead = () =>
+    bulk("read", (m) =>
+      void listModifyThread.mutateAsync({
+        accountId: m.accountId ?? accountId,
+        threadId: m.threadId || m.id,
+        removeLabelIds: ["UNREAD"],
+      }),
+    );
+  const bulkMarkUnread = () => {
+    // Gmail-style: marking the open conversation unread returns to the list
+    // (and keeps the reader from instantly re-marking it read).
+    if (selectedMessageId && checked.has(selectedMessageId)) onDeselect();
+    bulk("unread", (m) =>
+      void listModifyMessage.mutateAsync({
+        accountId: m.accountId ?? accountId,
+        messageId: m.id,
+        addLabelIds: ["UNREAD"],
+      }),
+    );
+  };
+
   const advanceFrom = (rowId: string) => {
     const idx = visibleMessages.findIndex((m) => m.id === rowId);
     const next = visibleMessages[idx + 1] ?? visibleMessages[idx - 1];
@@ -728,7 +869,7 @@ export function MessageList({
     !searching && (isCombined ? combined.viewId === INBOX_VIEW_ID : labelId === "INBOX");
 
   return (
-    <div className="flex h-full min-w-0 flex-col">
+    <div className="relative flex h-full min-w-0 flex-col">
       {/* Header */}
       <div className="drag-region flex h-[52px] shrink-0 items-center gap-2 border-b border-(--te-border) px-4">
         <div className="min-w-0 flex-1">
@@ -750,7 +891,14 @@ export function MessageList({
         </HintTooltip>
       </div>
 
-      <div ref={scrollRef} onScroll={maybeLoadMore} className="te-scroll min-h-0 flex-1 overflow-y-auto py-1.5">
+      <div
+        ref={scrollRef}
+        onScroll={maybeLoadMore}
+        className={[
+          "te-scroll min-h-0 flex-1 overflow-y-auto py-1.5",
+          checked.size > 0 ? "pb-16" : "",
+        ].join(" ")}
+      >
         {isLoading ? (
           <div className="flex flex-col gap-0">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -783,12 +931,8 @@ export function MessageList({
                 key={`${message.accountId ?? accountId}:${message.id}`}
                 message={message}
                 selected={selectedMessageId === message.id}
-                onSelect={() => {
-                  console.log("[MessageList:selectMessage]", {
-                    messageId: message.id,
-                  });
-                  onSelectMessage(message.id, message.accountId ?? accountId);
-                }}
+                checked={checked.has(message.id)}
+                onRowClick={(e) => handleRowClick(e, message)}
                 accountId={accountId}
                 resolveLabel={resolveLabel}
                 combinedMeta={resolveCombinedMeta(message, combined, accounts, resolveLabel)}
@@ -804,6 +948,48 @@ export function MessageList({
           </>
         )}
       </div>
+
+      {checked.size > 0 ? (
+        <div className="absolute inset-x-0 bottom-3 z-10 flex justify-center px-3">
+          <div className="flex items-center gap-0.5 rounded-[6px] border border-(--te-outline) bg-(--te-panel) px-2 py-1 shadow-lg">
+            <span className="te-num pl-1 text-[11px] text-(--te-badge-bg)">{checked.size}</span>
+            <span className="te-label pr-1 text-(--te-faint)">selected</span>
+            <span className="mx-1 h-5 w-px shrink-0 bg-(--te-border)" aria-hidden />
+            <HintTooltip label="Archive">
+              <IconBtn label="Archive" className="size-7" onClick={bulkArchive}>
+                <ArchiveIcon className="size-4" />
+              </IconBtn>
+            </HintTooltip>
+            <HintTooltip label="Move to Trash">
+              <IconBtn label="Move to Trash" className="size-7" onClick={bulkTrash}>
+                <Trash2Icon className="size-4" />
+              </IconBtn>
+            </HintTooltip>
+            <HintTooltip label="Move to Junk">
+              <IconBtn label="Move to Junk" className="size-7" onClick={bulkJunk}>
+                <ArchiveXIcon className="size-4" />
+              </IconBtn>
+            </HintTooltip>
+            <span className="mx-1 h-5 w-px shrink-0 bg-(--te-border)" aria-hidden />
+            <HintTooltip label="Mark as read">
+              <IconBtn label="Mark as read" className="size-7" onClick={bulkMarkRead}>
+                <MailOpenIcon className="size-4" />
+              </IconBtn>
+            </HintTooltip>
+            <HintTooltip label="Mark as unread">
+              <IconBtn label="Mark as unread" className="size-7" onClick={bulkMarkUnread}>
+                <MailIcon className="size-4" />
+              </IconBtn>
+            </HintTooltip>
+            <span className="mx-1 h-5 w-px shrink-0 bg-(--te-border)" aria-hidden />
+            <HintTooltip label="Clear selection" hint="Esc">
+              <IconBtn label="Clear selection" className="size-7" onClick={clearChecked}>
+                <XIcon className="size-4" />
+              </IconBtn>
+            </HintTooltip>
+          </div>
+        </div>
+      ) : null}
 
       <LabelOverlay
         open={labelOverlay != null}
