@@ -37,19 +37,22 @@ export function NewMessageView({
   accounts,
   defaultAccountId,
   onClose,
+  prefill,
 }: {
   accounts: GmailAccount[];
   defaultAccountId: string;
   onClose: () => void;
+  /** Seeds the composer once at mount (mailto: links); remount to re-seed. */
+  prefill?: { to?: string; cc?: string; subject?: string; body?: string };
 }) {
   const [fromId, setFromId] = useState(defaultAccountId);
-  const [to, setTo] = useState("");
-  const [cc, setCc] = useState("");
-  const [ccVisible, setCcVisible] = useState(false);
+  const [to, setTo] = useState(prefill?.to ?? "");
+  const [cc, setCc] = useState(prefill?.cc ?? "");
+  const [ccVisible, setCcVisible] = useState(Boolean(prefill?.cc));
   const [bcc, setBcc] = useState("");
   const [bccVisible, setBccVisible] = useState(false);
-  const [subject, setSubject] = useState("");
-  const [text, setText] = useState("");
+  const [subject, setSubject] = useState(prefill?.subject ?? "");
+  const [text, setText] = useState(prefill?.body ?? "");
   const [attachments, setAttachments] = useState<ComposeAttachment[]>([]);
   const toRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<RichTextRef>(null);
@@ -277,6 +280,7 @@ export function NewMessageView({
             ariaLabel="Message"
             onTextChange={setText}
             minHeightClass="min-h-[72px]"
+            initialHTML={prefill?.body ? textToHtml(prefill.body) : undefined}
           />
           <AttachmentChips
             attachments={attachments}

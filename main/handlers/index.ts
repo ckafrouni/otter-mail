@@ -16,9 +16,10 @@ import {
 } from "../windows/settings-window.js";
 import { registerGmailHandlers } from "./gmail.js";
 import { configureAutoSync, syncAllAccounts } from "../services/mail-sync.js";
+import { takePendingMailto } from "../services/mailto-target.js";
 import { getSettings } from "../services/settings-store.js";
 
-import { ipcMain, logger } from "@glaze/core/backend";
+import { app, ipcMain, logger } from "@glaze/core/backend";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -61,6 +62,22 @@ export function registerHandlers(): void {
 
   ipcMain.handle("window:closeSettings", async (_event) => {
     getSettingsWindow()?.close();
+  });
+
+  // Default-mail-app plumbing: the renderer pulls pending mailto targets on
+  // mount and on the compose:mailto broadcast; Settings offers a "set as
+  // default" button (macOS shows its own consent dialog).
+  ipcMain.handle("app:takePendingMailto", async () => takePendingMailto());
+
+  ipcMain.handle("app:getDefaultMailStatus", async () => {
+    const isDefault = await app.isDefaultProtocolClientAsync("mailto");
+    return { isDefault };
+  });
+
+  ipcMain.handle("app:setDefaultMailApp", async () => {
+    const ok = await app.setAsDefaultProtocolClient("mailto");
+    logger.info("handlers", "setDefaultMailApp", { ok });
+    return { ok };
   });
 
   // Register Gmail handlers

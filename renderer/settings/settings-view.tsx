@@ -386,6 +386,7 @@ export function SettingsView() {
 
   const [syncInterval, setSyncInterval] = useState<number | null>(null);
   const [notificationsMode, setNotificationsMode] = useState<NotificationsMode | null>(null);
+  const [isDefaultMail, setIsDefaultMail] = useState<boolean | null>(null);
 
   // Navigate to the pane (and view) other windows deep-link to, on mount and
   // whenever the backend signals a new target while this window is open.
@@ -476,10 +477,32 @@ export function SettingsView() {
     }
   };
 
+  const loadDefaultMailStatus = async () => {
+    try {
+      const { isDefault } = await gmailApi.getDefaultMailStatus();
+      setIsDefaultMail(isDefault);
+    } catch (error) {
+      console.log("[SettingsView:defaultMailStatus] failed", { error: String(error) });
+    }
+  };
+
+  const handleSetDefaultMail = async () => {
+    console.log("[SettingsView:setDefaultMailApp]");
+    try {
+      await gmailApi.setDefaultMailApp();
+    } catch (error) {
+      toast.error(`Failed to set default mail app: ${error}`);
+    }
+    // macOS decides via its own consent dialog — re-check rather than trust
+    // the call's return value.
+    void loadDefaultMailStatus();
+  };
+
   useEffect(() => {
     void refreshThemeInfo();
     void loadCredentials();
     void loadSyncSettings();
+    void loadDefaultMailStatus();
   }, []);
 
   const handleSyncIntervalChange = async (value: string) => {
@@ -672,6 +695,20 @@ export function SettingsView() {
                       ))}
                     </SelectContent>
                   </Select>
+                </Field>
+                <Field
+                  label="Default email app"
+                  description="Open mailto: links from other apps in OtterMail."
+                >
+                  {isDefaultMail ? (
+                    <Text variant="small" color="secondary">
+                      OtterMail is the default
+                    </Text>
+                  ) : (
+                    <Button size="small" onClick={() => void handleSetDefaultMail()}>
+                      Set as Default…
+                    </Button>
+                  )}
                 </Field>
               </FieldSet>
             </div>

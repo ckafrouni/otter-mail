@@ -11,6 +11,7 @@ import { fileURLToPath } from "url";
 import { app, BrowserWindow, Menu, ipcMain, logger, initDevToolsButtonState } from "@glaze/core/backend";
 
 import { registerHandlers } from "./handlers/index.js";
+import { parseMailtoUrl, setPendingMailto } from "./services/mailto-target.js";
 import { syncAllAccounts } from "./services/mail-sync.js";
 import { pruneAttachmentCache } from "./services/attachment-cache.js";
 import { getPreloadPath, getWindowUrl } from "./windows/window-paths.js";
@@ -23,6 +24,22 @@ const __dirname = path.dirname(__filename);
 // ── IPC Handlers ──────────────────────────────────────────────────────
 // ipcMain is already wired to the IPC server by the runtime bootstrap.
 registerHandlers();
+
+// ── mailto: handling (default mail app) ───────────────────────────────
+// Clicking a mailto link anywhere in macOS lands here once OtterMail is the
+// default mail app. Stash the parsed target (the renderer pulls it via
+// app:takePendingMailto on mount — covers cold starts) and nudge any live
+// main window via broadcast.
+app.on("open-url", (url: string) => {
+  const target = parseMailtoUrl(url);
+  logger.info("main", "open-url", { mailto: target != null });
+  if (!target) return;
+  setPendingMailto(target);
+  const win = BrowserWindow.getAllWindows().find((w) => w.windowKey === "main");
+  win?.show();
+  app.focus({ steal: true });
+  ipcMain.broadcast("compose:mailto");
+});
 
 // ── Dev-only parity harness ───────────────────────────────────────────
 // The parity autotest lives in main/dev/, which is excluded from scaffolded

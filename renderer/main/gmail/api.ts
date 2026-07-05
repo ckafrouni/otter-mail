@@ -54,6 +54,9 @@ export type ListCombinedMessagesParams = {
 
 export type CombinedCounts = { total: number; unread: number };
 
+/** Parsed mailto: link, delivered when OtterMail is the default mail app. */
+export type MailtoTarget = { to: string; cc: string; subject: string; body: string };
+
 export type ModifyMessageParams = {
   accountId: string;
   messageId: string;
@@ -279,4 +282,10 @@ export const gmailApi = {
   openSettings: (target?: SettingsTarget): Promise<void> => ipc("window:openSettings", target),
 
   getSettingsTarget: (): Promise<SettingsTarget | null> => ipc("window:getSettingsTarget"),
+
+  takePendingMailto: (): Promise<MailtoTarget | null> => ipc("app:takePendingMailto"),
+
+  getDefaultMailStatus: (): Promise<{ isDefault: boolean }> => ipc("app:getDefaultMailStatus"),
+
+  setDefaultMailApp: (): Promise<{ ok: boolean }> => ipc("app:setDefaultMailApp"),
 };

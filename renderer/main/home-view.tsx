@@ -21,6 +21,7 @@ import {
 } from "./gmail/hooks";
 import { takeUndo, type UndoAction } from "./gmail/undo";
 import { getAccountColor, getAccountContrastColor } from "./gmail/account-style";
+import { gmailApi, type MailtoTarget } from "./gmail/api";
 import type { GmailMessageSummary } from "./gmail/types";
 import {
   useMailViews,
@@ -97,6 +98,10 @@ export function HomeView() {
   const [readerAccountId, setReaderAccountId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [composeOpen, setComposeOpen] = useState(false);
+  // mailto: target from the OS (OtterMail as default mail app). The seq keys
+  // NewMessageView so a link arriving while the composer is open re-seeds it.
+  const [mailtoPrefill, setMailtoPrefill] = useState<MailtoTarget | null>(null);
+  const [mailtoSeq, setMailtoSeq] = useState(0);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [initialized, setInitialized] = useState(false);
@@ -378,6 +383,23 @@ export function HomeView() {
     };
   }, []);
 
+  // mailto: links (default mail app): pull the pending target on mount (cold
+  // start) and whenever the backend broadcasts one, then open the composer
+  // prefilled.
+  useEffect(() => {
+    const pull = async () => {
+      const target = await gmailApi.takePendingMailto();
+      if (!target) return;
+      console.log("[HomeView:mailto]", { to: target.to });
+      setMailtoPrefill(target);
+      setMailtoSeq((n) => n + 1);
+      setComposeOpen(true);
+    };
+    void pull();
+    const unsub = window.glazeAPI.glaze.ipc.onNotification("compose:mailto", () => void pull());
+    return unsub;
+  }, []);
+
   const effectiveAccountId = isCombined
     ? COMBINED_ACCOUNT_ID
     : selectedAccountId && accounts.some((a) => a.id === selectedAccountId)
@@ -645,9 +667,14 @@ export function HomeView() {
           <div className={`${PANEL_CARD_GLASS} min-w-0 flex-1 rounded-br-[22px]`}>
             {composeOpen && composeAccountId ? (
               <NewMessageView
+                key={mailtoSeq}
                 accounts={accounts}
                 defaultAccountId={composeAccountId}
-                onClose={() => setComposeOpen(false)}
+                onClose={() => {
+                  setComposeOpen(false);
+                  setMailtoPrefill(null);
+                }}
+                prefill={mailtoPrefill ?? undefined}
               />
             ) : readerAccount ? (
               <MessageReader
