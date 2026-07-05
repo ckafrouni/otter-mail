@@ -27,8 +27,9 @@
    (synced by the injected theme, which follows the system appearance)
    overrides them. */
 :root {
-  --te-frame: rgb(215 212 206 / 60%); /* window frame: translucent wash over the native vibrancy glass */
+  --te-frame: rgb(215 212 206 / 30%); /* window frame: thin wash over the native vibrancy glass */
   --te-card: #f2f1ed; /* faceplate the three panes live on */
+  --te-card-glass: rgb(242 241 237 / 45%); /* sidebar faceplate: lets the vibrancy through */
   --te-panel: #fbfaf8; /* raised inputs (composer, search) */
   --te-border: #c9c6be; /* hairlines between panes */
   --te-hover: rgb(0 0 0 / 5%); /* row hover wash */
@@ -50,8 +51,9 @@
   --te-badge-fg: #ffffff;
 }
 .dark {
-  --te-frame: rgb(15 15 14 / 50%);
+  --te-frame: rgb(15 15 14 / 30%);
   --te-card: #1b1b19;
+  --te-card-glass: rgb(27 27 25 / 40%);
   --te-panel: #242421;
   --te-border: #32322e;
   --te-hover: rgb(255 255 255 / 6%);

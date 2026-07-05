@@ -83,8 +83,10 @@ function PaneResizer({ onPointerDown }: { onPointerDown: (e: ReactPointerEvent) 
   );
 }
 
-/** Panel card on the device-body frame. */
-const PANEL_CARD = "overflow-hidden rounded-[8px] border border-(--te-border) bg-(--te-card)";
+/** Panel card on the device-body frame; content cards opaque, sidebar glass. */
+const PANEL_FRAME = "overflow-hidden rounded-[8px] border border-(--te-border)";
+const PANEL_CARD = `${PANEL_FRAME} bg-(--te-card)`;
+const PANEL_CARD_GLASS = `${PANEL_FRAME} bg-(--te-card-glass)`;
 
 export function HomeView() {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
@@ -605,7 +607,7 @@ export function HomeView() {
         <div className="flex min-h-0 flex-1 px-1 pb-1">
           <div
             style={{ width: sidebarPane.width }}
-            className={`${PANEL_CARD} shrink-0 rounded-bl-[22px]`}
+            className={`${PANEL_CARD_GLASS} shrink-0 rounded-bl-[22px]`}
           >
             <AccountsSidebar
               selectedAccountId={effectiveAccountId}
