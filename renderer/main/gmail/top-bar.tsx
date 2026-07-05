@@ -187,10 +187,6 @@ export function TopBar({
         </HintTooltip>
       </div>
 
-      <span className="te-label hidden pl-1 text-(--te-muted) min-[840px]:block">
-        ottermail
-      </span>
-
       <span className="min-w-0 flex-1" />
 
       {/* Quiet ghost search, right-aligned; borderless until focused. */}
