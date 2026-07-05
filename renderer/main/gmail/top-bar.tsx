@@ -1,4 +1,4 @@
-import type { ReactNode, RefObject } from "react";
+import { useEffect, useState, type ReactNode, type RefObject } from "react";
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -80,6 +80,51 @@ function AccountKnob({
       </ContextMenuTrigger>
       <ContextMenuContent>{menu}</ContextMenuContent>
     </ContextMenu>
+  );
+}
+
+/**
+ * Outline nudge shown only while OtterMail is not the macOS default mail app;
+ * clicking asks the OS (consent dialog) and the button hides once granted.
+ */
+function DefaultMailButton() {
+  const [isDefault, setIsDefault] = useState<boolean | null>(null);
+
+  const refresh = async () => {
+    try {
+      const status = await gmailApi.getDefaultMailStatus();
+      setIsDefault(status.isDefault);
+    } catch (err) {
+      console.log("[TopBar:defaultMailStatus] failed", { error: String(err) });
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  if (isDefault !== false) return null;
+
+  const request = async () => {
+    console.log("[TopBar:setDefaultMailApp]");
+    try {
+      await gmailApi.setDefaultMailApp();
+    } catch (err) {
+      console.log("[TopBar:setDefaultMailApp] failed", { error: String(err) });
+    }
+    void refresh();
+  };
+
+  return (
+    <HintTooltip label="Use OtterMail for email links">
+      <button
+        type="button"
+        onClick={() => void request()}
+        className="te-label flex h-7 shrink-0 items-center rounded-[5px] border border-(--te-outline) px-2 text-(--te-muted) hover:border-(--te-outline-hover) hover:text-(--te-strong)"
+      >
+        Set as default mail app
+      </button>
+    </HintTooltip>
   );
 }
 
@@ -237,6 +282,8 @@ export function TopBar({
           <span className="te-label max-w-40 truncate text-(--te-muted)">{syncLabel}</span>
         </div>
       ) : null}
+
+      <DefaultMailButton />
 
       <HintTooltip label="Keyboard shortcuts" hint="?">
         <IconBtn label="Help" onClick={onOpenHelp} className="size-7">
