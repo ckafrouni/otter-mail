@@ -188,7 +188,7 @@ export function TopBar({
       </div>
 
       <span className="te-label hidden pl-1 text-(--te-muted) min-[840px]:block">
-        gmail inbox
+        ottermail
       </span>
 
       <span className="min-w-0 flex-1" />
