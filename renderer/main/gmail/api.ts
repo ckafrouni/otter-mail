@@ -57,6 +57,10 @@ export type CombinedCounts = { total: number; unread: number };
 /** Parsed mailto: link, delivered when OtterMail is the default mail app. */
 export type MailtoTarget = { to: string; cc: string; subject: string; body: string };
 
+/** An installed mailto: handler (Settings default-mail dropdown). */
+export type MailApp = { bundleId: string; name: string; path: string };
+export type MailAppsResult = { apps: MailApp[]; defaultBundleId: string | null };
+
 export type ModifyMessageParams = {
   accountId: string;
   messageId: string;
@@ -287,5 +291,9 @@ export const gmailApi = {
 
   getDefaultMailStatus: (): Promise<{ isDefault: boolean }> => ipc("app:getDefaultMailStatus"),
 
-  setDefaultMailApp: (): Promise<{ ok: boolean }> => ipc("app:setDefaultMailApp"),
+  /** No bundleId = register OtterMail (consent dialog); with one, hand the default to that app. */
+  setDefaultMailApp: (bundleId?: string): Promise<{ ok: boolean }> =>
+    ipc("app:setDefaultMailApp", bundleId ? { bundleId } : undefined),
+
+  listMailApps: (): Promise<MailAppsResult> => ipc("app:listMailApps"),
 };

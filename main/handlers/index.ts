@@ -15,6 +15,7 @@ import {
   takeSettingsTarget,
 } from "../windows/settings-window.js";
 import { registerGmailHandlers } from "./gmail.js";
+import { listMailApps, setDefaultMailHandler } from "../services/default-mail.js";
 import { configureAutoSync, syncAllAccounts } from "../services/mail-sync.js";
 import { takePendingMailto } from "../services/mailto-target.js";
 import { getSettings } from "../services/settings-store.js";
@@ -74,11 +75,22 @@ export function registerHandlers(): void {
     return { isDefault };
   });
 
-  ipcMain.handle("app:setDefaultMailApp", async () => {
+  // Without a bundleId this registers OtterMail itself (SDK call, macOS
+  // consent dialog); with one it hands the default to that app instead
+  // (Settings dropdown, LaunchServices via JXA).
+  ipcMain.handle("app:setDefaultMailApp", async (_event, params: unknown) => {
+    const bundleId = (params as { bundleId?: unknown } | undefined)?.bundleId;
+    if (typeof bundleId === "string" && bundleId.length > 0) {
+      await setDefaultMailHandler(bundleId);
+      logger.info("handlers", "setDefaultMailApp", { bundleId });
+      return { ok: true };
+    }
     const ok = await app.setAsDefaultProtocolClient("mailto");
     logger.info("handlers", "setDefaultMailApp", { ok });
     return { ok };
   });
+
+  ipcMain.handle("app:listMailApps", async () => listMailApps());
 
   // Register Gmail handlers
   registerGmailHandlers();

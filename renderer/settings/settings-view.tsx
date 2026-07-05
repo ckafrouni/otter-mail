@@ -45,7 +45,7 @@ import {
   toast,
 } from "@glaze/core/components";
 import type { NativeThemeInfo } from "@glaze/core/ipc";
-import { gmailApi, type NotificationsMode, type SettingsPane } from "../main/gmail/api";
+import { gmailApi, type MailApp, type NotificationsMode, type SettingsPane } from "../main/gmail/api";
 import { useAccounts, useAddAccount, useRemoveAccount, useUpdateAccount } from "../main/gmail/hooks";
 import { useMailViews } from "../main/gmail/custom-views";
 import { ViewEditorForm } from "../main/gmail/view-editor-form";
@@ -386,7 +386,8 @@ export function SettingsView() {
 
   const [syncInterval, setSyncInterval] = useState<number | null>(null);
   const [notificationsMode, setNotificationsMode] = useState<NotificationsMode | null>(null);
-  const [isDefaultMail, setIsDefaultMail] = useState<boolean | null>(null);
+  const [mailApps, setMailApps] = useState<MailApp[]>([]);
+  const [defaultMailBundleId, setDefaultMailBundleId] = useState<string | null>(null);
 
   // Navigate to the pane (and view) other windows deep-link to, on mount and
   // whenever the backend signals a new target while this window is open.
@@ -477,32 +478,34 @@ export function SettingsView() {
     }
   };
 
-  const loadDefaultMailStatus = async () => {
+  const loadMailApps = async () => {
     try {
-      const { isDefault } = await gmailApi.getDefaultMailStatus();
-      setIsDefaultMail(isDefault);
+      const result = await gmailApi.listMailApps();
+      setMailApps(result.apps);
+      setDefaultMailBundleId(result.defaultBundleId);
     } catch (error) {
-      console.log("[SettingsView:defaultMailStatus] failed", { error: String(error) });
+      console.log("[SettingsView:listMailApps] failed", { error: String(error) });
     }
   };
 
-  const handleSetDefaultMail = async () => {
-    console.log("[SettingsView:setDefaultMailApp]");
+  const handleDefaultMailChange = async (bundleId: string) => {
+    setDefaultMailBundleId(bundleId);
+    console.log("[SettingsView:setDefaultMailApp]", { bundleId });
     try {
-      await gmailApi.setDefaultMailApp();
+      await gmailApi.setDefaultMailApp(bundleId);
     } catch (error) {
-      toast.error(`Failed to set default mail app: ${error}`);
+      toast.error(`Failed to change default mail app: ${error}`);
     }
-    // macOS decides via its own consent dialog — re-check rather than trust
-    // the call's return value.
-    void loadDefaultMailStatus();
+    // macOS may still put a consent dialog in the way — re-read the actual
+    // state rather than trusting the optimistic selection.
+    void loadMailApps();
   };
 
   useEffect(() => {
     void refreshThemeInfo();
     void loadCredentials();
     void loadSyncSettings();
-    void loadDefaultMailStatus();
+    void loadMailApps();
   }, []);
 
   const handleSyncIntervalChange = async (value: string) => {
@@ -698,17 +701,23 @@ export function SettingsView() {
                 </Field>
                 <Field
                   label="Default email app"
-                  description="Open mailto: links from other apps in OtterMail."
+                  description="Which app opens mailto: links across macOS."
                 >
-                  {isDefaultMail ? (
-                    <Text variant="small" color="secondary">
-                      OtterMail is the default
-                    </Text>
-                  ) : (
-                    <Button size="small" onClick={() => void handleSetDefaultMail()}>
-                      Set as Default…
-                    </Button>
-                  )}
+                  <Select
+                    value={defaultMailBundleId ?? undefined}
+                    onValueChange={(value) => void handleDefaultMailChange(value)}
+                  >
+                    <SelectTrigger id="defaultMailApp" size="small" variant="transparent" className="w-40">
+                      <SelectValue placeholder="Loading…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {mailApps.map((app) => (
+                        <SelectItem key={app.bundleId} value={app.bundleId}>
+                          {app.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </Field>
               </FieldSet>
             </div>
