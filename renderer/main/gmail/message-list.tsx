@@ -707,10 +707,19 @@ export function MessageList({
     return () => window.removeEventListener("keydown", down);
   }, []);
 
-  const handleLoadMore = () => {
-    console.log("[MessageList:loadMore]");
-    void messagesQuery.fetchNextPage();
+  // Infinite scroll: pull the next page whenever the bottom comes within
+  // reach — on scroll, and after each render so short pages keep filling
+  // until the viewport has headroom.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const maybeLoadMore = () => {
+    const el = scrollRef.current;
+    if (!el || !hasNextPage || isFetchingNextPage) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 600) {
+      console.log("[MessageList:autoLoadMore]");
+      void messagesQuery.fetchNextPage();
+    }
   };
+  useEffect(maybeLoadMore);
 
   const isLoading = messagesQuery.isLoading;
 
@@ -741,7 +750,7 @@ export function MessageList({
         </HintTooltip>
       </div>
 
-      <div className="te-scroll min-h-0 flex-1 overflow-y-auto py-1.5">
+      <div ref={scrollRef} onScroll={maybeLoadMore} className="te-scroll min-h-0 flex-1 overflow-y-auto py-1.5">
         {isLoading ? (
           <div className="flex flex-col gap-0">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -786,16 +795,10 @@ export function MessageList({
                 showInboxChip={!inInboxContext}
               />
             ))}
-            {hasNextPage ? (
-              <div className="flex justify-center py-3">
-                <button
-                  type="button"
-                  onClick={handleLoadMore}
-                  disabled={isFetchingNextPage}
-                  className="te-label h-7 rounded-[5px] border border-(--te-outline) px-3 text-(--te-text) hover:border-(--te-outline-hover) disabled:opacity-50"
-                >
-                  {isFetchingNextPage ? "Loading..." : "Load more"}
-                </button>
+            {isFetchingNextPage ? (
+              <div className="flex items-center justify-center gap-1.5 py-3">
+                <span className="te-blink size-1.5 shrink-0 bg-(--te-accent)" aria-hidden />
+                <span className="te-label text-(--te-faint)">Loading more</span>
               </div>
             ) : null}
           </>
