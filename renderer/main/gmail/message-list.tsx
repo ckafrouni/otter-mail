@@ -557,28 +557,22 @@ export function MessageList({
   const globalSearching = debouncedQuery.length > 0;
 
   // Search and criteria are independent: filterOpen is ONLY the text input's
-  // state (search icon), criteria live in `filters` (sliders menu). The bar
-  // row derives from either, so adding a criterion shows its token without
-  // activating the search input.
+  // state (search icon), criteria live in `filters` (sliders menu). Each gets
+  // its own row under the header with its own dismiss.
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterQuery, setFilterQuery] = useState("");
   const [filters, setFilters] = useState<ViewFilters>(NO_FILTERS);
   const filtersActive =
     filters.starred || filters.important || filters.hasAttachments || filters.withinDays != null;
-  const barVisible = filterOpen || filtersActive;
   const debouncedFilter = useDebouncedValue(filterOpen ? filterQuery.trim() : "", 150);
-  const filtering = barVisible && (debouncedFilter.length > 0 || filtersActive);
+  const filtering = debouncedFilter.length > 0 || filtersActive;
   const searching = filtering || globalSearching;
 
-  // Dismisses only the text search; active criteria keep the bar up.
   const closeSearch = () => {
     setFilterOpen(false);
     setFilterQuery("");
   };
-  const closeFilter = () => {
-    closeSearch();
-    setFilters(NO_FILTERS);
-  };
+  const clearFilters = () => setFilters(NO_FILTERS);
   const patchFilters = (patch: Partial<ViewFilters>) => {
     console.log("[MessageList:patchFilters]", patch);
     setFilters((f) => ({ ...f, ...patch }));
@@ -1103,9 +1097,35 @@ export function MessageList({
         </HintTooltip>
       </div>
 
-      {barVisible ? (
+      {filterOpen ? (
+        <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-(--te-border) px-4">
+          <SearchIcon className="size-3.5 shrink-0 text-(--te-faint)" />
+          <input
+            autoFocus
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.stopPropagation();
+                closeSearch();
+              }
+            }}
+            placeholder={`Search in ${mailboxTitle}`}
+            className="h-6 min-w-24 flex-1 bg-transparent text-[13px] text-(--te-text) outline-none placeholder:text-(--te-faint)"
+          />
+          <button
+            type="button"
+            onClick={closeSearch}
+            aria-label="Close search"
+            className="shrink-0 text-(--te-faint) hover:text-(--te-strong)"
+          >
+            <XIcon className="size-3.5" />
+          </button>
+        </div>
+      ) : null}
+
+      {filtersActive ? (
         <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-1.5 border-b border-(--te-border) px-4 py-1.5">
-          {filterOpen ? <SearchIcon className="size-3.5 shrink-0 text-(--te-faint)" /> : null}
           {filters.starred ? (
             <FilterPill label="Flagged" onRemove={() => patchFilters({ starred: false })} />
           ) : null}
@@ -1124,27 +1144,11 @@ export function MessageList({
               onRemove={() => patchFilters({ withinDays: null })}
             />
           ) : null}
-          {filterOpen ? (
-            <input
-              autoFocus
-              value={filterQuery}
-              onChange={(e) => setFilterQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  e.stopPropagation();
-                  closeSearch();
-                }
-              }}
-              placeholder={`Search in ${mailboxTitle}`}
-              className="h-6 min-w-24 flex-1 bg-transparent text-[13px] text-(--te-text) outline-none placeholder:text-(--te-faint)"
-            />
-          ) : (
-            <span className="h-6 flex-1" aria-hidden />
-          )}
+          <span className="h-6 flex-1" aria-hidden />
           <button
             type="button"
-            onClick={closeFilter}
-            aria-label="Clear search and filters"
+            onClick={clearFilters}
+            aria-label="Clear filters"
             className="shrink-0 text-(--te-faint) hover:text-(--te-strong)"
           >
             <XIcon className="size-3.5" />
