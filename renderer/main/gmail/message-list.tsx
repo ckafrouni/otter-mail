@@ -21,6 +21,7 @@ import {
   useModifyMessage,
   useModifyThread,
   useTrashThread,
+  useUntrashThread,
   useLabelResolver,
   useSyncAccountLabels,
 } from "./hooks";
@@ -162,6 +163,7 @@ function MessageRow({
   const modifyMessage = useModifyMessage();
   const modifyThread = useModifyThread();
   const trashThread = useTrashThread();
+  const untrashThread = useUntrashThread();
 
   const ownerAccountId = message.accountId ?? accountId;
   const threadId = message.threadId || message.id;
@@ -247,9 +249,15 @@ function MessageRow({
     });
   };
 
+  const trashed = message.labelIds.includes("TRASH");
+
   const handleTrash = (e?: React.MouseEvent) => {
     e?.stopPropagation();
-    console.log("[MessageList:trash]", { threadId });
+    console.log("[MessageList:trashToggle]", { threadId, trashed });
+    if (trashed) {
+      void untrashThread.mutateAsync({ accountId: ownerAccountId, threadId });
+      return;
+    }
     void trashThread.mutateAsync({ accountId: ownerAccountId, threadId });
   };
 
@@ -413,9 +421,15 @@ function MessageRow({
           <ContextMenuItem icon="xmark.bin" onSelect={handleJunk}>
             Move to Junk
           </ContextMenuItem>
-          <ContextMenuItem icon="trash" color="red" onSelect={() => handleTrash()}>
-            Move to Trash
-          </ContextMenuItem>
+          {trashed ? (
+            <ContextMenuItem icon="trash.slash" onSelect={() => handleTrash()}>
+              Restore from Trash
+            </ContextMenuItem>
+          ) : (
+            <ContextMenuItem icon="trash" color="red" onSelect={() => handleTrash()}>
+              Move to Trash
+            </ContextMenuItem>
+          )}
         </ContextMenuContent>
       </ContextMenu>
     </div>
@@ -492,6 +506,7 @@ export function MessageList({
   const listModifyMessage = useModifyMessage();
   const listModifyThread = useModifyThread();
   const listTrashThread = useTrashThread();
+  const listUntrashThread = useUntrashThread();
 
   const selectedRow = visibleMessages.find((m) => m.id === selectedMessageId) ?? null;
   const selectedOwner = selectedRow ? (selectedRow.accountId ?? accountId) : null;
@@ -608,8 +623,13 @@ export function MessageList({
         case "#": {
           if (!selectedRow) return;
           e.preventDefault();
-          advance();
-          void listTrashThread.mutateAsync({ accountId: owner, threadId: selThreadId });
+          // Trashed rows restore in place; live rows trash and advance.
+          if (selectedRow.labelIds.includes("TRASH")) {
+            void listUntrashThread.mutateAsync({ accountId: owner, threadId: selThreadId });
+          } else {
+            advance();
+            void listTrashThread.mutateAsync({ accountId: owner, threadId: selThreadId });
+          }
           break;
         }
         case "!": {

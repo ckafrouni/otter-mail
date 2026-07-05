@@ -21,6 +21,7 @@ import {
   PaperclipIcon,
   ReplyIcon,
   ReplyAllIcon,
+  RotateCcwIcon,
   SendHorizontalIcon,
   Trash2Icon,
   XIcon,
@@ -33,6 +34,8 @@ import {
   useTrashMessage,
   useModifyThread,
   useTrashThread,
+  useUntrashThread,
+  useUntrashMessage,
   useGetAttachment,
   useLabels,
   useSendMessage,
@@ -1013,6 +1016,8 @@ export function MessageReader({ accountId, messageId, onDeselect }: MessageReade
   const trashMessage = useTrashMessage();
   const modifyThread = useModifyThread();
   const trashThread = useTrashThread();
+  const untrashThread = useUntrashThread();
+  const untrashMessage = useUntrashMessage();
   const getAttachment = useGetAttachment();
 
   const message = messageQuery.data;
@@ -1199,6 +1204,15 @@ export function MessageReader({ accountId, messageId, onDeselect }: MessageReade
     void trashMessage.mutateAsync({ accountId, messageId });
   };
 
+  const handleUntrash = () => {
+    console.log("[MessageReader:untrash]", { messageId, isThread });
+    if (isThread && threadId) {
+      void untrashThread.mutateAsync({ accountId, threadId });
+      return;
+    }
+    void untrashMessage.mutateAsync({ accountId, messageId });
+  };
+
   const handleReply = () => {
     console.log("[MessageReader:reply]", { messageId });
     setInline("reply");
@@ -1251,6 +1265,7 @@ export function MessageReader({ accountId, messageId, onDeselect }: MessageReade
   };
 
   const isFlagged = message.labelIds.includes("STARRED");
+  const isTrashed = message.labelIds.includes("TRASH");
 
   const handleToggleFlag = () => {
     console.log("[MessageReader:toggleFlag]", { messageId, isFlagged });
@@ -1342,7 +1357,7 @@ export function MessageReader({ accountId, messageId, onDeselect }: MessageReade
 
           {groupDivider}
 
-          {(isThread ? rows.some((m) => m.labelIds.includes("INBOX")) : message.labelIds.includes("INBOX")) ? (
+          {isTrashed ? null : (isThread ? rows.some((m) => m.labelIds.includes("INBOX")) : message.labelIds.includes("INBOX")) ? (
             <HintTooltip label="Archive" hint="E">
               <IconBtn label="Archive" onClick={handleArchive}>
                 <ArchiveIcon className="size-4" />
@@ -1355,11 +1370,19 @@ export function MessageReader({ accountId, messageId, onDeselect }: MessageReade
               </IconBtn>
             </HintTooltip>
           )}
-          <HintTooltip label="Move to Trash" hint="#">
-            <IconBtn label="Move to Trash" onClick={handleTrash}>
-              <Trash2Icon className="size-4" />
-            </IconBtn>
-          </HintTooltip>
+          {isTrashed ? (
+            <HintTooltip label="Restore from Trash" hint="#">
+              <IconBtn label="Restore from Trash" onClick={handleUntrash}>
+                <RotateCcwIcon className="size-4" />
+              </IconBtn>
+            </HintTooltip>
+          ) : (
+            <HintTooltip label="Move to Trash" hint="#">
+              <IconBtn label="Move to Trash" onClick={handleTrash}>
+                <Trash2Icon className="size-4" />
+              </IconBtn>
+            </HintTooltip>
+          )}
           <HintTooltip label="Move to Junk" hint="!">
             <IconBtn label="Move to Junk" onClick={handleJunk}>
               <ArchiveXIcon className="size-4" />
@@ -1395,6 +1418,21 @@ export function MessageReader({ accountId, messageId, onDeselect }: MessageReade
             </IconBtn>
           </HintTooltip>
         </div>
+
+        {isTrashed ? (
+          <div className="mx-5 mt-3 flex shrink-0 items-center gap-2 rounded-[6px] border border-(--te-outline) bg-(--te-ctl) px-3 py-2">
+            <Trash2Icon className="size-3.5 shrink-0 text-(--te-muted)" />
+            <span className="te-label text-(--te-muted)">This conversation is in the Trash</span>
+            <span className="flex-1" />
+            <button
+              type="button"
+              onClick={handleUntrash}
+              className="te-label h-6 shrink-0 rounded-[4px] border border-(--te-outline) px-2 text-(--te-text) hover:border-(--te-outline-hover) hover:text-(--te-strong)"
+            >
+              Restore
+            </button>
+          </div>
+        ) : null}
 
         {/* Conversation */}
         <div className="te-scroll min-h-0 flex-1 overflow-y-auto pb-2">
