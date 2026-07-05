@@ -84,6 +84,10 @@ async function createMainWindow() {
     minHeight: minWindowHeight,
     title: windowTitle,
     show: false, // Don't show until WebView is ready (prevents flickering)
+    // Native glass: the renderer keeps its base layers transparent and paints
+    // the TE frame as a translucent wash over this material.
+    backgroundColor: "#00000000",
+    vibrancy: "sidebar",
     webPreferences: {
       preload: getPreloadPath(),
     },

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="no-background">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -14,14 +14,12 @@
       }
     </script>
     <style>
-      :root {
-        --background: hsl(0 0% 100% / 0.9);
-      }
-      .dark {
-        --background: hsl(0 0% 0% / 0.4);
-      }
-      body {
-        background: var(--background);
+      /* Transparent base so the window's native vibrancy material shows
+         through; the app paints its own translucent frame on top. */
+      html,
+      body,
+      #root {
+        background: transparent;
       }
     </style>
   </head>

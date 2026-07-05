@@ -105,7 +105,9 @@ export function TopBar({
   return (
     <div
       data-toolbar=""
-      className="drag-region flex h-11 shrink-0 items-center gap-1 bg-(--te-frame) pl-[84px] pr-2"
+      // No own bg: the frame's translucent wash is painted once by the parent
+      // (stacking two alpha layers here would render the bar darker than the rail).
+      className="drag-region flex h-11 shrink-0 items-center gap-1 pl-[84px] pr-2"
     >
       <IconBtn label="Back" disabled={!canGoBack} onClick={onBack} className="size-7">
         <ChevronLeftIcon className="size-4.5" />
