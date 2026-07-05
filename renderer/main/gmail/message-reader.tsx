@@ -4,6 +4,8 @@ import {
   ContextMenuTrigger,
   ContextMenuContent,
   ContextMenuItem,
+  Dialog,
+  Text,
   toast,
 } from "@glaze/core/components";
 import {
@@ -37,6 +39,7 @@ import {
   useTrashThread,
   useUntrashThread,
   useUntrashMessage,
+  useDeleteThreadForever,
   useGetAttachment,
   useLabels,
   useSendMessage,
@@ -1021,6 +1024,7 @@ export function MessageReader({ accountId, messageId, onDeselect, onAdvance }: M
   const trashThread = useTrashThread();
   const untrashThread = useUntrashThread();
   const untrashMessage = useUntrashMessage();
+  const deleteForever = useDeleteThreadForever();
   const getAttachment = useGetAttachment();
 
   const message = messageQuery.data;
@@ -1030,6 +1034,7 @@ export function MessageReader({ accountId, messageId, onDeselect, onAdvance }: M
   const isThread = threadMessages.length > 1;
 
   const [inline, setInline] = useState<InlineMode | null>(null);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set());
   const seededRef = useRef<string | null>(null);
 
@@ -1207,6 +1212,13 @@ export function MessageReader({ accountId, messageId, onDeselect, onAdvance }: M
     void trashMessage.mutateAsync({ accountId, messageId });
   };
 
+  const handleDeleteForever = () => {
+    setConfirmDeleteOpen(false);
+    console.log("[MessageReader:deleteForever]", { messageId });
+    onAdvance?.();
+    void deleteForever.mutateAsync({ accountId, threadId: message.threadId || message.id });
+  };
+
   const handleUntrash = () => {
     console.log("[MessageReader:untrash]", { messageId, isThread });
     if (isThread && threadId) {
@@ -1378,6 +1390,13 @@ export function MessageReader({ accountId, messageId, onDeselect, onAdvance }: M
               </IconBtn>
             </HintTooltip>
           )}
+          {isTrashed || isJunk ? (
+            <HintTooltip label="Delete Forever">
+              <IconBtn label="Delete Forever" onClick={() => setConfirmDeleteOpen(true)}>
+                <Trash2Icon className="size-4 text-(--red)" />
+              </IconBtn>
+            </HintTooltip>
+          ) : null}
           {isTrashed ? (
             <HintTooltip label="Restore from Trash" hint="#">
               <IconBtn label="Restore from Trash" onClick={handleUntrash}>
@@ -1459,6 +1478,13 @@ export function MessageReader({ accountId, messageId, onDeselect, onAdvance }: M
             >
               Restore
             </button>
+            <button
+              type="button"
+              onClick={() => setConfirmDeleteOpen(true)}
+              className="te-label h-6 shrink-0 rounded-[4px] border border-(--te-outline) px-2 text-(--red) hover:border-(--te-outline-hover)"
+            >
+              Delete forever
+            </button>
           </div>
         ) : null}
 
@@ -1504,6 +1530,18 @@ export function MessageReader({ accountId, messageId, onDeselect, onAdvance }: M
         ) : null}
       </div>
 
+      <Dialog
+        open={confirmDeleteOpen}
+        onOpenChange={setConfirmDeleteOpen}
+        title="Delete Forever"
+        confirmLabel="Delete Forever"
+        confirmVariant="accent"
+        onConfirm={handleDeleteForever}
+      >
+        <Text variant="small">
+          Permanently delete this conversation? This cannot be undone.
+        </Text>
+      </Dialog>
     </>
   );
 }

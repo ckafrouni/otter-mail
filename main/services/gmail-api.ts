@@ -539,6 +539,15 @@ export async function untrashThread(
   return ids.length > 0 ? fetchMetadataForIds(accountId, ids) : [];
 }
 
+/** PERMANENT thread delete ("Delete Forever" on Trash/Spam) — unrecoverable. */
+export async function deleteThreadPermanently(
+  accountId: string,
+  threadId: string,
+): Promise<{ ok: boolean }> {
+  await gmailFetch(accountId, `/threads/${threadId}`, { method: "DELETE" });
+  return { ok: true };
+}
+
 export async function untrashMessage(
   accountId: string,
   messageId: string,

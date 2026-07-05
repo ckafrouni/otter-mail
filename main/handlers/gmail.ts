@@ -29,6 +29,7 @@ import {
   trashThread,
   untrashThread,
   untrashMessage,
+  deleteThreadPermanently,
   saveDraft,
   deleteDraft,
   sendMessage,
@@ -622,6 +623,24 @@ export function registerGmailHandlers(): void {
       return { ok: true as const };
     } catch (err) {
       console.log("[gmail:untrashMessage] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:deleteThreadForever — permanent delete; the UI only offers it on
+  // Trash/Spam conversations.
+  ipcMain.handle("gmail:deleteThreadForever", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:deleteThreadForever]", { accountId: p?.accountId, threadId: p?.threadId });
+    try {
+      const accountId = assertString(p?.accountId, "accountId");
+      const threadId = assertString(p?.threadId, "threadId");
+      const result = await deleteThreadPermanently(accountId, threadId);
+      mailStore.deleteThread(accountId, threadId);
+      updateDockBadge();
+      return result;
+    } catch (err) {
+      console.log("[gmail:deleteThreadForever] error", { error: String(err) });
       throw err;
     }
   });

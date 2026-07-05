@@ -8,6 +8,8 @@ import {
   ContextMenuCheckboxItem,
   ContextMenuSeparator,
   ContextMenuSub,
+  Dialog,
+  Text,
 } from "@glaze/core/components";
 import {
   ArchiveIcon,
@@ -33,6 +35,7 @@ import {
   useModifyThread,
   useTrashThread,
   useUntrashThread,
+  useDeleteThreadForever,
   useLabelResolver,
   useSyncAccountLabels,
 } from "./hooks";
@@ -164,6 +167,8 @@ type MessageRowProps = {
   combinedMeta: CombinedMeta | null;
   /** Mark rows still in the inbox (shown when browsing non-inbox views). */
   showInboxChip: boolean;
+  /** Opens the permanent-delete confirm (offered on trashed/junk rows only). */
+  onDeleteForever: () => void;
 };
 
 function MessageRow({
@@ -175,6 +180,7 @@ function MessageRow({
   resolveLabel,
   combinedMeta,
   showInboxChip,
+  onDeleteForever,
 }: MessageRowProps) {
   const modifyMessage = useModifyMessage();
   const modifyThread = useModifyThread();
@@ -463,6 +469,11 @@ function MessageRow({
               Move to Trash
             </ContextMenuItem>
           )}
+          {trashed || junk ? (
+            <ContextMenuItem icon="trash.fill" color="red" onSelect={onDeleteForever}>
+              Delete Forever…
+            </ContextMenuItem>
+          ) : null}
         </ContextMenuContent>
       </ContextMenu>
     </div>
@@ -677,6 +688,20 @@ export function MessageList({
         threadId: m.threadId || m.id,
       }),
     );
+  const listDeleteForever = useDeleteThreadForever();
+  const [confirmDeleteRows, setConfirmDeleteRows] = useState<GmailMessageSummary[] | null>(null);
+  const handleDeleteForeverConfirm = () => {
+    const rows = confirmDeleteRows ?? [];
+    setConfirmDeleteRows(null);
+    console.log("[MessageList:deleteForever]", { count: rows.length });
+    for (const m of rows) {
+      void listDeleteForever.mutateAsync({
+        accountId: m.accountId ?? accountId,
+        threadId: m.threadId || m.id,
+      });
+    }
+    clearChecked();
+  };
   const bulkNotJunk = () =>
     bulk("notJunk", (m) =>
       void listModifyThread.mutateAsync({
@@ -972,6 +997,7 @@ export function MessageList({
                 resolveLabel={resolveLabel}
                 combinedMeta={resolveCombinedMeta(message, combined, accounts, resolveLabel)}
                 showInboxChip={!inInboxContext}
+                onDeleteForever={() => setConfirmDeleteRows([message])}
               />
             ))}
             {isFetchingNextPage ? (
@@ -991,11 +1017,22 @@ export function MessageList({
             <span className="te-label pr-1 text-(--te-faint)">selected</span>
             <span className="mx-1 h-5 w-px shrink-0 bg-(--te-border)" aria-hidden />
             {allTrashed ? (
-              <HintTooltip label="Restore from Trash">
-                <IconBtn label="Restore from Trash" className="size-7" onClick={bulkUntrash}>
-                  <RotateCcwIcon className="size-4" />
-                </IconBtn>
-              </HintTooltip>
+              <>
+                <HintTooltip label="Restore from Trash">
+                  <IconBtn label="Restore from Trash" className="size-7" onClick={bulkUntrash}>
+                    <RotateCcwIcon className="size-4" />
+                  </IconBtn>
+                </HintTooltip>
+                <HintTooltip label="Delete Forever">
+                  <IconBtn
+                    label="Delete Forever"
+                    className="size-7"
+                    onClick={() => setConfirmDeleteRows(checkedRows)}
+                  >
+                    <Trash2Icon className="size-4 text-(--red)" />
+                  </IconBtn>
+                </HintTooltip>
+              </>
             ) : allJunk ? (
               <>
                 <HintTooltip label="Not Junk — move to Inbox">
@@ -1006,6 +1043,15 @@ export function MessageList({
                 <HintTooltip label="Move to Trash">
                   <IconBtn label="Move to Trash" className="size-7" onClick={bulkTrash}>
                     <Trash2Icon className="size-4" />
+                  </IconBtn>
+                </HintTooltip>
+                <HintTooltip label="Delete Forever">
+                  <IconBtn
+                    label="Delete Forever"
+                    className="size-7"
+                    onClick={() => setConfirmDeleteRows(checkedRows)}
+                  >
+                    <Trash2Icon className="size-4 text-(--red)" />
                   </IconBtn>
                 </HintTooltip>
               </>
@@ -1048,6 +1094,25 @@ export function MessageList({
           </div>
         </div>
       ) : null}
+
+      <Dialog
+        open={confirmDeleteRows != null}
+        onOpenChange={(o) => {
+          if (!o) setConfirmDeleteRows(null);
+        }}
+        title="Delete Forever"
+        confirmLabel="Delete Forever"
+        confirmVariant="accent"
+        onConfirm={handleDeleteForeverConfirm}
+      >
+        <Text variant="small">
+          Permanently delete{" "}
+          {confirmDeleteRows && confirmDeleteRows.length === 1
+            ? "this conversation"
+            : `${confirmDeleteRows?.length ?? 0} conversations`}
+          ? This cannot be undone.
+        </Text>
+      </Dialog>
 
       <LabelOverlay
         open={labelOverlay != null}

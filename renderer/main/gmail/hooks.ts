@@ -1295,6 +1295,85 @@ function rollbackUntrash(qc: ReturnType<typeof useQueryClient>, context?: Untras
   for (const [key, data] of context.prevDetailQueries) qc.setQueryData(key, data);
 }
 
+/** Permanent delete for Trash/Spam threads. No undo entry — irreversible. */
+export function useDeleteThreadForever() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ accountId, threadId }: { accountId: string; threadId: string }) => {
+      console.log("[hooks:useDeleteThreadForever]", { accountId, threadId });
+      return gmailApi.deleteThreadForever(accountId, threadId);
+    },
+    onMutate: async ({ accountId, threadId }) => {
+      const threadKey = queryKeys.thread(accountId, threadId);
+      const labelsKey = queryKeys.labels(accountId);
+      await Promise.all([
+        qc.cancelQueries({ queryKey: ["gmail:messages", accountId] }),
+        qc.cancelQueries({ queryKey: ["gmail:combinedMessages"] }),
+        qc.cancelQueries({ queryKey: ["gmail:searchMessages"] }),
+        qc.cancelQueries({ queryKey: threadKey }),
+        qc.cancelQueries({ queryKey: labelsKey }),
+      ]);
+      const prevMessagesQueries = qc.getQueriesData<InfiniteData<ListMessagesResult>>({
+        queryKey: ["gmail:messages", accountId],
+      });
+      const prevCombinedQueries = qc.getQueriesData<InfiniteData<ListMessagesResult>>({
+        queryKey: ["gmail:combinedMessages"],
+      });
+      const prevSearchQueries = qc.getQueriesData<InfiniteData<ListMessagesResult>>({
+        queryKey: ["gmail:searchMessages"],
+      });
+      const prevThread = qc.getQueryData<GmailMessageSummary[]>(threadKey);
+      const prevLabels = qc.getQueryData<GmailLabel[]>(labelsKey);
+
+      const inThread = (m: GmailMessageSummary) =>
+        (m.threadId || m.id) === threadId && (m.accountId ?? accountId) === accountId;
+      qc.setQueriesData(
+        { queryKey: ["gmail:messages", accountId] },
+        (old: InfiniteData<ListMessagesResult> | undefined) => removeMessagesFromInfiniteData(old, inThread),
+      );
+      qc.setQueriesData(
+        { queryKey: ["gmail:combinedMessages"] },
+        (old: InfiniteData<ListMessagesResult> | undefined) => removeMessagesFromInfiniteData(old, inThread),
+      );
+      qc.setQueriesData(
+        { queryKey: ["gmail:searchMessages"] },
+        (old: InfiniteData<ListMessagesResult> | undefined) => removeMessagesFromInfiniteData(old, inThread),
+      );
+      qc.setQueryData(threadKey, []);
+
+      if (prevThread) {
+        const merged = new Map<string, LabelCountDelta>();
+        for (const msg of prevThread) {
+          for (const lid of msg.labelIds) {
+            const cur = merged.get(lid) ?? { total: 0, unread: 0 };
+            merged.set(lid, { total: cur.total - 1, unread: cur.unread - (msg.unread ? 1 : 0) });
+          }
+        }
+        qc.setQueryData<GmailLabel[]>(labelsKey, (old) => applyLabelCountDeltas(old, merged));
+      }
+
+      return { threadKey, labelsKey, prevMessagesQueries, prevCombinedQueries, prevSearchQueries, prevThread, prevLabels };
+    },
+    onError: (_err, _vars, context) => {
+      if (!context) return;
+      for (const [key, data] of context.prevMessagesQueries) qc.setQueryData(key, data);
+      for (const [key, data] of context.prevCombinedQueries) qc.setQueryData(key, data);
+      for (const [key, data] of context.prevSearchQueries) qc.setQueryData(key, data);
+      if (context.prevThread) qc.setQueryData(context.threadKey, context.prevThread);
+      if (context.prevLabels) qc.setQueryData(context.labelsKey, context.prevLabels);
+    },
+    onSuccess: (_data, { accountId }) => {
+      void qc.invalidateQueries({ queryKey: ["gmail:messages", accountId] });
+      void qc.invalidateQueries({ queryKey: ["gmail:combinedMessages"] });
+      void qc.invalidateQueries({ queryKey: ["gmail:combinedCounts"] });
+      void qc.invalidateQueries({ queryKey: ["gmail:searchMessages"] });
+      void qc.invalidateQueries({ queryKey: ["gmail:message", accountId] });
+      void qc.invalidateQueries({ queryKey: ["gmail:thread", accountId] });
+      void qc.invalidateQueries({ queryKey: queryKeys.labels(accountId) });
+    },
+  });
+}
+
 export function useUntrashThread() {
   const qc = useQueryClient();
   const invalidate = useUntrashInvalidation();
