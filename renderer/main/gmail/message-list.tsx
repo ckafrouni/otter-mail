@@ -561,8 +561,11 @@ export function MessageList({
   const [filters, setFilters] = useState<ViewFilters>(NO_FILTERS);
   const filtersActive =
     filters.starred || filters.important || filters.hasAttachments || filters.withinDays != null;
-  const debouncedFilter = useDebouncedValue(filterOpen ? filterQuery.trim() : "", 150);
-  const filtering = filterOpen && (debouncedFilter.length > 0 || filtersActive);
+  // The bar's visibility is derived, not imperatively toggled: any active
+  // criterion shows it, so adding a filter can never leave its token hidden.
+  const barVisible = filterOpen || filtersActive;
+  const debouncedFilter = useDebouncedValue(barVisible ? filterQuery.trim() : "", 150);
+  const filtering = barVisible && (debouncedFilter.length > 0 || filtersActive);
   const searching = filtering || globalSearching;
 
   const closeFilter = () => {
@@ -570,8 +573,9 @@ export function MessageList({
     setFilterQuery("");
     setFilters(NO_FILTERS);
   };
-  // Picking a criterion opens the bar so the active tokens stay visible.
+  // filterOpen also set so the bar survives removing the last token.
   const patchFilters = (patch: Partial<ViewFilters>) => {
+    console.log("[MessageList:patchFilters]", patch);
     setFilters((f) => ({ ...f, ...patch }));
     setFilterOpen(true);
   };
@@ -1038,11 +1042,11 @@ export function MessageList({
             {formatMailboxSummary(mailboxTotal, mailboxUnread)}
           </div>
         </div>
-        <HintTooltip label={filterOpen ? "Hide search" : "Search this mailbox"}>
+        <HintTooltip label={barVisible ? "Hide search" : "Search this mailbox"}>
           <IconBtn
-            label={filterOpen ? "Hide search" : "Search this mailbox"}
-            active={filterOpen}
-            onClick={() => (filterOpen ? closeFilter() : setFilterOpen(true))}
+            label={barVisible ? "Hide search" : "Search this mailbox"}
+            active={barVisible}
+            onClick={() => (barVisible ? closeFilter() : setFilterOpen(true))}
           >
             <SearchIcon className="size-4" />
           </IconBtn>
@@ -1095,7 +1099,7 @@ export function MessageList({
         </HintTooltip>
       </div>
 
-      {filterOpen ? (
+      {barVisible ? (
         <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-1.5 border-b border-(--te-border) px-4 py-1.5">
           <SearchIcon className="size-3.5 shrink-0 text-(--te-faint)" />
           {filters.starred ? (
