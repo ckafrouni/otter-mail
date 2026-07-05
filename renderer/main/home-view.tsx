@@ -83,7 +83,8 @@ function PaneResizer({ onPointerDown }: { onPointerDown: (e: ReactPointerEvent) 
   );
 }
 
-/** Panel card on the device-body frame; content cards opaque, sidebar glass. */
+/** Panel card on the device-body frame; the list stays opaque, sidebar and
+    reader are glass (message bodies pop as opaque cards on the material). */
 const PANEL_FRAME = "overflow-hidden rounded-[8px] border border-(--te-border)";
 const PANEL_CARD = `${PANEL_FRAME} bg-(--te-card)`;
 const PANEL_CARD_GLASS = `${PANEL_FRAME} bg-(--te-card-glass)`;
@@ -641,7 +642,7 @@ export function HomeView() {
               <PaneResizer onPointerDown={listPane.start} />
             </>
           ) : null}
-          <div className={`${PANEL_CARD} min-w-0 flex-1 rounded-br-[22px]`}>
+          <div className={`${PANEL_CARD_GLASS} min-w-0 flex-1 rounded-br-[22px]`}>
             {composeOpen && composeAccountId ? (
               <NewMessageView
                 accounts={accounts}

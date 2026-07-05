@@ -174,8 +174,10 @@ function MessageBody({
     );
   }
   if (bodyText) {
+    // Same opaque card as HTML mail so text messages stay readable on the
+    // glass reader background.
     return (
-      <pre className="whitespace-pre-wrap font-sans text-[15px] leading-relaxed text-(--te-text)">
+      <pre className="whitespace-pre-wrap rounded-[6px] border border-(--te-border) bg-(--te-panel) px-4 py-3 font-sans text-[15px] leading-relaxed text-(--te-text)">
         {bodyText}
       </pre>
     );
