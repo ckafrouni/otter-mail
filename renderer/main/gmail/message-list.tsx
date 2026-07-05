@@ -638,7 +638,8 @@ export function MessageList({
   const hasNextPage = messagesQuery.hasNextPage;
   const isFetchingNextPage = messagesQuery.isFetchingNextPage;
 
-  // Gmail-style list shortcuts: j/k move the selection, e/#/! archive/trash/
+  // Gmail-style list shortcuts: j/k and the arrow keys move the selection
+  // (Apple Mail-style — arrows never scroll the list), e/#/! archive/trash/
   // junk the selected thread (advancing to the next row), s toggles the flag,
   // Shift+U/Shift+I set unread/read. Latest state is read through a ref so the
   // window listener mounts once.
@@ -897,20 +898,20 @@ export function MessageList({
       const selThreadId = selectedRow ? selectedRow.threadId || selectedRow.id : "";
 
       switch (e.key) {
-        case "j": {
+        case "j":
+        case "ArrowDown": {
+          // preventDefault even at the end of the list — arrows must never
+          // fall through to scrolling.
+          e.preventDefault();
           const next = idx === -1 ? rows[0] : rows[idx + 1];
-          if (next) {
-            e.preventDefault();
-            select(next);
-          }
+          if (next) select(next);
           break;
         }
-        case "k": {
-          const prev = idx > 0 ? rows[idx - 1] : undefined;
-          if (prev) {
-            e.preventDefault();
-            select(prev);
-          }
+        case "k":
+        case "ArrowUp": {
+          e.preventDefault();
+          const prev = idx === -1 ? rows[0] : rows[idx - 1];
+          if (prev) select(prev);
           break;
         }
         case "e": {

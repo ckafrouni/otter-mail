@@ -4,7 +4,7 @@ const SECTIONS: { title: string; rows: [string, string][] }[] = [
   {
     title: "Navigation",
     rows: [
-      ["j / k", "Next / previous conversation"],
+      ["↓ / ↑ or j / k", "Next / previous conversation"],
       ["u", "Back to list"],
       ["⌘[ / ⌘]", "History back / forward"],
       ["g then i", "Go to Inbox"],
