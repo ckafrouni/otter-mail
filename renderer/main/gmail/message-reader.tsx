@@ -1282,12 +1282,25 @@ export function MessageReader({ accountId, messageId, onDeselect }: MessageReade
               message.labelIds.some(isCategoryLabelId) ||
               messageLabels.length > 0 ? (
                 <span className="flex max-w-[45%] shrink-0 items-center gap-1 overflow-hidden">
-                  {message.labelIds.includes("INBOX") ? <InboxChip /> : null}
+                  {message.labelIds.includes("INBOX") ? (
+                    <InboxChip onRemove={handleArchive} />
+                  ) : null}
                   {message.labelIds.filter(isCategoryLabelId).map((id) => (
                     <CategoryChip key={id} id={id} />
                   ))}
                   {messageLabels.map((label) => (
-                    <LabelChip key={label.id} label={label} />
+                    <LabelChip
+                      key={label.id}
+                      label={label}
+                      onRemove={() => {
+                        console.log("[MessageReader:removeLabelChip]", { labelId: label.id });
+                        void modifyMessage.mutateAsync({
+                          accountId,
+                          messageId: message.id,
+                          removeLabelIds: [label.id],
+                        });
+                      }}
+                    />
                   ))}
                 </span>
               ) : null}
