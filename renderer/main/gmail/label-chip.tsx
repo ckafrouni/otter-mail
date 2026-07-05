@@ -2,9 +2,10 @@ import { ChevronsRightIcon, InboxIcon, XIcon } from "lucide-react";
 import type { GmailLabel } from "./types";
 
 const PILL =
-  "te-label group inline-flex w-fit shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-[3px] px-1.5 py-0.5 leading-none";
+  "te-label group relative inline-flex w-fit max-w-32 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-[3px] px-1.5 py-0.5 leading-none";
 
-/** Hover-revealed remove control; width reserved so the chip never shifts. */
+/** Hover-revealed remove control: overlays the chip's right edge (bg-inherit
+    paints over the text below), so the chip never changes size. */
 function RemoveButton({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
     <button
@@ -15,7 +16,7 @@ function RemoveButton({ label, onRemove }: { label: string; onRemove: () => void
         e.stopPropagation();
         onRemove();
       }}
-      className="-mr-0.5 flex w-3 shrink-0 items-center justify-center opacity-0 hover:!opacity-100 group-hover:opacity-60"
+      className="absolute inset-y-0 right-0 hidden w-4 items-center justify-center rounded-r-[3px] bg-inherit group-hover:flex"
     >
       <XIcon className="size-2.5" strokeWidth={3} />
     </button>
@@ -62,7 +63,7 @@ export function InboxChip({ selected, onRemove }: { selected?: boolean; onRemove
         selected
           ? "bg-(--te-sel-fg)/25 text-(--te-sel-fg)"
           : "border border-(--te-outline) text-(--te-muted)"
-      }`}
+      } ${onRemove ? "bg-(--te-card)" : ""}`}
     >
       <InboxIcon className="size-3" />
       Inbox
@@ -89,6 +90,7 @@ export function LabelChip({
   const remove = onRemove ? (
     <RemoveButton label={`Remove "${displayName}"`} onRemove={onRemove} />
   ) : null;
+  const text = <span className="min-w-0 truncate">{displayName}</span>;
   if (label.color) {
     return (
       <span
@@ -98,7 +100,7 @@ export function LabelChip({
           color: label.color.textColor,
         }}
       >
-        {displayName}
+        {text}
         {remove}
       </span>
     );
@@ -106,14 +108,18 @@ export function LabelChip({
   if (selected) {
     return (
       <span className={`${PILL} bg-(--te-sel-fg)/25 text-(--te-sel-fg)`}>
-        {displayName}
+        {text}
         {remove}
       </span>
     );
   }
   return (
-    <span className={`${PILL} border border-(--te-outline) text-(--te-muted)`}>
-      {displayName}
+    <span
+      className={`${PILL} border border-(--te-outline) text-(--te-muted) ${
+        onRemove ? "bg-(--te-card)" : ""
+      }`}
+    >
+      {text}
       {remove}
     </span>
   );
