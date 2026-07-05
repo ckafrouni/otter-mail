@@ -23,6 +23,7 @@ import {
   ReplyAllIcon,
   RotateCcwIcon,
   SendHorizontalIcon,
+  ShieldCheckIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react";
@@ -1278,22 +1279,21 @@ export function MessageReader({ accountId, messageId, onDeselect, onAdvance }: M
     });
   };
 
+  const isJunk = message.labelIds.includes("SPAM");
+
   const handleJunk = () => {
-    console.log("[MessageReader:junk]", { messageId, isThread });
+    console.log("[MessageReader:junkToggle]", { messageId, isThread, isJunk });
+    const addLabelIds = isJunk ? ["INBOX"] : ["SPAM"];
+    const removeLabelIds = isJunk ? ["SPAM"] : ["INBOX"];
     if (isThread && threadId) {
-      void modifyThread.mutateAsync({
-        accountId,
-        threadId,
-        addLabelIds: ["SPAM"],
-        removeLabelIds: ["INBOX"],
-      });
+      void modifyThread.mutateAsync({ accountId, threadId, addLabelIds, removeLabelIds });
       return;
     }
     void modifyMessage.mutateAsync({
       accountId,
       messageId: message.id,
-      addLabelIds: ["SPAM"],
-      removeLabelIds: ["INBOX"],
+      addLabelIds,
+      removeLabelIds,
     });
   };
 
@@ -1397,11 +1397,25 @@ export function MessageReader({ accountId, messageId, onDeselect, onAdvance }: M
               </IconBtn>
             </HintTooltip>
           )}
-          <HintTooltip label="Move to Junk" hint="!">
-            <IconBtn label="Move to Junk" onClick={handleJunk}>
-              <ArchiveXIcon className="size-4" />
-            </IconBtn>
-          </HintTooltip>
+          {isJunk ? (
+            <HintTooltip label="Not Junk — move to Inbox" hint="!">
+              <IconBtn label="Not Junk" onClick={handleJunk}>
+                <ShieldCheckIcon className="size-4" />
+              </IconBtn>
+            </HintTooltip>
+          ) : (
+            <HintTooltip label="Move to Junk" hint="!">
+              <IconBtn
+                label="Move to Junk"
+                onClick={() => {
+                  onAdvance?.();
+                  handleJunk();
+                }}
+              >
+                <ArchiveXIcon className="size-4" />
+              </IconBtn>
+            </HintTooltip>
+          )}
 
           {groupDivider}
 

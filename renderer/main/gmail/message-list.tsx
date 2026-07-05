@@ -16,6 +16,8 @@ import {
   ListFilterIcon,
   MailIcon,
   MailOpenIcon,
+  RotateCcwIcon,
+  ShieldCheckIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react";
@@ -219,13 +221,15 @@ function MessageRow({
     }
   };
 
+  const junk = message.labelIds.includes("SPAM");
+
   const handleJunk = () => {
-    console.log("[MessageList:junk]", { threadId });
+    console.log("[MessageList:junkToggle]", { threadId, junk });
     void modifyThread.mutateAsync({
       accountId: ownerAccountId,
       threadId,
-      addLabelIds: ["SPAM"],
-      removeLabelIds: ["INBOX"],
+      addLabelIds: junk ? ["INBOX"] : ["SPAM"],
+      removeLabelIds: junk ? ["SPAM"] : ["INBOX"],
     });
   };
 
@@ -434,15 +438,22 @@ function MessageRow({
             )}
           </ContextMenuSub>
           <ContextMenuSeparator />
-          <ContextMenuItem
-            icon={inInbox ? "archivebox" : "tray.and.arrow.down"}
-            onSelect={() => handleArchive()}
-          >
-            {inInbox ? "Archive" : "Move to Inbox"}
-          </ContextMenuItem>
-          <ContextMenuItem icon="xmark.bin" onSelect={handleJunk}>
-            Move to Junk
-          </ContextMenuItem>
+          {trashed || junk ? null : (
+            <ContextMenuItem
+              icon={inInbox ? "archivebox" : "tray.and.arrow.down"}
+              onSelect={() => handleArchive()}
+            >
+              {inInbox ? "Archive" : "Move to Inbox"}
+            </ContextMenuItem>
+          )}
+          {trashed ? null : (
+            <ContextMenuItem
+              icon={junk ? "checkmark.shield" : "xmark.bin"}
+              onSelect={handleJunk}
+            >
+              {junk ? "Not Junk" : "Move to Junk"}
+            </ContextMenuItem>
+          )}
           {trashed ? (
             <ContextMenuItem icon="trash.slash" onSelect={() => handleTrash()}>
               Restore from Trash
@@ -659,6 +670,28 @@ export function MessageList({
         removeLabelIds: ["UNREAD"],
       }),
     );
+  const bulkUntrash = () =>
+    bulk("untrash", (m) =>
+      void listUntrashThread.mutateAsync({
+        accountId: m.accountId ?? accountId,
+        threadId: m.threadId || m.id,
+      }),
+    );
+  const bulkNotJunk = () =>
+    bulk("notJunk", (m) =>
+      void listModifyThread.mutateAsync({
+        accountId: m.accountId ?? accountId,
+        threadId: m.threadId || m.id,
+        addLabelIds: ["INBOX"],
+        removeLabelIds: ["SPAM"],
+      }),
+    );
+  // Trash/spam rows only surface in their own views, so a uniform selection
+  // decides the bar's vocabulary; mixed selections fall back to the default.
+  const allTrashed = checkedRows.length > 0 && checkedRows.every((m) => m.labelIds.includes("TRASH"));
+  const allJunk =
+    !allTrashed && checkedRows.length > 0 && checkedRows.every((m) => m.labelIds.includes("SPAM"));
+
   const bulkMarkUnread = () => {
     // Gmail-style: marking the open conversation unread returns to the list
     // (and keeps the reader from instantly re-marking it read).
@@ -787,12 +820,14 @@ export function MessageList({
         case "!": {
           if (!selectedRow) return;
           e.preventDefault();
+          // Junk rows come back to the inbox; either way the row leaves the view.
+          const rowJunk = selectedRow.labelIds.includes("SPAM");
           advance();
           void listModifyThread.mutateAsync({
             accountId: owner,
             threadId: selThreadId,
-            addLabelIds: ["SPAM"],
-            removeLabelIds: ["INBOX"],
+            addLabelIds: rowJunk ? ["INBOX"] : ["SPAM"],
+            removeLabelIds: rowJunk ? ["SPAM"] : ["INBOX"],
           });
           break;
         }
@@ -955,21 +990,44 @@ export function MessageList({
             <span className="te-num pl-1 text-[11px] text-(--te-badge-bg)">{checked.size}</span>
             <span className="te-label pr-1 text-(--te-faint)">selected</span>
             <span className="mx-1 h-5 w-px shrink-0 bg-(--te-border)" aria-hidden />
-            <HintTooltip label="Archive">
-              <IconBtn label="Archive" className="size-7" onClick={bulkArchive}>
-                <ArchiveIcon className="size-4" />
-              </IconBtn>
-            </HintTooltip>
-            <HintTooltip label="Move to Trash">
-              <IconBtn label="Move to Trash" className="size-7" onClick={bulkTrash}>
-                <Trash2Icon className="size-4" />
-              </IconBtn>
-            </HintTooltip>
-            <HintTooltip label="Move to Junk">
-              <IconBtn label="Move to Junk" className="size-7" onClick={bulkJunk}>
-                <ArchiveXIcon className="size-4" />
-              </IconBtn>
-            </HintTooltip>
+            {allTrashed ? (
+              <HintTooltip label="Restore from Trash">
+                <IconBtn label="Restore from Trash" className="size-7" onClick={bulkUntrash}>
+                  <RotateCcwIcon className="size-4" />
+                </IconBtn>
+              </HintTooltip>
+            ) : allJunk ? (
+              <>
+                <HintTooltip label="Not Junk — move to Inbox">
+                  <IconBtn label="Not Junk" className="size-7" onClick={bulkNotJunk}>
+                    <ShieldCheckIcon className="size-4" />
+                  </IconBtn>
+                </HintTooltip>
+                <HintTooltip label="Move to Trash">
+                  <IconBtn label="Move to Trash" className="size-7" onClick={bulkTrash}>
+                    <Trash2Icon className="size-4" />
+                  </IconBtn>
+                </HintTooltip>
+              </>
+            ) : (
+              <>
+                <HintTooltip label="Archive">
+                  <IconBtn label="Archive" className="size-7" onClick={bulkArchive}>
+                    <ArchiveIcon className="size-4" />
+                  </IconBtn>
+                </HintTooltip>
+                <HintTooltip label="Move to Trash">
+                  <IconBtn label="Move to Trash" className="size-7" onClick={bulkTrash}>
+                    <Trash2Icon className="size-4" />
+                  </IconBtn>
+                </HintTooltip>
+                <HintTooltip label="Move to Junk">
+                  <IconBtn label="Move to Junk" className="size-7" onClick={bulkJunk}>
+                    <ArchiveXIcon className="size-4" />
+                  </IconBtn>
+                </HintTooltip>
+              </>
+            )}
             <span className="mx-1 h-5 w-px shrink-0 bg-(--te-border)" aria-hidden />
             <HintTooltip label="Mark as read">
               <IconBtn label="Mark as read" className="size-7" onClick={bulkMarkRead}>
