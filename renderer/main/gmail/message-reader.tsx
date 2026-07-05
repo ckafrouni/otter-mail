@@ -68,6 +68,8 @@ type MessageReaderProps = {
   messageId: string | null;
   /** Clears the selection (drafts return to the list after send/discard). */
   onDeselect?: () => void;
+  /** Toolbar archive/trash move on to the next conversation through this. */
+  onAdvance?: () => void;
 };
 
 type DownloadAttachment = (
@@ -983,7 +985,7 @@ function ReaderShell({ children }: { children: ReactNode }) {
   );
 }
 
-export function MessageReader({ accountId, messageId, onDeselect }: MessageReaderProps) {
+export function MessageReader({ accountId, messageId, onDeselect, onAdvance }: MessageReaderProps) {
   // Reply/reply-all/forward handlers exist only when a message is open; the
   // render below refreshes this ref so the once-mounted listener stays current.
   const readerActions = useRef<{ reply?: () => void; replyAll?: () => void; forward?: () => void }>(
@@ -1359,7 +1361,13 @@ export function MessageReader({ accountId, messageId, onDeselect }: MessageReade
 
           {isTrashed ? null : (isThread ? rows.some((m) => m.labelIds.includes("INBOX")) : message.labelIds.includes("INBOX")) ? (
             <HintTooltip label="Archive" hint="E">
-              <IconBtn label="Archive" onClick={handleArchive}>
+              <IconBtn
+                label="Archive"
+                onClick={() => {
+                  onAdvance?.();
+                  handleArchive();
+                }}
+              >
                 <ArchiveIcon className="size-4" />
               </IconBtn>
             </HintTooltip>
@@ -1378,7 +1386,13 @@ export function MessageReader({ accountId, messageId, onDeselect }: MessageReade
             </HintTooltip>
           ) : (
             <HintTooltip label="Move to Trash" hint="#">
-              <IconBtn label="Move to Trash" onClick={handleTrash}>
+              <IconBtn
+                label="Move to Trash"
+                onClick={() => {
+                  onAdvance?.();
+                  handleTrash();
+                }}
+              >
                 <Trash2Icon className="size-4" />
               </IconBtn>
             </HintTooltip>

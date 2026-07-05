@@ -115,6 +115,15 @@ export function HomeView() {
   const sidebarPane = useStoredWidth("gmail:pane:sidebar", 230, 180, 320);
   const listPane = useStoredWidth("gmail:pane:list", 400, 300, 640);
 
+  // MessageList fills this each render; reader archive/trash advance through it.
+  const advanceRef = useRef<(fromMessageId: string) => boolean>(() => false);
+  const handleReaderAdvance = () => {
+    if (!selectedMessageId || !advanceRef.current(selectedMessageId)) {
+      setSelectedMessageId(null);
+      setReaderAccountId(null);
+    }
+  };
+
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
@@ -593,6 +602,7 @@ export function HomeView() {
                     setSelectedMessageId(null);
                     setReaderAccountId(null);
                   }}
+                  advanceRef={advanceRef}
                   searchQuery={searchQuery}
                 />
               </div>
@@ -614,6 +624,7 @@ export function HomeView() {
                   setSelectedMessageId(null);
                   setReaderAccountId(null);
                 }}
+                onAdvance={handleReaderAdvance}
               />
             ) : (
               <div className="flex h-full items-center justify-center">

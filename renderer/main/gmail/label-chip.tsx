@@ -35,7 +35,10 @@ export function CategoryChip({ id }: { id: string }) {
   const meta = CATEGORY_CHIPS[id];
   if (!meta) return null;
   return (
-    <span className={PILL} style={{ backgroundColor: meta.bg, color: "#ffffff" }}>
+    <span
+      className={`${PILL} border border-transparent`}
+      style={{ backgroundColor: meta.bg, color: "#ffffff" }}
+    >
       {meta.name}
     </span>
   );
@@ -61,7 +64,7 @@ export function InboxChip({ selected, onRemove }: { selected?: boolean; onRemove
     <span
       className={`${PILL} ${
         selected
-          ? "bg-(--te-sel-fg)/25 text-(--te-sel-fg)"
+          ? "border border-transparent bg-(--te-sel-fg)/25 text-(--te-sel-fg)"
           : "border border-(--te-outline) text-(--te-muted)"
       } ${onRemove ? "bg-(--te-card)" : ""}`}
     >
@@ -94,7 +97,7 @@ export function LabelChip({
   if (label.color) {
     return (
       <span
-        className={PILL}
+        className={`${PILL} border border-transparent`}
         style={{
           backgroundColor: label.color.backgroundColor,
           color: label.color.textColor,
@@ -107,7 +110,7 @@ export function LabelChip({
   }
   if (selected) {
     return (
-      <span className={`${PILL} bg-(--te-sel-fg)/25 text-(--te-sel-fg)`}>
+      <span className={`${PILL} border border-transparent bg-(--te-sel-fg)/25 text-(--te-sel-fg)`}>
         {text}
         {remove}
       </span>

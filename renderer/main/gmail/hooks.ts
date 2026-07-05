@@ -751,10 +751,14 @@ export function useTrashMessage() {
     onMutate: async ({ accountId, messageId }) => {
       registerUndo({ kind: "untrashMessage", params: { accountId, messageId } });
       const labelsKey = queryKeys.labels(accountId);
+      const messageKey = queryKeys.message(accountId, messageId);
+      const threadsKey = ["gmail:thread", accountId];
       await Promise.all([
         qc.cancelQueries({ queryKey: ["gmail:messages", accountId] }),
         qc.cancelQueries({ queryKey: ["gmail:combinedMessages"] }),
         qc.cancelQueries({ queryKey: ["gmail:searchMessages"] }),
+        qc.cancelQueries({ queryKey: messageKey }),
+        qc.cancelQueries({ queryKey: threadsKey }),
         qc.cancelQueries({ queryKey: labelsKey }),
       ]);
 
@@ -768,12 +772,23 @@ export function useTrashMessage() {
         queryKey: ["gmail:searchMessages"],
       });
       const prevLabels = qc.getQueryData<GmailLabel[]>(labelsKey);
+      const prevMessage = qc.getQueryData<GmailMessageDetail>(messageKey);
+      const prevThreadQueries = qc.getQueriesData<GmailMessageSummary[]>({
+        queryKey: threadsKey,
+      });
 
       const priorMessage =
         prevMessagesQueries.flatMap(([, data]) => messagesFromInfiniteData(data)).find((m) => m.id === messageId) ??
         prevCombinedQueries.flatMap(([, data]) => messagesFromInfiniteData(data)).find((m) => m.id === messageId);
 
       const isTarget = (m: GmailMessageSummary) => m.id === messageId;
+      // An open reader keeps rendering the conversation — mark it trashed there.
+      const trashPatch = <T extends GmailMessageSummary>(m: T): T =>
+        applyLabelPatch(m, ["TRASH"], ["INBOX"]) as T;
+      if (prevMessage) qc.setQueryData(messageKey, trashPatch(prevMessage));
+      qc.setQueriesData({ queryKey: threadsKey }, (old: GmailMessageSummary[] | undefined) =>
+        old?.map((m) => (isTarget(m) ? trashPatch(m) : m)),
+      );
       qc.setQueriesData(
         { queryKey: ["gmail:messages", accountId] },
         (old: InfiniteData<ListMessagesResult> | undefined) => removeMessagesFromInfiniteData(old, isTarget),
@@ -794,10 +809,12 @@ export function useTrashMessage() {
         qc.setQueryData<GmailLabel[]>(labelsKey, (old) => applyLabelCountDeltas(old, deltas));
       }
 
-      return { labelsKey, prevMessagesQueries, prevCombinedQueries, prevSearchQueries, prevLabels };
+      return { messageKey, labelsKey, prevMessage, prevThreadQueries, prevMessagesQueries, prevCombinedQueries, prevSearchQueries, prevLabels };
     },
     onError: (_err, _vars, context) => {
       if (!context) return;
+      if (context.prevMessage) qc.setQueryData(context.messageKey, context.prevMessage);
+      for (const [key, data] of context.prevThreadQueries) qc.setQueryData(key, data);
       for (const [key, data] of context.prevMessagesQueries) qc.setQueryData(key, data);
       for (const [key, data] of context.prevCombinedQueries) qc.setQueryData(key, data);
       for (const [key, data] of context.prevSearchQueries) qc.setQueryData(key, data);
@@ -808,6 +825,7 @@ export function useTrashMessage() {
       void qc.invalidateQueries({ queryKey: ["gmail:combinedMessages"] });
       void qc.invalidateQueries({ queryKey: ["gmail:combinedCounts"] });
       void qc.invalidateQueries({ queryKey: ["gmail:searchMessages"] });
+      void qc.invalidateQueries({ queryKey: ["gmail:message", accountId] });
       void qc.invalidateQueries({ queryKey: ["gmail:thread", accountId] });
       void qc.invalidateQueries({ queryKey: queryKeys.labels(accountId) });
     },
@@ -969,6 +987,20 @@ export function useTrashThread() {
 
       const inThread = (m: GmailMessageSummary) =>
         (m.threadId || m.id) === threadId && (m.accountId ?? accountId) === accountId;
+      const prevDetailQueries = qc.getQueriesData<GmailMessageDetail>({
+        queryKey: ["gmail:message", accountId],
+      });
+      // An open reader keeps rendering the conversation — mark it trashed there.
+      const threadTrashPatch = <T extends GmailMessageSummary>(m: T): T =>
+        applyLabelPatch(m, ["TRASH"], ["INBOX"]) as T;
+      qc.setQueryData(threadKey, (old: GmailMessageSummary[] | undefined) =>
+        old?.map(threadTrashPatch),
+      );
+      for (const [key, detail] of prevDetailQueries) {
+        if (detail && (detail.threadId || detail.id) === threadId) {
+          qc.setQueryData(key, threadTrashPatch(detail));
+        }
+      }
 
       qc.setQueriesData(
         { queryKey: ["gmail:messages", accountId] },
@@ -994,13 +1026,14 @@ export function useTrashThread() {
         qc.setQueryData<GmailLabel[]>(labelsKey, (old) => applyLabelCountDeltas(old, merged));
       }
 
-      return { threadKey, labelsKey, prevMessagesQueries, prevCombinedQueries, prevSearchQueries, prevThread, prevLabels };
+      return { threadKey, labelsKey, prevMessagesQueries, prevCombinedQueries, prevSearchQueries, prevThread, prevLabels, prevDetailQueries };
     },
     onError: (_err, _vars, context) => {
       if (!context) return;
       for (const [key, data] of context.prevMessagesQueries) qc.setQueryData(key, data);
       for (const [key, data] of context.prevCombinedQueries) qc.setQueryData(key, data);
       for (const [key, data] of context.prevSearchQueries) qc.setQueryData(key, data);
+      for (const [key, data] of context.prevDetailQueries) qc.setQueryData(key, data);
       if (context.prevThread) qc.setQueryData(context.threadKey, context.prevThread);
       if (context.prevLabels) qc.setQueryData(context.labelsKey, context.prevLabels);
     },
@@ -1219,6 +1252,7 @@ function useUntrashInvalidation() {
   const qc = useQueryClient();
   return (accountId: string) => {
     void qc.invalidateQueries({ queryKey: ["gmail:messages", accountId] });
+    void qc.invalidateQueries({ queryKey: ["gmail:message", accountId] });
     void qc.invalidateQueries({ queryKey: ["gmail:combinedMessages"] });
     void qc.invalidateQueries({ queryKey: ["gmail:combinedCounts"] });
     void qc.invalidateQueries({ queryKey: ["gmail:searchMessages"] });
@@ -1227,24 +1261,67 @@ function useUntrashInvalidation() {
   };
 }
 
+/** Optimistically clear TRASH from the open reader's caches (detail + thread);
+    restored rows themselves reappear on the settle invalidation, since Gmail
+    decides which labels come back. */
+function useUntrashOptimism() {
+  const qc = useQueryClient();
+  return async (accountId: string, match: (m: GmailMessageSummary) => boolean) => {
+    const threadsKey = ["gmail:thread", accountId];
+    const detailKey = ["gmail:message", accountId];
+    await Promise.all([
+      qc.cancelQueries({ queryKey: threadsKey }),
+      qc.cancelQueries({ queryKey: detailKey }),
+    ]);
+    const prevThreadQueries = qc.getQueriesData<GmailMessageSummary[]>({ queryKey: threadsKey });
+    const prevDetailQueries = qc.getQueriesData<GmailMessageDetail>({ queryKey: detailKey });
+    const patch = <T extends GmailMessageSummary>(m: T): T =>
+      applyLabelPatch(m, [], ["TRASH"]) as T;
+    qc.setQueriesData({ queryKey: threadsKey }, (old: GmailMessageSummary[] | undefined) =>
+      old?.map((m) => (match(m) ? patch(m) : m)),
+    );
+    for (const [key, detail] of prevDetailQueries) {
+      if (detail && match(detail)) qc.setQueryData(key, patch(detail));
+    }
+    return { prevThreadQueries, prevDetailQueries };
+  };
+}
+
+type UntrashContext = Awaited<ReturnType<ReturnType<typeof useUntrashOptimism>>>;
+
+function rollbackUntrash(qc: ReturnType<typeof useQueryClient>, context?: UntrashContext) {
+  if (!context) return;
+  for (const [key, data] of context.prevThreadQueries) qc.setQueryData(key, data);
+  for (const [key, data] of context.prevDetailQueries) qc.setQueryData(key, data);
+}
+
 export function useUntrashThread() {
+  const qc = useQueryClient();
   const invalidate = useUntrashInvalidation();
+  const optimism = useUntrashOptimism();
   return useMutation({
     mutationFn: (params: { accountId: string; threadId: string }) => {
       console.log("[hooks:useUntrashThread]", params);
       return gmailApi.untrashThread(params.accountId, params.threadId);
     },
+    onMutate: ({ accountId, threadId }) =>
+      optimism(accountId, (m) => (m.threadId || m.id) === threadId),
+    onError: (_err, _vars, context) => rollbackUntrash(qc, context),
     onSuccess: (_data, { accountId }) => invalidate(accountId),
   });
 }
 
 export function useUntrashMessage() {
+  const qc = useQueryClient();
   const invalidate = useUntrashInvalidation();
+  const optimism = useUntrashOptimism();
   return useMutation({
     mutationFn: (params: { accountId: string; messageId: string }) => {
       console.log("[hooks:useUntrashMessage]", params);
       return gmailApi.untrashMessage(params.accountId, params.messageId);
     },
+    onMutate: ({ accountId, messageId }) => optimism(accountId, (m) => m.id === messageId),
+    onError: (_err, _vars, context) => rollbackUntrash(qc, context),
     onSuccess: (_data, { accountId }) => invalidate(accountId),
   });
 }

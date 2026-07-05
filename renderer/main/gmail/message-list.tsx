@@ -64,6 +64,8 @@ type MessageListProps = {
   onSelectMessage: (messageId: string, accountId: string) => void;
   /** Clears the selection (mark-unread returns to the list, Gmail-style). */
   onDeselect: () => void;
+  /** Reader actions (archive/trash) advance through here; false = no next row. */
+  advanceRef: React.MutableRefObject<(fromMessageId: string) => boolean>;
 
   searchQuery: string;
 };
@@ -451,6 +453,7 @@ export function MessageList({
   selectedMessageId,
   onSelectMessage,
   onDeselect,
+  advanceRef,
   searchQuery,
 }: MessageListProps) {
   const isCombined = combined != null;
@@ -532,6 +535,14 @@ export function MessageList({
     const idx = visibleMessages.findIndex((m) => m.id === rowId);
     const next = visibleMessages[idx + 1] ?? visibleMessages[idx - 1];
     if (next) onSelectMessage(next.id, next.accountId ?? accountId);
+  };
+  advanceRef.current = (fromMessageId: string) => {
+    const idx = visibleMessages.findIndex((m) => m.id === fromMessageId);
+    if (idx === -1) return false;
+    const next = visibleMessages[idx + 1] ?? visibleMessages[idx - 1];
+    if (!next) return false;
+    onSelectMessage(next.id, next.accountId ?? accountId);
+    return true;
   };
 
   const handleOverlayPick = (pickedId: string, wasApplied: boolean) => {
