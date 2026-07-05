@@ -234,13 +234,16 @@ function MessageRow({
     }
   };
 
+  const inInbox = message.labelIds.includes("INBOX");
+
   const handleArchive = (e?: React.MouseEvent) => {
     e?.stopPropagation();
-    console.log("[MessageList:archive]", { threadId });
+    console.log("[MessageList:archiveToggle]", { threadId, inInbox });
     void modifyThread.mutateAsync({
       accountId: ownerAccountId,
       threadId,
-      removeLabelIds: ["INBOX"],
+      addLabelIds: inInbox ? undefined : ["INBOX"],
+      removeLabelIds: inInbox ? ["INBOX"] : undefined,
     });
   };
 
@@ -401,8 +404,11 @@ function MessageRow({
             )}
           </ContextMenuSub>
           <ContextMenuSeparator />
-          <ContextMenuItem icon="archivebox" onSelect={() => handleArchive()}>
-            Archive
+          <ContextMenuItem
+            icon={inInbox ? "archivebox" : "tray.and.arrow.down"}
+            onSelect={() => handleArchive()}
+          >
+            {inInbox ? "Archive" : "Move to Inbox"}
           </ContextMenuItem>
           <ContextMenuItem icon="xmark.bin" onSelect={handleJunk}>
             Move to Junk
@@ -587,11 +593,15 @@ export function MessageList({
         case "e": {
           if (!selectedRow) return;
           e.preventDefault();
-          advance();
+          // Archived rows un-archive; rows still in the inbox archive (and
+          // advance, since they leave the current view).
+          const rowInInbox = selectedRow.labelIds.includes("INBOX");
+          if (rowInInbox) advance();
           void listModifyThread.mutateAsync({
             accountId: owner,
             threadId: selThreadId,
-            removeLabelIds: ["INBOX"],
+            addLabelIds: rowInInbox ? undefined : ["INBOX"],
+            removeLabelIds: rowInInbox ? ["INBOX"] : undefined,
           });
           break;
         }

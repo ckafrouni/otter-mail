@@ -8,6 +8,7 @@ import {
 } from "@glaze/core/components";
 import {
   ArchiveIcon,
+  ArchiveRestoreIcon,
   ArchiveXIcon,
   ChevronDownIcon,
   DownloadIcon,
@@ -1176,6 +1177,19 @@ export function MessageReader({ accountId, messageId, onDeselect }: MessageReade
     });
   };
 
+  const handleUnarchive = () => {
+    console.log("[MessageReader:unarchive]", { messageId, isThread });
+    if (isThread && threadId) {
+      void modifyThread.mutateAsync({ accountId, threadId, addLabelIds: ["INBOX"] });
+      return;
+    }
+    void modifyMessage.mutateAsync({
+      accountId,
+      messageId,
+      addLabelIds: ["INBOX"],
+    });
+  };
+
   const handleTrash = () => {
     console.log("[MessageReader:trash]", { messageId, isThread });
     if (isThread && threadId) {
@@ -1328,11 +1342,19 @@ export function MessageReader({ accountId, messageId, onDeselect }: MessageReade
 
           {groupDivider}
 
-          <HintTooltip label="Archive" hint="E">
-            <IconBtn label="Archive" onClick={handleArchive}>
-              <ArchiveIcon className="size-4" />
-            </IconBtn>
-          </HintTooltip>
+          {(isThread ? rows.some((m) => m.labelIds.includes("INBOX")) : message.labelIds.includes("INBOX")) ? (
+            <HintTooltip label="Archive" hint="E">
+              <IconBtn label="Archive" onClick={handleArchive}>
+                <ArchiveIcon className="size-4" />
+              </IconBtn>
+            </HintTooltip>
+          ) : (
+            <HintTooltip label="Move to Inbox" hint="E">
+              <IconBtn label="Move to Inbox" onClick={handleUnarchive}>
+                <ArchiveRestoreIcon className="size-4" />
+              </IconBtn>
+            </HintTooltip>
+          )}
           <HintTooltip label="Move to Trash" hint="#">
             <IconBtn label="Move to Trash" onClick={handleTrash}>
               <Trash2Icon className="size-4" />

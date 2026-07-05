@@ -20,7 +20,7 @@ const SECTIONS: { title: string; rows: [string, string][] }[] = [
     title: "Actions",
     rows: [
       ["c", "Compose"],
-      ["e", "Archive"],
+      ["e", "Archive / move to Inbox"],
       ["#", "Move to trash"],
       ["!", "Move to junk"],
       ["s", "Toggle flag"],
