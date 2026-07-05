@@ -539,7 +539,18 @@ export async function untrashThread(
   return ids.length > 0 ? fetchMetadataForIds(accountId, ids) : [];
 }
 
-/** PERMANENT thread delete ("Delete Forever" on Trash/Spam) — unrecoverable. */
+/** PERMANENT bulk delete — one messages.batchDelete per 1000 ids. Gmail has
+    no threads.batchDelete, so callers resolve threads to message ids first. */
+export async function batchDeleteMessages(accountId: string, messageIds: string[]): Promise<void> {
+  for (let i = 0; i < messageIds.length; i += 1000) {
+    await gmailFetch(accountId, "/messages/batchDelete", {
+      method: "POST",
+      body: JSON.stringify({ ids: messageIds.slice(i, i + 1000) }),
+    });
+  }
+}
+
+/** PERMANENT thread delete — fallback for threads with no locally-known messages. */
 export async function deleteThreadPermanently(
   accountId: string,
   threadId: string,

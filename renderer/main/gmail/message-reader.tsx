@@ -39,7 +39,7 @@ import {
   useTrashThread,
   useUntrashThread,
   useUntrashMessage,
-  useDeleteThreadForever,
+  useDeleteThreadsForever,
   useGetAttachment,
   useLabels,
   useSendMessage,
@@ -1024,7 +1024,7 @@ export function MessageReader({ accountId, messageId, onDeselect, onAdvance }: M
   const trashThread = useTrashThread();
   const untrashThread = useUntrashThread();
   const untrashMessage = useUntrashMessage();
-  const deleteForever = useDeleteThreadForever();
+  const deleteForever = useDeleteThreadsForever();
   const getAttachment = useGetAttachment();
 
   const message = messageQuery.data;
@@ -1216,7 +1216,7 @@ export function MessageReader({ accountId, messageId, onDeselect, onAdvance }: M
     setConfirmDeleteOpen(false);
     console.log("[MessageReader:deleteForever]", { messageId });
     onAdvance?.();
-    void deleteForever.mutateAsync({ accountId, threadId: message.threadId || message.id });
+    void deleteForever.mutateAsync({ accountId, threadIds: [message.threadId || message.id] });
   };
 
   const handleUntrash = () => {

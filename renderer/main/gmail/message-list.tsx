@@ -35,7 +35,7 @@ import {
   useModifyThread,
   useTrashThread,
   useUntrashThread,
-  useDeleteThreadForever,
+  useDeleteThreadsForever,
   useLabelResolver,
   useSyncAccountLabels,
 } from "./hooks";
@@ -688,17 +688,21 @@ export function MessageList({
         threadId: m.threadId || m.id,
       }),
     );
-  const listDeleteForever = useDeleteThreadForever();
+  const listDeleteForever = useDeleteThreadsForever();
   const [confirmDeleteRows, setConfirmDeleteRows] = useState<GmailMessageSummary[] | null>(null);
   const handleDeleteForeverConfirm = () => {
     const rows = confirmDeleteRows ?? [];
     setConfirmDeleteRows(null);
     console.log("[MessageList:deleteForever]", { count: rows.length });
+    const byAccount = new Map<string, string[]>();
     for (const m of rows) {
-      void listDeleteForever.mutateAsync({
-        accountId: m.accountId ?? accountId,
-        threadId: m.threadId || m.id,
-      });
+      const owner = m.accountId ?? accountId;
+      const threadIds = byAccount.get(owner) ?? [];
+      threadIds.push(m.threadId || m.id);
+      byAccount.set(owner, threadIds);
+    }
+    for (const [owner, threadIds] of byAccount) {
+      void listDeleteForever.mutateAsync({ accountId: owner, threadIds });
     }
     clearChecked();
   };

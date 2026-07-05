@@ -1295,22 +1295,23 @@ function rollbackUntrash(qc: ReturnType<typeof useQueryClient>, context?: Untras
   for (const [key, data] of context.prevDetailQueries) qc.setQueryData(key, data);
 }
 
-/** Permanent delete for Trash/Spam threads. No undo entry — irreversible. */
-export function useDeleteThreadForever() {
+/** Permanent delete for Trash/Spam threads — one batched call per account.
+    No undo entry — irreversible. */
+export function useDeleteThreadsForever() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ accountId, threadId }: { accountId: string; threadId: string }) => {
-      console.log("[hooks:useDeleteThreadForever]", { accountId, threadId });
-      return gmailApi.deleteThreadForever(accountId, threadId);
+    mutationFn: ({ accountId, threadIds }: { accountId: string; threadIds: string[] }) => {
+      console.log("[hooks:useDeleteThreadsForever]", { accountId, count: threadIds.length });
+      return gmailApi.deleteThreadsForever(accountId, threadIds);
     },
-    onMutate: async ({ accountId, threadId }) => {
-      const threadKey = queryKeys.thread(accountId, threadId);
+    onMutate: async ({ accountId, threadIds }) => {
+      const idSet = new Set(threadIds);
       const labelsKey = queryKeys.labels(accountId);
       await Promise.all([
         qc.cancelQueries({ queryKey: ["gmail:messages", accountId] }),
         qc.cancelQueries({ queryKey: ["gmail:combinedMessages"] }),
         qc.cancelQueries({ queryKey: ["gmail:searchMessages"] }),
-        qc.cancelQueries({ queryKey: threadKey }),
+        qc.cancelQueries({ queryKey: ["gmail:thread", accountId] }),
         qc.cancelQueries({ queryKey: labelsKey }),
       ]);
       const prevMessagesQueries = qc.getQueriesData<InfiniteData<ListMessagesResult>>({
@@ -1322,44 +1323,52 @@ export function useDeleteThreadForever() {
       const prevSearchQueries = qc.getQueriesData<InfiniteData<ListMessagesResult>>({
         queryKey: ["gmail:searchMessages"],
       });
-      const prevThread = qc.getQueryData<GmailMessageSummary[]>(threadKey);
+      const prevThreads = threadIds.map(
+        (threadId) =>
+          [
+            queryKeys.thread(accountId, threadId),
+            qc.getQueryData<GmailMessageSummary[]>(queryKeys.thread(accountId, threadId)),
+          ] as const,
+      );
       const prevLabels = qc.getQueryData<GmailLabel[]>(labelsKey);
 
-      const inThread = (m: GmailMessageSummary) =>
-        (m.threadId || m.id) === threadId && (m.accountId ?? accountId) === accountId;
+      const inThreads = (m: GmailMessageSummary) =>
+        idSet.has(m.threadId || m.id) && (m.accountId ?? accountId) === accountId;
       qc.setQueriesData(
         { queryKey: ["gmail:messages", accountId] },
-        (old: InfiniteData<ListMessagesResult> | undefined) => removeMessagesFromInfiniteData(old, inThread),
+        (old: InfiniteData<ListMessagesResult> | undefined) => removeMessagesFromInfiniteData(old, inThreads),
       );
       qc.setQueriesData(
         { queryKey: ["gmail:combinedMessages"] },
-        (old: InfiniteData<ListMessagesResult> | undefined) => removeMessagesFromInfiniteData(old, inThread),
+        (old: InfiniteData<ListMessagesResult> | undefined) => removeMessagesFromInfiniteData(old, inThreads),
       );
       qc.setQueriesData(
         { queryKey: ["gmail:searchMessages"] },
-        (old: InfiniteData<ListMessagesResult> | undefined) => removeMessagesFromInfiniteData(old, inThread),
+        (old: InfiniteData<ListMessagesResult> | undefined) => removeMessagesFromInfiniteData(old, inThreads),
       );
-      qc.setQueryData(threadKey, []);
 
-      if (prevThread) {
-        const merged = new Map<string, LabelCountDelta>();
-        for (const msg of prevThread) {
+      const merged = new Map<string, LabelCountDelta>();
+      for (const [key, rows] of prevThreads) {
+        for (const msg of rows ?? []) {
           for (const lid of msg.labelIds) {
             const cur = merged.get(lid) ?? { total: 0, unread: 0 };
             merged.set(lid, { total: cur.total - 1, unread: cur.unread - (msg.unread ? 1 : 0) });
           }
         }
+        qc.setQueryData(key, []);
+      }
+      if (merged.size > 0) {
         qc.setQueryData<GmailLabel[]>(labelsKey, (old) => applyLabelCountDeltas(old, merged));
       }
 
-      return { threadKey, labelsKey, prevMessagesQueries, prevCombinedQueries, prevSearchQueries, prevThread, prevLabels };
+      return { labelsKey, prevMessagesQueries, prevCombinedQueries, prevSearchQueries, prevThreads, prevLabels };
     },
     onError: (_err, _vars, context) => {
       if (!context) return;
       for (const [key, data] of context.prevMessagesQueries) qc.setQueryData(key, data);
       for (const [key, data] of context.prevCombinedQueries) qc.setQueryData(key, data);
       for (const [key, data] of context.prevSearchQueries) qc.setQueryData(key, data);
-      if (context.prevThread) qc.setQueryData(context.threadKey, context.prevThread);
+      for (const [key, data] of context.prevThreads) qc.setQueryData(key, data);
       if (context.prevLabels) qc.setQueryData(context.labelsKey, context.prevLabels);
     },
     onSuccess: (_data, { accountId }) => {

@@ -199,8 +199,8 @@ export const gmailApi = {
   untrashMessage: (accountId: string, messageId: string): Promise<{ ok: boolean }> =>
     ipc("gmail:untrashMessage", { accountId, messageId }),
 
-  deleteThreadForever: (accountId: string, threadId: string): Promise<{ ok: boolean }> =>
-    ipc("gmail:deleteThreadForever", { accountId, threadId }),
+  deleteThreadsForever: (accountId: string, threadIds: string[]): Promise<{ ok: boolean }> =>
+    ipc("gmail:deleteThreadsForever", { accountId, threadIds }),
 
   sendMessage: (params: SendMessageParams): Promise<{ ok: boolean }> =>
     ipc("gmail:sendMessage", params),

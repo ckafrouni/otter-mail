@@ -30,6 +30,7 @@ import {
   untrashThread,
   untrashMessage,
   deleteThreadPermanently,
+  batchDeleteMessages,
   saveDraft,
   deleteDraft,
   sendMessage,
@@ -627,20 +628,31 @@ export function registerGmailHandlers(): void {
     }
   });
 
-  // gmail:deleteThreadForever — permanent delete; the UI only offers it on
-  // Trash/Spam conversations.
-  ipcMain.handle("gmail:deleteThreadForever", async (_event, params: unknown) => {
+  // gmail:deleteThreadsForever — permanent delete; the UI only offers it on
+  // Trash/Spam conversations. Threads resolve to message ids locally so the
+  // whole batch goes out as one messages.batchDelete call.
+  ipcMain.handle("gmail:deleteThreadsForever", async (_event, params: unknown) => {
     const p = params as Record<string, unknown>;
-    console.log("[gmail:deleteThreadForever]", { accountId: p?.accountId, threadId: p?.threadId });
+    const threadIds = asStringArray(p?.threadIds) ?? [];
+    console.log("[gmail:deleteThreadsForever]", { accountId: p?.accountId, count: threadIds.length });
     try {
       const accountId = assertString(p?.accountId, "accountId");
-      const threadId = assertString(p?.threadId, "threadId");
-      const result = await deleteThreadPermanently(accountId, threadId);
-      mailStore.deleteThread(accountId, threadId);
+      const messageIds: string[] = [];
+      const unknownThreads: string[] = [];
+      for (const threadId of threadIds) {
+        const rows = mailStore.getThreadMessages(accountId, threadId);
+        if (rows.length > 0) messageIds.push(...rows.map((m) => m.id));
+        else unknownThreads.push(threadId);
+      }
+      if (messageIds.length > 0) await batchDeleteMessages(accountId, messageIds);
+      for (const threadId of unknownThreads) {
+        await deleteThreadPermanently(accountId, threadId);
+      }
+      for (const threadId of threadIds) mailStore.deleteThread(accountId, threadId);
       updateDockBadge();
-      return result;
+      return { ok: true as const };
     } catch (err) {
-      console.log("[gmail:deleteThreadForever] error", { error: String(err) });
+      console.log("[gmail:deleteThreadsForever] error", { error: String(err) });
       throw err;
     }
   });
