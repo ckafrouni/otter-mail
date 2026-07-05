@@ -556,28 +556,32 @@ export function MessageList({
   const debouncedQuery = useDebouncedValue(searchQuery.trim(), 150);
   const globalSearching = debouncedQuery.length > 0;
 
+  // Search and criteria are independent: filterOpen is ONLY the text input's
+  // state (search icon), criteria live in `filters` (sliders menu). The bar
+  // row derives from either, so adding a criterion shows its token without
+  // activating the search input.
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterQuery, setFilterQuery] = useState("");
   const [filters, setFilters] = useState<ViewFilters>(NO_FILTERS);
   const filtersActive =
     filters.starred || filters.important || filters.hasAttachments || filters.withinDays != null;
-  // The bar's visibility is derived, not imperatively toggled: any active
-  // criterion shows it, so adding a filter can never leave its token hidden.
   const barVisible = filterOpen || filtersActive;
-  const debouncedFilter = useDebouncedValue(barVisible ? filterQuery.trim() : "", 150);
+  const debouncedFilter = useDebouncedValue(filterOpen ? filterQuery.trim() : "", 150);
   const filtering = barVisible && (debouncedFilter.length > 0 || filtersActive);
   const searching = filtering || globalSearching;
 
-  const closeFilter = () => {
+  // Dismisses only the text search; active criteria keep the bar up.
+  const closeSearch = () => {
     setFilterOpen(false);
     setFilterQuery("");
+  };
+  const closeFilter = () => {
+    closeSearch();
     setFilters(NO_FILTERS);
   };
-  // filterOpen also set so the bar survives removing the last token.
   const patchFilters = (patch: Partial<ViewFilters>) => {
     console.log("[MessageList:patchFilters]", patch);
     setFilters((f) => ({ ...f, ...patch }));
-    setFilterOpen(true);
   };
 
   // All hooks are always called (rules of hooks); the inactive ones are disabled.
@@ -1042,11 +1046,11 @@ export function MessageList({
             {formatMailboxSummary(mailboxTotal, mailboxUnread)}
           </div>
         </div>
-        <HintTooltip label={barVisible ? "Hide search" : "Search this mailbox"}>
+        <HintTooltip label={filterOpen ? "Hide search" : "Search this mailbox"}>
           <IconBtn
-            label={barVisible ? "Hide search" : "Search this mailbox"}
-            active={barVisible}
-            onClick={() => (barVisible ? closeFilter() : setFilterOpen(true))}
+            label={filterOpen ? "Hide search" : "Search this mailbox"}
+            active={filterOpen}
+            onClick={() => (filterOpen ? closeSearch() : setFilterOpen(true))}
           >
             <SearchIcon className="size-4" />
           </IconBtn>
@@ -1101,7 +1105,7 @@ export function MessageList({
 
       {barVisible ? (
         <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-1.5 border-b border-(--te-border) px-4 py-1.5">
-          <SearchIcon className="size-3.5 shrink-0 text-(--te-faint)" />
+          {filterOpen ? <SearchIcon className="size-3.5 shrink-0 text-(--te-faint)" /> : null}
           {filters.starred ? (
             <FilterPill label="Flagged" onRemove={() => patchFilters({ starred: false })} />
           ) : null}
@@ -1120,19 +1124,23 @@ export function MessageList({
               onRemove={() => patchFilters({ withinDays: null })}
             />
           ) : null}
-          <input
-            autoFocus
-            value={filterQuery}
-            onChange={(e) => setFilterQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                e.stopPropagation();
-                closeFilter();
-              }
-            }}
-            placeholder={`Search in ${mailboxTitle}`}
-            className="h-6 min-w-24 flex-1 bg-transparent text-[13px] text-(--te-text) outline-none placeholder:text-(--te-faint)"
-          />
+          {filterOpen ? (
+            <input
+              autoFocus
+              value={filterQuery}
+              onChange={(e) => setFilterQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.stopPropagation();
+                  closeSearch();
+                }
+              }}
+              placeholder={`Search in ${mailboxTitle}`}
+              className="h-6 min-w-24 flex-1 bg-transparent text-[13px] text-(--te-text) outline-none placeholder:text-(--te-faint)"
+            />
+          ) : (
+            <span className="h-6 flex-1" aria-hidden />
+          )}
           <button
             type="button"
             onClick={closeFilter}
