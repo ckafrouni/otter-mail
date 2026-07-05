@@ -6,6 +6,7 @@ const SECTIONS: { title: string; rows: [string, string][] }[] = [
     rows: [
       ["j / k", "Next / previous conversation"],
       ["u", "Back to list"],
+      ["⌘[ / ⌘]", "History back / forward"],
       ["g then i", "Go to Inbox"],
       ["g then t", "Go to Sent"],
       ["g then s", "Go to Starred"],

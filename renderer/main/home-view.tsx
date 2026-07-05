@@ -345,6 +345,36 @@ export function HomeView() {
     setNav({ ...nav, idx: nav.idx + 1 });
   };
 
+  // ⌘[ / ⌘] and the mouse back/forward buttons drive the same history as the
+  // header arrows. Latest closures via ref so the listeners mount once.
+  const navActionsRef = useRef({ back: goBack, forward: goForward });
+  navActionsRef.current = { back: goBack, forward: goForward };
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
+      if (e.key !== "[" && e.key !== "]") return;
+      if (isTypingTarget(e)) return;
+      e.preventDefault();
+      if (e.key === "[") navActionsRef.current.back();
+      else navActionsRef.current.forward();
+    };
+    const mouse = (e: MouseEvent) => {
+      if (e.button === 3) {
+        e.preventDefault();
+        navActionsRef.current.back();
+      } else if (e.button === 4) {
+        e.preventDefault();
+        navActionsRef.current.forward();
+      }
+    };
+    window.addEventListener("keydown", down);
+    window.addEventListener("mouseup", mouse);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("mouseup", mouse);
+    };
+  }, []);
+
   const effectiveAccountId = isCombined
     ? COMBINED_ACCOUNT_ID
     : selectedAccountId && accounts.some((a) => a.id === selectedAccountId)
