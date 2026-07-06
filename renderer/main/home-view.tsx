@@ -723,9 +723,16 @@ export function HomeView() {
                 onAdvance={handleReaderAdvance}
                 onOpenChat={openChat}
                 onQuote={(q) => {
-                  setPendingQuote(q);
-                  openChat();
+                  // Only reflect selections while the panel is open, so normal
+                  // reading/copying is never hijacked.
+                  if (chatOpen) setPendingQuote(q);
                 }}
+                onComposeTo={(email) => {
+                  setMailtoPrefill({ to: email, cc: "", subject: "", body: "" });
+                  setMailtoSeq((n) => n + 1);
+                  setComposeOpen(true);
+                }}
+                onSearchSender={(email) => handleSearchChange(email)}
               />
             ) : (
               <div className="flex h-full items-center justify-center">

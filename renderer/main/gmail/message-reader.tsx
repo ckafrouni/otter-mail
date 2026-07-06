@@ -27,11 +27,11 @@ import {
   RotateCcwIcon,
   SendHorizontalIcon,
   ShieldCheckIcon,
-  TextQuoteIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react";
 import { SlackAiIcon } from "./assistant-icons";
+import { SenderHoverCard } from "./sender-hovercard";
 import {
   useAccounts,
   useMessage,
@@ -61,12 +61,7 @@ import {
   attachmentSignature,
   pickComposeAttachments,
 } from "./compose-attachments";
-import {
-  AskAssistantDialog,
-  contextFromQuote,
-  type AssistantContext,
-  type QuoteContext,
-} from "./ask-assistant";
+import { AskAssistantDialog, type AssistantContext, type QuoteContext } from "./ask-assistant";
 import { DraftEditor } from "./draft-editor";
 import { useDraftAutosave } from "./use-draft-autosave";
 import type {
@@ -87,6 +82,9 @@ type MessageReaderProps = {
   onOpenChat?: () => void;
   /** A selected excerpt was sent to the chat panel as a quote. */
   onQuote?: (quote: QuoteContext) => void;
+  /** Sender hover-card quick actions. */
+  onComposeTo?: (email: string) => void;
+  onSearchSender?: (email: string) => void;
 };
 
 export type DownloadAttachment = (
@@ -167,8 +165,8 @@ function MessageBody({
 }: {
   bodyHtml: string | null;
   bodyText: string | null;
-  /** Reports a selection inside the (same-origin) HTML iframe, in page coords. */
-  onQuoteText?: (text: string, rect: { x: number; y: number }) => void;
+  /** Reports selected text inside the (same-origin) HTML iframe. */
+  onQuoteText?: (text: string) => void;
 }) {
   if (bodyHtml) {
     // Marketing/HTML mail is designed for a white canvas — give it a light
@@ -186,12 +184,8 @@ function MessageBody({
           iframe.style.height = doc.documentElement.scrollHeight + "px";
           if (onQuoteText) {
             doc.addEventListener("mouseup", () => {
-              const sel = doc.getSelection();
-              const text = sel?.toString().trim() ?? "";
-              if (!text || !sel || sel.rangeCount === 0) return;
-              const r = sel.getRangeAt(0).getBoundingClientRect();
-              const ir = iframe.getBoundingClientRect();
-              onQuoteText(text, { x: ir.left + r.left + r.width / 2, y: ir.top + r.top });
+              const text = doc.getSelection()?.toString().trim() ?? "";
+              if (text) onQuoteText(text);
             });
           }
         }}
@@ -565,13 +559,17 @@ export function ExpandedRow({
   onCollapse,
   onDownload,
   onQuoteText,
+  onComposeTo,
+  onSearchSender,
 }: {
   accountId: string;
   summary: GmailMessageSummary;
   /** Absent for single-message conversations, which always stay expanded. */
   onCollapse?: () => void;
   onDownload: DownloadAttachment;
-  onQuoteText?: (text: string, rect: { x: number; y: number }) => void;
+  onQuoteText?: (text: string) => void;
+  onComposeTo?: (email: string) => void;
+  onSearchSender?: (email: string) => void;
 }) {
   const detailQuery = useMessage(accountId, summary.id);
   const modifyMessage = useModifyMessage();
@@ -600,12 +598,20 @@ export function ExpandedRow({
       <div className="group rounded-[10px] border border-(--te-border) bg-(--te-card) px-4 py-3.5">
         {/* Post-style header: avatar + sender + time */}
         <div className="flex items-start gap-2.5">
-          <SenderAvatar
+          <SenderHoverCard
             name={summary.fromName}
             email={summary.fromEmail}
             accountId={accountId}
-            className="mt-0.5 shrink-0"
-          />
+            onCompose={onComposeTo}
+            onSearch={onSearchSender}
+          >
+            <SenderAvatar
+              name={summary.fromName}
+              email={summary.fromEmail}
+              accountId={accountId}
+              className="mt-0.5 shrink-0"
+            />
+          </SenderHoverCard>
           <div className="min-w-0 flex-1">
             <button
               type="button"
@@ -614,9 +620,17 @@ export function ExpandedRow({
               className="flex w-full items-baseline gap-2 text-left"
               aria-label={onCollapse ? "Collapse message" : undefined}
             >
-              <span className="truncate text-[15px] font-bold leading-snug text-(--te-strong)">
-                {summary.fromName || summary.fromEmail}
-              </span>
+              <SenderHoverCard
+                name={summary.fromName}
+                email={summary.fromEmail}
+                accountId={accountId}
+                onCompose={onComposeTo}
+                onSearch={onSearchSender}
+              >
+                <span className="truncate text-[15px] font-bold leading-snug text-(--te-strong)">
+                  {summary.fromName || summary.fromEmail}
+                </span>
+              </SenderHoverCard>
               <span
                 className="te-num shrink-0 text-[10px] text-(--te-faint)"
                 title={formatFullDate(summary.date)}
@@ -1037,6 +1051,8 @@ export function MessageReader({
   onAdvance,
   onOpenChat,
   onQuote,
+  onComposeTo,
+  onSearchSender,
 }: MessageReaderProps) {
   // Reply/reply-all/forward handlers exist only when a message is open; the
   // render below refreshes this ref so the once-mounted listener stays current.
@@ -1107,59 +1123,27 @@ export function MessageReader({
   };
 
   // Quote-from-selection: a highlighted excerpt (parent DOM or an HTML iframe)
-  // becomes a "quote" context item for the chat panel or the Slack handoff.
-  const [quotePopover, setQuotePopover] = useState<{ text: string; x: number; y: number } | null>(
-    null,
-  );
-  const buildQuote = (text: string): QuoteContext | null => {
-    if (!message) return null;
-    return {
-      text: text.length > 600 ? `${text.slice(0, 600)}…` : text,
+  // is reported up; when the chat panel is open, home-view attaches it as a
+  // "quote" context item. Text is captured on mouse-up so it survives the
+  // focus moving into the composer (which clears the DOM selection).
+  const emitQuote = (text: string) => {
+    if (!message || !text.trim()) return;
+    const trimmed = text.trim();
+    onQuote?.({
+      text: trimmed.length > 600 ? `${trimmed.slice(0, 600)}…` : trimmed,
       account: readerAccounts.data?.find((a) => a.id === accountId)?.email ?? accountId,
       accountId,
       threadId: message.threadId || message.id,
       subject: message.subject || "(no subject)",
       messageId: message.id,
-    };
+    });
   };
   const onParentMouseUp = () => {
-    const sel = window.getSelection();
-    const text = sel?.toString().trim() ?? "";
-    if (!text || !sel || sel.rangeCount === 0) {
-      setQuotePopover(null);
-      return;
-    }
-    const r = sel.getRangeAt(0).getBoundingClientRect();
-    setQuotePopover({ text, x: r.left + r.width / 2, y: r.top });
+    emitQuote(window.getSelection()?.toString() ?? "");
   };
-  const quoteToChat = () => {
-    const q = quotePopover && buildQuote(quotePopover.text);
-    if (q) onQuote?.(q);
-    setQuotePopover(null);
-  };
-  const quoteToSlack = () => {
-    const q = quotePopover && buildQuote(quotePopover.text);
-    if (q) setAskContext(contextFromQuote(q));
-    setQuotePopover(null);
-  };
-  // Dismiss the popover on scroll/Escape (its fixed coords would go stale).
-  useEffect(() => {
-    if (!quotePopover) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setQuotePopover(null);
-    };
-    const onScroll = () => setQuotePopover(null);
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("scroll", onScroll, true);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("scroll", onScroll, true);
-    };
-  }, [quotePopover]);
 
   useEffect(() => {
     setInline(null);
-    setQuotePopover(null);
   }, [messageId]);
 
   // Escape closes the inline composer before anything else: registered in the
@@ -1636,7 +1620,9 @@ export function MessageReader({
                     summary={m}
                     onCollapse={rows.length === 1 ? undefined : () => toggleExpanded(m.id)}
                     onDownload={handleDownloadAttachment}
-                    onQuoteText={(text, rect) => setQuotePopover({ text, x: rect.x, y: rect.y })}
+                    onQuoteText={(text) => emitQuote(text)}
+                    onComposeTo={onComposeTo}
+                    onSearchSender={onSearchSender}
                   />
                 ) : (
                   <CollapsedRow accountId={accountId} summary={m} onExpand={() => toggleExpanded(m.id)} />
@@ -1646,31 +1632,6 @@ export function MessageReader({
           })}
         </div>
 
-        {quotePopover ? (
-          <div
-            className="fixed z-50 flex -translate-x-1/2 -translate-y-full items-center gap-0.5 rounded-[8px] border border-(--te-outline) bg-(--te-panel) p-0.5 shadow-lg"
-            style={{ left: quotePopover.x, top: quotePopover.y - 8 }}
-            onMouseDown={(e) => e.preventDefault()}
-          >
-            <button
-              type="button"
-              onClick={quoteToChat}
-              className="flex h-7 items-center gap-1.5 rounded-[6px] px-2 text-[12px] text-(--te-text) hover:bg-(--te-hover)"
-            >
-              <TextQuoteIcon className="size-3.5" />
-              Quote in chat
-            </button>
-            <span className="h-4 w-px shrink-0 bg-(--te-border)" aria-hidden />
-            <button
-              type="button"
-              onClick={quoteToSlack}
-              aria-label="Send quote to Hermes in Slack"
-              className="flex size-7 items-center justify-center rounded-[6px] text-(--te-text) hover:bg-(--te-hover)"
-            >
-              <SlackAiIcon className="size-4" />
-            </button>
-          </div>
-        ) : null}
 
         {/* In-thread composer, hidden until replying/forwarding */}
         {lastRow && inline ? (
