@@ -21,15 +21,16 @@ import {
   MailIcon,
   MailOpenIcon,
   PaperclipIcon,
+  BotMessageSquareIcon,
   ReplyIcon,
   ReplyAllIcon,
   RotateCcwIcon,
   SendHorizontalIcon,
   ShieldCheckIcon,
-  SparklesIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react";
+import { SlackAiIcon } from "./assistant-icons";
 import {
   useAccounts,
   useMessage,
@@ -76,6 +77,8 @@ type MessageReaderProps = {
   onDeselect?: () => void;
   /** Toolbar archive/trash move on to the next conversation through this. */
   onAdvance?: () => void;
+  /** Opens the in-app Hermes chat panel (this conversation becomes its context). */
+  onOpenChat?: () => void;
 };
 
 export type DownloadAttachment = (
@@ -995,7 +998,13 @@ function ReaderShell({ children }: { children: ReactNode }) {
   );
 }
 
-export function MessageReader({ accountId, messageId, onDeselect, onAdvance }: MessageReaderProps) {
+export function MessageReader({
+  accountId,
+  messageId,
+  onDeselect,
+  onAdvance,
+  onOpenChat,
+}: MessageReaderProps) {
   // Reply/reply-all/forward handlers exist only when a message is open; the
   // render below refreshes this ref so the once-mounted listener stays current.
   const readerActions = useRef<{ reply?: () => void; replyAll?: () => void; forward?: () => void }>(
@@ -1493,9 +1502,14 @@ export function MessageReader({ accountId, messageId, onDeselect, onAdvance }: M
 
           {groupDivider}
 
-          <HintTooltip label="Ask Hermes about this conversation">
-            <IconBtn label="Ask Hermes" onClick={handleAskAssistant}>
-              <SparklesIcon className="size-4" />
+          <HintTooltip label="Send to Hermes in Slack">
+            <IconBtn label="Send to Hermes in Slack" onClick={handleAskAssistant}>
+              <SlackAiIcon className="size-4" />
+            </IconBtn>
+          </HintTooltip>
+          <HintTooltip label="Chat about this in Hermes">
+            <IconBtn label="Open in Hermes chat" onClick={() => onOpenChat?.()}>
+              <BotMessageSquareIcon className="size-4" />
             </IconBtn>
           </HintTooltip>
         </div>

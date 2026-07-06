@@ -134,6 +134,10 @@ export function HomeView() {
       return !open;
     });
   };
+  const openChat = () => {
+    localStorage.setItem("gmail:chat-open", "1");
+    setChatOpen(true);
+  };
 
   // MessageList fills this each render; reader archive/trash advance through it.
   const advanceRef = useRef<(fromMessageId: string) => boolean>(() => false);
@@ -684,6 +688,7 @@ export function HomeView() {
                   }}
                   advanceRef={advanceRef}
                   onSelectionChange={setChatSelection}
+                  onOpenChat={openChat}
                   searchQuery={searchQuery}
                 />
               </div>
@@ -713,6 +718,7 @@ export function HomeView() {
                   setReaderAccountId(null);
                 }}
                 onAdvance={handleReaderAdvance}
+                onOpenChat={openChat}
               />
             ) : (
               <div className="flex h-full items-center justify-center">

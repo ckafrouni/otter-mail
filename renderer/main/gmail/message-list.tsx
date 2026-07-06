@@ -19,6 +19,7 @@ import {
 import {
   ArchiveIcon,
   ArchiveXIcon,
+  BotMessageSquareIcon,
   FlagIcon,
   ListFilterIcon,
   MailIcon,
@@ -27,11 +28,11 @@ import {
   SearchIcon,
   ShieldCheckIcon,
   SlidersHorizontalIcon,
-  SparklesIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react";
 import { IconBtn, HintTooltip } from "./te-ui";
+import { SlackAiIcon } from "./assistant-icons";
 import {
   useMessages,
   useCombinedMessages,
@@ -95,6 +96,8 @@ type MessageListProps = {
   advanceRef: React.MutableRefObject<(fromMessageId: string) => boolean>;
   /** Reports the multi-selected rows so the chat panel can attach them. */
   onSelectionChange?: (rows: GmailMessageSummary[]) => void;
+  /** Opens the in-app Hermes chat panel. */
+  onOpenChat?: () => void;
 
   searchQuery: string;
 };
@@ -184,8 +187,10 @@ type MessageRowProps = {
   showInboxChip: boolean;
   /** Opens the permanent-delete confirm (offered on trashed/junk rows only). */
   onDeleteForever: () => void;
-  /** Opens the Ask-Hermes handoff seeded with this conversation. */
+  /** Slack handoff seeded with this conversation. */
   onAskAssistant: () => void;
+  /** Opens this conversation in the in-app Hermes chat panel. */
+  onChatAssistant: () => void;
 };
 
 function MessageRow({
@@ -199,6 +204,7 @@ function MessageRow({
   showInboxChip,
   onDeleteForever,
   onAskAssistant,
+  onChatAssistant,
 }: MessageRowProps) {
   const modifyMessage = useModifyMessage();
   const modifyThread = useModifyThread();
@@ -363,7 +369,7 @@ function MessageRow({
                   onAskAssistant();
                 }}
                 onMouseDown={(e) => e.stopPropagation()}
-                aria-label="Ask Hermes about this conversation"
+                aria-label="Send to Hermes in Slack"
                 className={[
                   "shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
                   selected
@@ -371,7 +377,24 @@ function MessageRow({
                     : "text-(--te-faint) hover:text-(--te-strong)",
                 ].join(" ")}
               >
-                <SparklesIcon className="size-3.5" />
+                <SlackAiIcon className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onChatAssistant();
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                aria-label="Open in Hermes chat"
+                className={[
+                  "shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+                  selected
+                    ? "text-(--te-sel-fg)/80 hover:text-(--te-sel-fg)"
+                    : "text-(--te-faint) hover:text-(--te-strong)",
+                ].join(" ")}
+              >
+                <BotMessageSquareIcon className="size-3.5" />
               </button>
               {combinedMeta ? (
                 <span className="flex items-center gap-1 text-[11px]">
@@ -467,8 +490,11 @@ function MessageRow({
             {message.starred ? "Unflag" : "Flag"}
           </ContextMenuItem>
           <ContextMenuSeparator />
-          <ContextMenuItem icon="sparkles" onSelect={onAskAssistant}>
-            Ask Hermes…
+          <ContextMenuItem icon="paperplane" onSelect={onAskAssistant}>
+            Send to Hermes in Slack…
+          </ContextMenuItem>
+          <ContextMenuItem icon="bubble.left" onSelect={onChatAssistant}>
+            Open in Hermes chat
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuSub label="Move to Label">
@@ -576,6 +602,7 @@ export function MessageList({
   onDeselect,
   advanceRef,
   onSelectionChange,
+  onOpenChat,
   searchQuery,
 }: MessageListProps) {
   const isCombined = combined != null;
@@ -1262,6 +1289,12 @@ export function MessageList({
                 showInboxChip={!inInboxContext}
                 onDeleteForever={() => setConfirmDeleteRows([message])}
                 onAskAssistant={() => askAbout([message])}
+                onChatAssistant={() => {
+                  // Open this conversation in the reader so it becomes the
+                  // chat panel's attached context, then reveal the panel.
+                  onSelectMessage(message.id, message.accountId ?? accountId);
+                  onOpenChat?.();
+                }}
               />
             ))}
             {isFetchingNextPage ? (
@@ -1350,9 +1383,18 @@ export function MessageList({
               </IconBtn>
             </HintTooltip>
             <span className="mx-1 h-5 w-px shrink-0 bg-(--te-border)" aria-hidden />
-            <HintTooltip label="Ask Hermes about the selection">
-              <IconBtn label="Ask Hermes" className="size-7" onClick={() => askAbout(checkedRows)}>
-                <SparklesIcon className="size-4" />
+            <HintTooltip label="Send selection to Hermes in Slack">
+              <IconBtn label="Send to Slack" className="size-7" onClick={() => askAbout(checkedRows)}>
+                <SlackAiIcon className="size-4" />
+              </IconBtn>
+            </HintTooltip>
+            <HintTooltip label="Chat about the selection in Hermes">
+              <IconBtn
+                label="Open in Hermes chat"
+                className="size-7"
+                onClick={() => onOpenChat?.()}
+              >
+                <BotMessageSquareIcon className="size-4" />
               </IconBtn>
             </HintTooltip>
             <span className="mx-1 h-5 w-px shrink-0 bg-(--te-border)" aria-hidden />

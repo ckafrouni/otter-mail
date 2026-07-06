@@ -4,9 +4,11 @@ import {
   ArrowDownIcon,
   BotMessageSquareIcon,
   CircleStopIcon,
+  HistoryIcon,
   PaperclipIcon,
   SendHorizontalIcon,
   SquarePlusIcon,
+  Trash2Icon,
   WrenchIcon,
   XIcon,
 } from "lucide-react";
@@ -42,26 +44,99 @@ function ContextRecap({ context }: { context: { subjects: string[]; count: numbe
   );
 }
 
-const STORE_KEY = "gmail:hermes-chat:v1";
-const MAX_STORED_TURNS = 80;
+/** A saved chat session. `lastResponseId` chains the next turn server-side. */
+type Conversation = {
+  id: string;
+  title: string;
+  turns: ChatTurn[];
+  lastResponseId: string | null;
+  updatedAt: number;
+};
 
-function loadStore(): { turns: ChatTurn[]; lastResponseId: string | null } {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(STORE_KEY) ?? "") as {
-      turns?: ChatTurn[];
-      lastResponseId?: string | null;
-    };
-    return { turns: parsed.turns ?? [], lastResponseId: parsed.lastResponseId ?? null };
-  } catch {
-    return { turns: [], lastResponseId: null };
-  }
+type Store = { conversations: Conversation[]; activeId: string };
+
+const STORE_KEY = "gmail:hermes-chat:v2";
+const LEGACY_KEY = "gmail:hermes-chat:v1";
+const MAX_STORED_TURNS = 80;
+const MAX_CONVERSATIONS = 40;
+
+function clampTitle(text: string): string {
+  const t = text.trim();
+  if (!t) return "New chat";
+  return t.length > 56 ? `${t.slice(0, 56)}…` : t;
 }
 
-function saveStore(turns: ChatTurn[], lastResponseId: string | null): void {
-  localStorage.setItem(
-    STORE_KEY,
-    JSON.stringify({ turns: turns.slice(-MAX_STORED_TURNS), lastResponseId }),
-  );
+function deriveTitle(turns: ChatTurn[]): string {
+  return clampTitle(turns.find((t) => t.role === "user")?.text ?? "");
+}
+
+function newConversation(): Conversation {
+  return {
+    id: crypto.randomUUID(),
+    title: "New chat",
+    turns: [],
+    lastResponseId: null,
+    updatedAt: Date.now(),
+  };
+}
+
+function loadStore(): Store {
+  let conversations: Conversation[] = [];
+  let activeId: string | null = null;
+  try {
+    const v2 = JSON.parse(localStorage.getItem(STORE_KEY) ?? "") as Partial<Store>;
+    if (Array.isArray(v2.conversations)) {
+      conversations = v2.conversations;
+      activeId = v2.activeId ?? null;
+    }
+  } catch {
+    // fall through to legacy migration
+  }
+  if (conversations.length === 0) {
+    try {
+      const v1 = JSON.parse(localStorage.getItem(LEGACY_KEY) ?? "") as {
+        turns?: ChatTurn[];
+        lastResponseId?: string | null;
+      };
+      if (v1.turns && v1.turns.length > 0) {
+        conversations = [
+          {
+            id: crypto.randomUUID(),
+            title: deriveTitle(v1.turns),
+            turns: v1.turns,
+            lastResponseId: v1.lastResponseId ?? null,
+            updatedAt: Date.now(),
+          },
+        ];
+      }
+    } catch {
+      // no legacy data
+    }
+  }
+  // Only non-empty sessions are kept; always land on a usable active one.
+  conversations = conversations.filter((c) => c.turns.length > 0);
+  if (!activeId || !conversations.some((c) => c.id === activeId)) {
+    const fresh = newConversation();
+    conversations = [fresh, ...conversations];
+    activeId = fresh.id;
+  }
+  return { conversations, activeId };
+}
+
+function saveStore(store: Store): void {
+  const conversations = store.conversations
+    .slice(0, MAX_CONVERSATIONS)
+    .map((c) => ({ ...c, turns: c.turns.slice(-MAX_STORED_TURNS) }));
+  localStorage.setItem(STORE_KEY, JSON.stringify({ conversations, activeId: store.activeId }));
+}
+
+function formatAgo(ts: number): string {
+  const mins = Math.floor((Date.now() - ts) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
 }
 
 const ERROR_TEXT: Record<string, string> = {
@@ -101,10 +176,75 @@ function ToolStep({ name, output }: { name: string; output?: string }) {
   );
 }
 
+/** Dropdown sheet of past conversations; Escape/backdrop-click closes it. */
+function HistoryList({
+  conversations,
+  activeId,
+  onPick,
+  onDelete,
+  onClose,
+}: {
+  conversations: Conversation[];
+  activeId: string;
+  onPick: (id: string) => void;
+  onDelete: (id: string) => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+
+  const items = conversations.filter((c) => c.turns.length > 0);
+  return (
+    <>
+      <div className="absolute inset-x-0 bottom-0 top-[52px] z-10" onClick={onClose} aria-hidden />
+      <div className="te-scroll absolute right-2 top-[54px] z-20 max-h-[70%] w-[calc(100%-1rem)] overflow-y-auto rounded-[8px] border border-(--te-outline) bg-(--te-panel) p-1 shadow-lg">
+        {items.length === 0 ? (
+          <div className="px-2 py-3 text-center text-[12px] text-(--te-muted)">No past chats yet</div>
+        ) : (
+          items.map((c) => (
+            <div
+              key={c.id}
+              className={[
+                "group flex items-center gap-1 rounded-[5px] px-1",
+                c.id === activeId ? "bg-(--te-hover)" : "hover:bg-(--te-hover)",
+              ].join(" ")}
+            >
+              <button
+                type="button"
+                onClick={() => onPick(c.id)}
+                className="flex min-w-0 flex-1 flex-col items-start py-1.5 pl-1.5 text-left"
+              >
+                <span className="w-full truncate text-[13px] text-(--te-text)">{c.title}</span>
+                <span className="te-label text-(--te-faint)">{formatAgo(c.updatedAt)}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onDelete(c.id)}
+                aria-label="Delete chat"
+                className="shrink-0 rounded-[4px] p-1 text-(--te-faint) opacity-0 hover:text-(--red) group-hover:opacity-100"
+              >
+                <Trash2Icon className="size-3.5" />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </>
+  );
+}
+
 /**
  * Right-side Hermes chat: streams over the backend Responses-API bridge,
- * server-side continuity via previous_response_id. The transcript lives in
- * localStorage; "attach" adds pointer-only context for the open conversation.
+ * server-side continuity via previous_response_id. Multiple conversations are
+ * kept in localStorage (history dropdown); "attach" adds pointer-only context.
  */
 export function HermesChatPanel({
   accountId,
@@ -119,16 +259,23 @@ export function HermesChatPanel({
   selectedRows?: GmailMessageSummary[];
   onClose: () => void;
 }) {
-  const initial = useRef(loadStore());
-  const [turns, setTurns] = useState<ChatTurn[]>(initial.current.turns);
-  const [lastResponseId, setLastResponseId] = useState<string | null>(
-    initial.current.lastResponseId,
-  );
+  const [store, setStore] = useState<Store>(() => loadStore());
+  const { conversations, activeId } = store;
+  const active = conversations.find((c) => c.id === activeId) ?? conversations[0];
+  const turns = active?.turns ?? [];
+
   const [draft, setDraft] = useState("");
-  const [streamingId, setStreamingId] = useState<string | null>(null);
+  // The in-flight stream is bound to its conversation so switching sessions
+  // mid-run doesn't misroute deltas.
+  const [streaming, setStreaming] = useState<{ requestId: string; convoId: string } | null>(null);
   const [attach, setAttach] = useState(true);
   const [configured, setConfigured] = useState<boolean | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    saveStore(store);
+  }, [store]);
 
   useEffect(() => {
     gmailApi.chatStatus().then(
@@ -161,108 +308,139 @@ export function HermesChatPanel({
         }
       : null;
 
-  const turnsRef = useRef(turns);
-  turnsRef.current = turns;
-  const lastResponseIdRef = useRef(lastResponseId);
-  lastResponseIdRef.current = lastResponseId;
-  useEffect(() => {
-    saveStore(turns, lastResponseId);
-  }, [turns, lastResponseId]);
-
-  // Stream events for the in-flight request; the listener mounts once.
-  const requestRef = useRef<string | null>(null);
+  // Stream events land in their originating conversation (not necessarily the
+  // active one); the listener mounts once and reads the stream via a ref.
+  const streamingRef = useRef(streaming);
+  streamingRef.current = streaming;
   useEffect(() => {
     const unsub = window.glazeAPI.glaze.ipc.onNotification(
       "assistant:chatEvent",
       (raw: unknown) => {
         const event = raw as ChatEvent;
-        if (!event || event.requestId !== requestRef.current) return;
-        setTurns((prev) => {
-          const next = [...prev];
-          const turn = next[next.length - 1];
-          if (!turn || turn.role !== "assistant") return prev;
-          const updated = { ...turn, tools: [...turn.tools] };
-          if (event.type === "delta") updated.text += event.text;
-          else if (event.type === "tool") updated.tools.push({ name: event.name });
-          else if (event.type === "toolResult") {
-            const open = [...updated.tools].reverse().find((t) => t.output === undefined);
-            if (open) open.output = event.output;
-          } else if (event.type === "error") {
-            updated.error = friendlyError(event.message);
-          }
-          next[next.length - 1] = updated;
-          return next;
-        });
-        if (event.type === "done") {
-          if (event.responseId) setLastResponseId(event.responseId);
-          requestRef.current = null;
-          setStreamingId(null);
-        } else if (event.type === "error") {
-          requestRef.current = null;
-          setStreamingId(null);
-        }
+        const s = streamingRef.current;
+        if (!event || !s || event.requestId !== s.requestId) return;
+        setStore((prev) => ({
+          ...prev,
+          conversations: prev.conversations.map((c) => {
+            if (c.id !== s.convoId) return c;
+            const nextTurns = [...c.turns];
+            const turn = nextTurns[nextTurns.length - 1];
+            if (!turn || turn.role !== "assistant") return c;
+            const updated = { ...turn, tools: [...turn.tools] };
+            if (event.type === "delta") updated.text += event.text;
+            else if (event.type === "tool") updated.tools.push({ name: event.name });
+            else if (event.type === "toolResult") {
+              const open = [...updated.tools].reverse().find((t) => t.output === undefined);
+              if (open) open.output = event.output;
+            } else if (event.type === "error") {
+              updated.error = friendlyError(event.message);
+            }
+            nextTurns[nextTurns.length - 1] = updated;
+            const lastResponseId =
+              event.type === "done" && event.responseId ? event.responseId : c.lastResponseId;
+            return { ...c, turns: nextTurns, lastResponseId, updatedAt: Date.now() };
+          }),
+        }));
+        if (event.type === "done" || event.type === "error") setStreaming(null);
       },
     );
     return unsub;
   }, []);
 
+  const patchConversation = (id: string, fn: (c: Conversation) => Conversation) => {
+    setStore((s) => ({ ...s, conversations: s.conversations.map((c) => (c.id === id ? fn(c) : c)) }));
+  };
+
   const send = () => {
     const question = draft.trim();
-    if (!question || streamingId || configured === false) return;
+    if (!question || streaming || configured === false || !active) return;
     const requestId = crypto.randomUUID();
+    const convoId = active.id;
     const attached = attach && context ? context : null;
     const input = attached ? buildHandoffText(question, attached) : question;
+    const prevResponseId = active.lastResponseId ?? undefined;
     console.log("[HermesChat:send]", { requestId, attached: Boolean(attached) });
     setDraft("");
-    setTurns((prev) => [
-      ...prev,
-      {
-        id: `u-${requestId}`,
-        role: "user",
-        text: question,
-        tools: [],
-        context: attached
-          ? {
-              count: attached.conversations.length,
-              subjects: attached.conversations.map((c) => c.subject),
-            }
-          : undefined,
-      },
-      { id: `a-${requestId}`, role: "assistant", text: "", tools: [] },
-    ]);
-    requestRef.current = requestId;
-    setStreamingId(requestId);
+    patchConversation(convoId, (c) => ({
+      ...c,
+      title: c.turns.length === 0 ? clampTitle(question) : c.title,
+      updatedAt: Date.now(),
+      turns: [
+        ...c.turns,
+        {
+          id: `u-${requestId}`,
+          role: "user",
+          text: question,
+          tools: [],
+          context: attached
+            ? {
+                count: attached.conversations.length,
+                subjects: attached.conversations.map((x) => x.subject),
+              }
+            : undefined,
+        },
+        { id: `a-${requestId}`, role: "assistant", text: "", tools: [] },
+      ],
+    }));
+    setStreaming({ requestId, convoId });
     void gmailApi
-      .chatSend({
-        requestId,
-        input,
-        previousResponseId: lastResponseIdRef.current ?? undefined,
-      })
+      .chatSend({ requestId, input, previousResponseId: prevResponseId })
       .catch(() => {
         // Failure events also arrive via the broadcast; this is a backstop.
-        if (requestRef.current === requestId) {
-          requestRef.current = null;
-          setStreamingId(null);
-        }
+        setStreaming((cur) => (cur?.requestId === requestId ? null : cur));
       });
   };
 
   const stop = () => {
-    if (streamingId) void gmailApi.chatCancel(streamingId);
+    if (streaming) void gmailApi.chatCancel(streaming.requestId);
   };
 
   const newChat = () => {
-    if (streamingId) stop();
+    setHistoryOpen(false);
+    // An already-empty active session just refocuses — no empty duplicates.
+    if (active && active.turns.length === 0) {
+      inputRef.current?.focus();
+      return;
+    }
     console.log("[HermesChat:newChat]");
-    setTurns([]);
-    setLastResponseId(null);
+    const fresh = newConversation();
+    setStore((s) => ({
+      conversations: [fresh, ...s.conversations.filter((c) => c.turns.length > 0)],
+      activeId: fresh.id,
+    }));
     inputRef.current?.focus();
   };
 
-  const streaming = streamingId != null;
+  const switchTo = (id: string) => {
+    setHistoryOpen(false);
+    setStore((s) => ({
+      // Drop the current active session if it was still empty (avoids litter).
+      conversations: s.conversations.filter((c) => c.id === id || c.turns.length > 0),
+      activeId: id,
+    }));
+  };
+
+  const deleteConversation = (id: string) => {
+    if (streaming?.convoId === id) {
+      void gmailApi.chatCancel(streaming.requestId);
+      setStreaming(null);
+    }
+    setStore((s) => {
+      const remaining = s.conversations.filter((c) => c.id !== id);
+      if (s.activeId !== id) return { ...s, conversations: remaining };
+      const nonEmpty = remaining.filter((c) => c.turns.length > 0);
+      if (nonEmpty.length > 0) return { conversations: remaining, activeId: nonEmpty[0].id };
+      const fresh = newConversation();
+      return { conversations: [fresh, ...remaining], activeId: fresh.id };
+    });
+  };
+
+  // Only the active conversation drives the "working…" / stop UI.
+  const streamingActive = streaming != null && streaming.convoId === activeId;
+  const busy = streaming != null;
 
   return (
-    <div className="flex h-full min-w-0 flex-col">
+    <div className="relative flex h-full min-w-0 flex-col">
       <div className="drag-region flex h-[52px] shrink-0 items-center gap-2 border-b border-(--te-border) px-4">
         <BotMessageSquareIcon className="size-4 shrink-0 text-(--te-muted)" />
         <div className="min-w-0 flex-1">
@@ -270,9 +448,14 @@ export function HermesChatPanel({
             Hermes
           </div>
           <div className="te-label truncate leading-tight text-(--te-muted)">
-            {streaming ? "working…" : "agent chat"}
+            {streamingActive ? "working…" : "agent chat"}
           </div>
         </div>
+        <HintTooltip label="Chat history">
+          <IconBtn label="Chat history" active={historyOpen} onClick={() => setHistoryOpen((o) => !o)}>
+            <HistoryIcon className="size-4" />
+          </IconBtn>
+        </HintTooltip>
         <HintTooltip label="New chat">
           <IconBtn label="New chat" onClick={newChat}>
             <SquarePlusIcon className="size-4" />
@@ -284,6 +467,16 @@ export function HermesChatPanel({
           </IconBtn>
         </HintTooltip>
       </div>
+
+      {historyOpen ? (
+        <HistoryList
+          conversations={conversations}
+          activeId={activeId}
+          onPick={switchTo}
+          onDelete={deleteConversation}
+          onClose={() => setHistoryOpen(false)}
+        />
+      ) : null}
 
       {configured === false ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
@@ -326,7 +519,7 @@ export function HermesChatPanel({
                         ))}
                         {turn.text ? (
                           <ChatMarkdown text={turn.text} />
-                        ) : !turn.error && streaming && turn.id === turns[turns.length - 1]?.id ? (
+                        ) : !turn.error && streamingActive && turn.id === turns[turns.length - 1]?.id ? (
                           <span className="te-label text-(--te-faint)">thinking…</span>
                         ) : null}
                         {turn.error ? (
@@ -395,7 +588,7 @@ export function HermesChatPanel({
               />
               <div className="flex items-center gap-1 px-2 pb-1.5">
                 <span className="flex-1" />
-                {streaming ? (
+                {busy ? (
                   <HintTooltip label="Stop">
                     <IconBtn label="Stop" className="size-7" onClick={stop}>
                       <CircleStopIcon className="size-4 text-(--red)" />
