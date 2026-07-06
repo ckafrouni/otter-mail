@@ -4,9 +4,12 @@ import {
   ArrowDownIcon,
   BotMessageSquareIcon,
   CircleStopIcon,
+  FilePenLineIcon,
   HistoryIcon,
-  PaperclipIcon,
+  LayersIcon,
+  MailIcon,
   SendHorizontalIcon,
+  SendIcon,
   SquarePlusIcon,
   Trash2Icon,
   WrenchIcon,
@@ -19,6 +22,36 @@ import { ChatMarkdown } from "./chat-markdown";
 import { useAccounts, useMessage } from "./hooks";
 import type { GmailMessageSummary } from "./types";
 
+/** What the attached context items are, so the chip shows a fitting icon. */
+type ContextKind = "draft" | "sent" | "mail" | "mixed";
+type ContextMeta = { subjects: string[]; count: number; kind: ContextKind };
+
+/** Classify one message from its labels. */
+function kindOf(labelIds: string[]): ContextKind {
+  if (labelIds.includes("DRAFT")) return "draft";
+  if (labelIds.includes("SENT")) return "sent";
+  return "mail";
+}
+
+/** Collapse the selection's kinds: uniform → that kind, otherwise "mixed". */
+function contextKind(labelSets: string[][]): ContextKind {
+  if (labelSets.length === 0) return "mail";
+  const kinds = new Set(labelSets.map(kindOf));
+  return kinds.size === 1 ? [...kinds][0] : "mixed";
+}
+
+function ContextKindIcon({ kind, className }: { kind: ContextKind; className?: string }) {
+  const Icon =
+    kind === "draft"
+      ? FilePenLineIcon
+      : kind === "sent"
+        ? SendIcon
+        : kind === "mixed"
+          ? LayersIcon
+          : MailIcon;
+  return <Icon className={className} />;
+}
+
 /** One transcript entry. Tool steps interleave into the assistant turn. */
 type ChatTurn = {
   id: string;
@@ -26,18 +59,18 @@ type ChatTurn = {
   text: string;
   tools: { name: string; output?: string }[];
   /** Attached mail context, shown as a chip above the user's message. */
-  context?: { subjects: string[]; count: number };
+  context?: ContextMeta;
   error?: string;
 };
 
 /** Chip recap of the context sent with a user turn. */
-function ContextRecap({ context }: { context: { subjects: string[]; count: number } }) {
+function ContextRecap({ context }: { context: ContextMeta }) {
   const label =
     context.count > 1 ? `${context.count} conversations` : context.subjects[0] ?? "1 conversation";
   return (
     <div className="mb-1 flex justify-end">
       <span className="te-label flex max-w-full items-center gap-1.5 rounded-[4px] border border-(--te-border) px-2 py-0.5 text-(--te-faint)">
-        <PaperclipIcon className="size-3 shrink-0" />
+        <ContextKindIcon kind={context.kind} className="size-3 shrink-0" />
         <span className="min-w-0 truncate">{label}</span>
       </span>
     </div>
@@ -307,6 +340,13 @@ export function HermesChatPanel({
           ],
         }
       : null;
+  // Draft / sent / mail kind of what's attached, for the chip's icon.
+  const contextLabelSets: string[][] = multiSelected
+    ? selectedRows.map((r) => r.labelIds)
+    : openMessage.data
+      ? [openMessage.data.labelIds]
+      : [];
+  const attachKind = contextKind(contextLabelSets);
 
   // Stream events land in their originating conversation (not necessarily the
   // active one); the listener mounts once and reads the stream via a ref.
@@ -376,6 +416,7 @@ export function HermesChatPanel({
             ? {
                 count: attached.conversations.length,
                 subjects: attached.conversations.map((x) => x.subject),
+                kind: attachKind,
               }
             : undefined,
         },
@@ -562,7 +603,7 @@ export function HermesChatPanel({
                     : "border-(--te-outline) text-(--te-faint) line-through",
                 ].join(" ")}
               >
-                <PaperclipIcon className="size-3 shrink-0" />
+                <ContextKindIcon kind={attachKind} className="size-3 shrink-0" />
                 <span className="min-w-0 truncate">
                   {context.conversations.length > 1
                     ? `${context.conversations.length} conversations`
