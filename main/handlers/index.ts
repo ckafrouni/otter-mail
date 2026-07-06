@@ -15,6 +15,7 @@ import {
   takeSettingsTarget,
 } from "../windows/settings-window.js";
 import { registerGmailHandlers } from "./gmail.js";
+import * as assistant from "../services/assistant.js";
 import { listMailApps, setDefaultMailHandler } from "../services/default-mail.js";
 import { configureAutoSync, syncAllAccounts } from "../services/mail-sync.js";
 import { takePendingMailto } from "../services/mailto-target.js";
@@ -91,6 +92,27 @@ export function registerHandlers(): void {
   });
 
   ipcMain.handle("app:listMailApps", async () => listMailApps());
+
+  // Hermes handoff (Slack): post the question into the assistant DM as the
+  // user, then deep-link Slack to that conversation.
+  ipcMain.handle("assistant:getStatus", async () => assistant.getStatus());
+
+  ipcMain.handle("assistant:configure", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    const token = typeof p?.token === "string" ? p.token.trim() : "";
+    const botUserId = typeof p?.botUserId === "string" ? p.botUserId.trim() : "";
+    if (!token || !botUserId) throw new Error("Both the Slack token and the bot member ID are required.");
+    logger.info("handlers", "assistant:configure", { botUserId });
+    return assistant.configure(token, botUserId);
+  });
+
+  ipcMain.handle("assistant:send", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    const text = typeof p?.text === "string" ? p.text.trim() : "";
+    if (!text) throw new Error("Nothing to send.");
+    logger.info("handlers", "assistant:send", { chars: text.length });
+    return assistant.send(text);
+  });
 
   // Register Gmail handlers
   registerGmailHandlers();

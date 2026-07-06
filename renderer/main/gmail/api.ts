@@ -61,6 +61,13 @@ export type MailtoTarget = { to: string; cc: string; subject: string; body: stri
 export type MailApp = { bundleId: string; name: string; path: string };
 export type MailAppsResult = { apps: MailApp[]; defaultBundleId: string | null };
 
+/** Hermes handoff (Slack) registration state. */
+export type AssistantStatus = {
+  configured: boolean;
+  botUserId: string | null;
+  teamName: string | null;
+};
+
 export type ModifyMessageParams = {
   accountId: string;
   messageId: string;
@@ -296,4 +303,12 @@ export const gmailApi = {
     ipc("app:setDefaultMailApp", bundleId ? { bundleId } : undefined),
 
   listMailApps: (): Promise<MailAppsResult> => ipc("app:listMailApps"),
+
+  assistantGetStatus: (): Promise<AssistantStatus> => ipc("assistant:getStatus"),
+
+  assistantConfigure: (params: { token: string; botUserId: string }): Promise<AssistantStatus> =>
+    ipc("assistant:configure", params),
+
+  /** Posts to the assistant's Slack DM as the user, then opens Slack there. */
+  assistantSend: (text: string): Promise<{ ok: boolean }> => ipc("assistant:send", { text }),
 };

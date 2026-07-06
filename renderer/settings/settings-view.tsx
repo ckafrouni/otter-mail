@@ -45,7 +45,13 @@ import {
   toast,
 } from "@glaze/core/components";
 import type { NativeThemeInfo } from "@glaze/core/ipc";
-import { gmailApi, type MailApp, type NotificationsMode, type SettingsPane } from "../main/gmail/api";
+import {
+  gmailApi,
+  type AssistantStatus,
+  type MailApp,
+  type NotificationsMode,
+  type SettingsPane,
+} from "../main/gmail/api";
 import { useAccounts, useAddAccount, useRemoveAccount, useUpdateAccount } from "../main/gmail/hooks";
 import { useMailViews } from "../main/gmail/custom-views";
 import { ViewEditorForm } from "../main/gmail/view-editor-form";
@@ -388,6 +394,10 @@ export function SettingsView() {
   const [notificationsMode, setNotificationsMode] = useState<NotificationsMode | null>(null);
   const [mailApps, setMailApps] = useState<MailApp[]>([]);
   const [defaultMailBundleId, setDefaultMailBundleId] = useState<string | null>(null);
+  const [assistantStatus, setAssistantStatus] = useState<AssistantStatus | null>(null);
+  const [assistantToken, setAssistantToken] = useState("");
+  const [assistantBotId, setAssistantBotId] = useState("");
+  const [assistantSaving, setAssistantSaving] = useState(false);
 
   // Navigate to the pane (and view) other windows deep-link to, on mount and
   // whenever the backend signals a new target while this window is open.
@@ -501,11 +511,43 @@ export function SettingsView() {
     void loadMailApps();
   };
 
+  const loadAssistantStatus = async () => {
+    try {
+      setAssistantStatus(await gmailApi.assistantGetStatus());
+    } catch (error) {
+      console.log("[SettingsView:assistantStatus] failed", { error: String(error) });
+    }
+  };
+
+  const handleAssistantSave = async () => {
+    if (!assistantToken.trim() || !assistantBotId.trim()) {
+      toast.error("Slack user token and bot member ID are both required");
+      return;
+    }
+    setAssistantSaving(true);
+    console.log("[SettingsView:assistantConfigure]");
+    try {
+      const status = await gmailApi.assistantConfigure({
+        token: assistantToken.trim(),
+        botUserId: assistantBotId.trim(),
+      });
+      setAssistantStatus(status);
+      setAssistantToken("");
+      setAssistantBotId("");
+      toast.success(`Connected to ${status.teamName || "Slack"}`);
+    } catch (error) {
+      toast.error(`Could not connect: ${error}`);
+    } finally {
+      setAssistantSaving(false);
+    }
+  };
+
   useEffect(() => {
     void refreshThemeInfo();
     void loadCredentials();
     void loadSyncSettings();
     void loadMailApps();
+    void loadAssistantStatus();
   }, []);
 
   const handleSyncIntervalChange = async (value: string) => {
@@ -699,6 +741,51 @@ export function SettingsView() {
                     </SelectContent>
                   </Select>
                 </Field>
+              </FieldSet>
+              <FieldSet title="Assistant">
+                <Field
+                  label="Hermes over Slack"
+                  description={
+                    assistantStatus?.configured
+                      ? `Connected to ${assistantStatus.teamName || "your workspace"} — Ask-Hermes actions post into your bot DM as you.`
+                      : "Paste a Slack user token (chat:write, im:write) and the bot's member ID to enable Ask-Hermes handoffs."
+                  }
+                >
+                  <div className="flex flex-col items-end gap-1.5">
+                    <Input
+                      type="password"
+                      value={assistantToken}
+                      onChange={(e) => setAssistantToken(e.target.value)}
+                      placeholder={assistantStatus?.configured ? "Replace token (xoxp-…)" : "xoxp-…"}
+                      aria-label="Slack user token"
+                      className="w-56"
+                    />
+                    <Input
+                      value={assistantBotId}
+                      onChange={(e) => setAssistantBotId(e.target.value)}
+                      placeholder={
+                        assistantStatus?.botUserId
+                          ? `Bot member ID (${assistantStatus.botUserId})`
+                          : "Bot member ID (U…)"
+                      }
+                      aria-label="Bot member ID"
+                      className="w-56"
+                    />
+                    <Button
+                      size="small"
+                      disabled={assistantSaving}
+                      onClick={() => void handleAssistantSave()}
+                    >
+                      {assistantSaving
+                        ? "Connecting…"
+                        : assistantStatus?.configured
+                          ? "Reconnect"
+                          : "Connect"}
+                    </Button>
+                  </div>
+                </Field>
+              </FieldSet>
+              <FieldSet title="System">
                 <Field
                   label="Default email app"
                   description="Which app opens mailto: links across macOS."

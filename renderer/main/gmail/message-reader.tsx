@@ -26,6 +26,7 @@ import {
   RotateCcwIcon,
   SendHorizontalIcon,
   ShieldCheckIcon,
+  SparklesIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react";
@@ -58,6 +59,7 @@ import {
   attachmentSignature,
   pickComposeAttachments,
 } from "./compose-attachments";
+import { AskAssistantDialog, type AssistantContext } from "./ask-assistant";
 import { DraftEditor } from "./draft-editor";
 import { useDraftAutosave } from "./use-draft-autosave";
 import type {
@@ -1042,6 +1044,26 @@ export function MessageReader({ accountId, messageId, onDeselect, onAdvance }: M
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set());
   const seededRef = useRef<string | null>(null);
 
+  // Ask-Hermes handoff for the open conversation (pointer-only context).
+  const [askContext, setAskContext] = useState<AssistantContext | null>(null);
+  const readerAccounts = useAccounts();
+  const handleAskAssistant = () => {
+    if (!message) return;
+    const rows = threadMessages.length > 0 ? threadMessages : [message];
+    console.log("[MessageReader:askAssistant]", { threadId: message.threadId || message.id });
+    setAskContext({
+      conversations: [
+        {
+          account: readerAccounts.data?.find((a) => a.id === accountId)?.email ?? accountId,
+          threadId: message.threadId || message.id,
+          subject: message.subject || "(no subject)",
+          from: rows[rows.length - 1].fromEmail,
+          messageIds: rows.map((m) => m.id),
+        },
+      ],
+    });
+  };
+
   useEffect(() => {
     setInline(null);
   }, [messageId]);
@@ -1468,6 +1490,14 @@ export function MessageReader({ accountId, messageId, onDeselect, onAdvance }: M
               {isUnread ? <MailOpenIcon className="size-4" /> : <MailIcon className="size-4" />}
             </IconBtn>
           </HintTooltip>
+
+          {groupDivider}
+
+          <HintTooltip label="Ask Hermes about this conversation">
+            <IconBtn label="Ask Hermes" onClick={handleAskAssistant}>
+              <SparklesIcon className="size-4" />
+            </IconBtn>
+          </HintTooltip>
         </div>
 
         {isTrashed ? (
@@ -1533,6 +1563,13 @@ export function MessageReader({ accountId, messageId, onDeselect, onAdvance }: M
           />
         ) : null}
       </div>
+
+      <AskAssistantDialog
+        context={askContext}
+        onOpenChange={(o) => {
+          if (!o) setAskContext(null);
+        }}
+      />
 
       <Dialog
         open={confirmDeleteOpen}

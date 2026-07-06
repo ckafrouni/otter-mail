@@ -27,6 +27,7 @@ import {
   SearchIcon,
   ShieldCheckIcon,
   SlidersHorizontalIcon,
+  SparklesIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react";
@@ -46,6 +47,11 @@ import {
   useLabelResolver,
   useSyncAccountLabels,
 } from "./hooks";
+import {
+  AskAssistantDialog,
+  contextFromMessages,
+  type AssistantContext,
+} from "./ask-assistant";
 import { LabelChip, InboxChip, ImportantMarker } from "./label-chip";
 import { LabelOverlay, type LabelOverlayMode } from "./label-overlay";
 import { renderLabelMenuNodes } from "./label-picker-menu";
@@ -176,6 +182,8 @@ type MessageRowProps = {
   showInboxChip: boolean;
   /** Opens the permanent-delete confirm (offered on trashed/junk rows only). */
   onDeleteForever: () => void;
+  /** Opens the Ask-Hermes handoff seeded with this conversation. */
+  onAskAssistant: () => void;
 };
 
 function MessageRow({
@@ -188,6 +196,7 @@ function MessageRow({
   combinedMeta,
   showInboxChip,
   onDeleteForever,
+  onAskAssistant,
 }: MessageRowProps) {
   const modifyMessage = useModifyMessage();
   const modifyThread = useModifyThread();
@@ -345,6 +354,23 @@ function MessageRow({
               </span>
             </span>
             <div className="flex shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAskAssistant();
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                aria-label="Ask Hermes about this conversation"
+                className={[
+                  "shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+                  selected
+                    ? "text-(--te-sel-fg)/80 hover:text-(--te-sel-fg)"
+                    : "text-(--te-faint) hover:text-(--te-strong)",
+                ].join(" ")}
+              >
+                <SparklesIcon className="size-3.5" />
+              </button>
               {combinedMeta ? (
                 <span className="flex items-center gap-1 text-[11px]">
                   {combinedMeta.mailbox ? (
@@ -437,6 +463,10 @@ function MessageRow({
             onSelect={() => handleStarToggle()}
           >
             {message.starred ? "Unflag" : "Flag"}
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem icon="sparkles" onSelect={onAskAssistant}>
+            Ask Hermes…
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuSub label="Move to Label">
@@ -667,6 +697,16 @@ export function MessageList({
       : labelId;
 
   const [labelOverlay, setLabelOverlay] = useState<LabelOverlayMode | null>(null);
+
+  // Ask-Hermes handoff: one conversation from a row, several from the
+  // multi-selection. Context is pointer-only; Hermes fetches via gog.
+  const [askContext, setAskContext] = useState<AssistantContext | null>(null);
+  const accountEmailById = (id: string | undefined) =>
+    accounts.find((a) => a.id === (id ?? accountId))?.email ?? id ?? accountId;
+  const askAbout = (rows: GmailMessageSummary[]) => {
+    console.log("[MessageList:askAssistant]", { count: rows.length });
+    setAskContext(contextFromMessages(rows, accountEmailById));
+  };
 
   // Cmd/shift multi-selection (bulk action bar). Anchor = last plain/cmd click,
   // falling back to the open message, so shift-click ranges feel native.
@@ -1206,6 +1246,7 @@ export function MessageList({
                 combinedMeta={resolveCombinedMeta(message, combined, accounts, resolveLabel)}
                 showInboxChip={!inInboxContext}
                 onDeleteForever={() => setConfirmDeleteRows([message])}
+                onAskAssistant={() => askAbout([message])}
               />
             ))}
             {isFetchingNextPage ? (
@@ -1294,6 +1335,12 @@ export function MessageList({
               </IconBtn>
             </HintTooltip>
             <span className="mx-1 h-5 w-px shrink-0 bg-(--te-border)" aria-hidden />
+            <HintTooltip label="Ask Hermes about the selection">
+              <IconBtn label="Ask Hermes" className="size-7" onClick={() => askAbout(checkedRows)}>
+                <SparklesIcon className="size-4" />
+              </IconBtn>
+            </HintTooltip>
+            <span className="mx-1 h-5 w-px shrink-0 bg-(--te-border)" aria-hidden />
             <HintTooltip label="Clear selection" hint="Esc">
               <IconBtn label="Clear selection" className="size-7" onClick={clearChecked}>
                 <XIcon className="size-4" />
@@ -1321,6 +1368,13 @@ export function MessageList({
           ? This cannot be undone.
         </Text>
       </Dialog>
+
+      <AskAssistantDialog
+        context={askContext}
+        onOpenChange={(o) => {
+          if (!o) setAskContext(null);
+        }}
+      />
 
       <LabelOverlay
         open={labelOverlay != null}
