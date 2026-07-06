@@ -159,6 +159,9 @@ a { color: #e34500; }
 blockquote { border-left: 3px solid #d6d6d6; padding-left: 12px; margin: 4px 0; color: #555555; }
 </style>`;
 
+/** Per-iframe height observers, so a reused iframe never double-observes. */
+const iframeObservers = new WeakMap<HTMLIFrameElement, ResizeObserver>();
+
 function MessageBody({
   bodyHtml,
   bodyText,
@@ -182,7 +185,18 @@ function MessageBody({
           const iframe = e.currentTarget;
           const doc = iframe.contentDocument || iframe.contentWindow?.document;
           if (!doc) return;
-          iframe.style.height = doc.documentElement.scrollHeight + "px";
+          // onLoad fires before late images/fonts finish, so the first
+          // scrollHeight is often too small (iframe ends up scrollable). Keep
+          // it sized to content as layout settles via a ResizeObserver.
+          const fit = () => {
+            iframe.style.height = doc.documentElement.scrollHeight + "px";
+          };
+          fit();
+          iframeObservers.get(iframe)?.disconnect();
+          const ro = new ResizeObserver(fit);
+          ro.observe(doc.documentElement);
+          if (doc.body) ro.observe(doc.body);
+          iframeObservers.set(iframe, ro);
           if (onQuoteText) {
             // WKWebView doesn't reliably deliver `mouseup` from a sandboxed
             // iframe to a parent-attached listener, but `selectionchange` on
