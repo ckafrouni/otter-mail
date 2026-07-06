@@ -199,10 +199,9 @@ function MessageBody({
     );
   }
   if (bodyText) {
-    // Same opaque card as HTML mail so text messages stay readable on the
-    // glass reader background.
+    // Flush inside the message card (the card is the surface now).
     return (
-      <pre className="whitespace-pre-wrap rounded-[6px] border border-(--te-border) bg-(--te-panel) px-4 py-3 font-sans text-[15px] leading-relaxed text-(--te-text)">
+      <pre className="whitespace-pre-wrap font-sans text-[15px] leading-relaxed text-(--te-text)">
         {bodyText}
       </pre>
     );
@@ -532,12 +531,12 @@ export function CollapsedRow({
   onExpand: () => void;
 }) {
   return (
-    <div className="px-5 py-0.5">
+    <div className="px-4 py-1">
       <button
         type="button"
         onClick={onExpand}
         aria-label="Expand message"
-        className="flex w-full items-center gap-2.5 rounded-[6px] border border-(--te-border) bg-(--te-ctl) px-3 py-2 text-left hover:bg-(--te-ctl-hover)"
+        className="flex w-full items-center gap-2.5 rounded-[10px] border border-(--te-border) bg-(--te-card) px-3.5 py-2.5 text-left hover:bg-(--te-panel)"
       >
         <SenderAvatar name={summary.fromName} email={summary.fromEmail} accountId={accountId} size="sm" />
         <span
@@ -597,39 +596,46 @@ export function ExpandedRow({
   const detail = detailQuery.data;
 
   return (
-    <div className="group flex gap-2.5 px-5 py-2">
-      <SenderAvatar
-        name={summary.fromName}
-        email={summary.fromEmail}
-        accountId={accountId}
-        className="mt-0.5 shrink-0"
-      />
-      <div className="min-w-0 flex-1">
-        <button
-          type="button"
-          onClick={onCollapse}
-          disabled={!onCollapse}
-          className="flex w-full items-baseline gap-2 text-left"
-          aria-label={onCollapse ? "Collapse message" : undefined}
-        >
-          <span className="truncate text-[15px] font-bold leading-snug text-(--te-strong)">
-            {summary.fromName || summary.fromEmail}
-          </span>
-          <span
-            className="te-num shrink-0 text-[10px] text-(--te-faint)"
-            title={formatFullDate(summary.date)}
-          >
-            {formatTime(summary.date)}
-          </span>
-          {onCollapse ? (
-            <ChevronDownIcon className="size-3.5 shrink-0 rotate-180 self-center text-(--te-faint) opacity-0 group-hover:opacity-100" />
-          ) : null}
-        </button>
-        <div className="truncate text-[12px] text-(--te-faint)" title={`to ${summary.to}`}>
-          to {summary.to}
-          {detail?.cc ? ` · cc ${detail.cc}` : ""}
+    <div className="px-4 py-1">
+      <div className="group rounded-[10px] border border-(--te-border) bg-(--te-card) px-4 py-3.5">
+        {/* Post-style header: avatar + sender + time */}
+        <div className="flex items-start gap-2.5">
+          <SenderAvatar
+            name={summary.fromName}
+            email={summary.fromEmail}
+            accountId={accountId}
+            className="mt-0.5 shrink-0"
+          />
+          <div className="min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={onCollapse}
+              disabled={!onCollapse}
+              className="flex w-full items-baseline gap-2 text-left"
+              aria-label={onCollapse ? "Collapse message" : undefined}
+            >
+              <span className="truncate text-[15px] font-bold leading-snug text-(--te-strong)">
+                {summary.fromName || summary.fromEmail}
+              </span>
+              <span
+                className="te-num shrink-0 text-[10px] text-(--te-faint)"
+                title={formatFullDate(summary.date)}
+              >
+                {formatTime(summary.date)}
+              </span>
+              {onCollapse ? (
+                <ChevronDownIcon className="size-3.5 shrink-0 rotate-180 self-center text-(--te-faint) opacity-0 group-hover:opacity-100" />
+              ) : null}
+            </button>
+            <div className="truncate text-[12px] text-(--te-faint)" title={`to ${summary.to}`}>
+              to {summary.to}
+              {detail?.cc ? ` · cc ${detail.cc}` : ""}
+            </div>
+          </div>
         </div>
-        <div className="mt-1.5">
+
+        {/* Body spans the full card width, like a post */}
+        <div className="mt-3">
           {detailQuery.isLoading ? (
             <div className="flex flex-col gap-2">
               <div className="h-4 w-3/4 animate-pulse rounded-[3px] bg-(--te-ctl)" />
@@ -1621,13 +1627,9 @@ export function MessageReader({
             const prev = rows[i - 1];
             const newDay = !prev || dayKey(prev.date) !== dayKey(m.date);
             const isExpanded = expandedIds.has(m.id) || rows.length === 1;
-            const prevExpanded = prev ? expandedIds.has(prev.id) : false;
             return (
               <div key={m.id}>
                 {newDay ? <DayDivider timestamp={m.date} /> : null}
-                {!newDay && isExpanded && prevExpanded ? (
-                  <div className="mx-5 my-1 border-t border-(--te-border)" />
-                ) : null}
                 {isExpanded ? (
                   <ExpandedRow
                     accountId={accountId}
