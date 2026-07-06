@@ -340,6 +340,7 @@ export function HermesChatPanel({
 
   const [slashDismissed, setSlashDismissed] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
+  const slashItemRef = useRef<HTMLButtonElement | null>(null);
   // The menu opens only while typing a bare "/slug" (no space yet).
   const slashMatch = draft.match(/^\/([a-z0-9-]*)$/i);
   const slashQuery = slashMatch ? slashMatch[1].toLowerCase() : null;
@@ -351,6 +352,10 @@ export function HermesChatPanel({
   useEffect(() => {
     setSlashIndex(0);
   }, [slashQuery]);
+  // Keep the keyboard-highlighted skill scrolled into view.
+  useEffect(() => {
+    slashItemRef.current?.scrollIntoView({ block: "nearest" });
+  }, [slashIndex]);
   const pickSkill = (skill: Skill) => {
     setDraft(`/${skill.name} `);
     setSlashDismissed(true);
@@ -660,6 +665,7 @@ export function HermesChatPanel({
                   <button
                     key={s.name}
                     type="button"
+                    ref={i === slashIndex ? slashItemRef : undefined}
                     onMouseDown={(e) => {
                       e.preventDefault();
                       pickSkill(s);
