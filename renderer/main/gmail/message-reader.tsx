@@ -183,10 +183,15 @@ function MessageBody({
           if (!doc) return;
           iframe.style.height = doc.documentElement.scrollHeight + "px";
           if (onQuoteText) {
-            doc.addEventListener("mouseup", () => {
+            // WKWebView doesn't reliably deliver `mouseup` from a sandboxed
+            // iframe to a parent-attached listener, but `selectionchange` on
+            // its document does — report the (final) non-empty selection.
+            const report = () => {
               const text = doc.getSelection()?.toString().trim() ?? "";
               if (text) onQuoteText(text);
-            });
+            };
+            doc.addEventListener("mouseup", report);
+            doc.addEventListener("selectionchange", report);
           }
         }}
       />
