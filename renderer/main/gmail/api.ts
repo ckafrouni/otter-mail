@@ -310,6 +310,10 @@ export const gmailApi = {
 
   getSettingsTarget: (): Promise<SettingsTarget | null> => ipc("window:getSettingsTarget"),
 
+  /** Cmd+click: open a single message in its own window. */
+  openMessageWindow: (accountId: string, messageId: string): Promise<void> =>
+    ipc("window:openMessage", { accountId, messageId }),
+
   takePendingMailto: (): Promise<MailtoTarget | null> => ipc("app:takePendingMailto"),
 
   getDefaultMailStatus: (): Promise<{ isDefault: boolean }> => ipc("app:getDefaultMailStatus"),

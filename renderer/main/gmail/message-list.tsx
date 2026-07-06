@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { IconBtn, HintTooltip } from "./te-ui";
 import { SlackAiIcon } from "./assistant-icons";
+import { gmailApi } from "./api";
 import {
   useMessages,
   useCombinedMessages,
@@ -491,6 +492,13 @@ function MessageRow({
             {message.starred ? "Unflag" : "Flag"}
           </ContextMenuItem>
           <ContextMenuSeparator />
+          <ContextMenuItem
+            icon="macwindow.on.rectangle"
+            onSelect={() => void gmailApi.openMessageWindow(ownerAccountId, message.id)}
+          >
+            Open in New Window
+          </ContextMenuItem>
+          <ContextMenuSeparator />
           <ContextMenuItem icon="paperplane" onSelect={onAskAssistant}>
             Send to Hermes in Slack…
           </ContextMenuItem>
@@ -795,7 +803,13 @@ export function MessageList({
   };
 
   const handleRowClick = (e: React.MouseEvent, message: GmailMessageSummary) => {
+    // Cmd/Ctrl+click opens the message in its own window (browser-style);
+    // Option+click toggles the multi-selection (moved off Cmd for this).
     if (e.metaKey || e.ctrlKey) {
+      void gmailApi.openMessageWindow(message.accountId ?? accountId, message.id);
+      return;
+    }
+    if (e.altKey) {
       toggleChecked(message.id);
       return;
     }

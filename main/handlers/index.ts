@@ -17,6 +17,7 @@ import {
 import { registerGmailHandlers } from "./gmail.js";
 import * as assistant from "../services/assistant.js";
 import * as assistantChat from "../services/assistant-chat.js";
+import { openMessageWindow } from "../windows/message-window.js";
 import { listMailApps, setDefaultMailHandler } from "../services/default-mail.js";
 import { configureAutoSync, syncAllAccounts } from "../services/mail-sync.js";
 import { takePendingMailto } from "../services/mailto-target.js";
@@ -65,6 +66,14 @@ export function registerHandlers(): void {
 
   ipcMain.handle("window:closeSettings", async (_event) => {
     getSettingsWindow()?.close();
+  });
+
+  // Cmd+click a message → standalone single-message window.
+  ipcMain.handle("window:openMessage", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    const accountId = typeof p?.accountId === "string" ? p.accountId : "";
+    const messageId = typeof p?.messageId === "string" ? p.messageId : "";
+    if (accountId && messageId) await openMessageWindow(accountId, messageId);
   });
 
   // Default-mail-app plumbing: the renderer pulls pending mailto targets on
