@@ -117,9 +117,12 @@ export async function send(text: string): Promise<{ ok: true }> {
   const token = await getToken();
   const config = await getConfig();
   if (!token || !config) throw new Error("Assistant is not configured.");
+  // Slack tags API-posted messages as bot-originated and agent frameworks
+  // (Hermes included) drop those by default; with the agent's allow_bots set
+  // to "mentions", a leading real @mention is what lets the handoff through.
   await slackApi(token, "chat.postMessage", {
     channel: config.channelId,
-    text,
+    text: `<@${config.botUserId}> ${text}`,
     unfurl_links: false,
     unfurl_media: false,
   });
