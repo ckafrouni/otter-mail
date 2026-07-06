@@ -66,6 +66,7 @@ import { buildLabelTree } from "./label-tree";
 import { isTypingTarget } from "./keyboard";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
 import { SYSTEM_LABEL_NAMES, labelDisplayName } from "./label-names";
+import { decodeEntities } from "./text";
 import type { GmailAccount, GmailLabel, GmailMessageSummary, ViewRule } from "./types";
 
 type ResolveLabel = (accountId: string | undefined, labelId: string) => GmailLabel | undefined;
@@ -449,7 +450,7 @@ function MessageRow({
               selected ? "text-(--te-sel-fg)/70" : "text-(--te-faint)",
             ].join(" ")}
           >
-            {message.snippet || " "}
+            {decodeEntities(message.snippet) || " "}
           </span>
           {/* Fixed-height single-line chip strip so every row measures the same. */}
           <div className="mt-0.5 flex h-5 items-center gap-1 overflow-hidden">

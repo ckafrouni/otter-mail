@@ -50,6 +50,7 @@ import {
 import { gmailApi } from "./api";
 import { CategoryChip, InboxChip, LabelChip, isCategoryLabelId } from "./label-chip";
 import { SenderAvatar } from "./sender-avatar";
+import { decodeEntities } from "./text";
 import { LabelPickerMenu } from "./label-picker-menu";
 import { parseAddressEntry, splitAddressList } from "./address";
 import { isTypingTarget } from "./keyboard";
@@ -547,7 +548,7 @@ export function CollapsedRow({
           {summary.fromName || summary.fromEmail}
         </span>
         <span className="min-w-0 flex-1 truncate text-[13px] text-(--te-faint)">
-          {summary.snippet}
+          {decodeEntities(summary.snippet)}
         </span>
         <span className="te-num shrink-0 text-[10px] text-(--te-faint)">
           {formatTime(summary.date)}
