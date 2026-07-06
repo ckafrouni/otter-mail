@@ -37,7 +37,8 @@ export function contextFromMessages(
   };
 }
 
-function buildHandoffText(question: string, context: AssistantContext): string {
+/** Question + pointer block, shared by the Slack handoff and the chat panel. */
+export function buildHandoffText(question: string, context: AssistantContext): string {
   const lines: string[] = [question.trim(), "", "— context from OtterMail —"];
   for (const c of context.conversations) {
     lines.push(

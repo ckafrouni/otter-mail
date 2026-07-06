@@ -68,6 +68,19 @@ export type AssistantStatus = {
   teamName: string | null;
 };
 
+/** Hermes chat panel (Responses API) state and stream events. */
+export type ChatStatus = {
+  configured: boolean;
+  baseUrl: string | null;
+  model: string | null;
+};
+export type ChatEvent =
+  | { requestId: string; type: "delta"; text: string }
+  | { requestId: string; type: "tool"; name: string }
+  | { requestId: string; type: "toolResult"; output: string }
+  | { requestId: string; type: "done"; responseId: string | null }
+  | { requestId: string; type: "error"; message: string };
+
 export type ModifyMessageParams = {
   accountId: string;
   messageId: string;
@@ -311,4 +324,19 @@ export const gmailApi = {
 
   /** Posts to the assistant's Slack DM as the user, then opens Slack there. */
   assistantSend: (text: string): Promise<{ ok: boolean }> => ipc("assistant:send", { text }),
+
+  chatStatus: (): Promise<ChatStatus> => ipc("assistant:chatStatus"),
+
+  chatConfigure: (params: { baseUrl: string; apiKey: string }): Promise<ChatStatus> =>
+    ipc("assistant:chatConfigure", params),
+
+  /** Streams via the assistant:chatEvent broadcast; resolves when the turn ends. */
+  chatSend: (params: {
+    requestId: string;
+    input: string;
+    previousResponseId?: string;
+  }): Promise<{ ok: boolean }> => ipc("assistant:chatSend", params),
+
+  chatCancel: (requestId: string): Promise<{ ok: boolean }> =>
+    ipc("assistant:chatCancel", { requestId }),
 };

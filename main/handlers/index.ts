@@ -16,6 +16,7 @@ import {
 } from "../windows/settings-window.js";
 import { registerGmailHandlers } from "./gmail.js";
 import * as assistant from "../services/assistant.js";
+import * as assistantChat from "../services/assistant-chat.js";
 import { listMailApps, setDefaultMailHandler } from "../services/default-mail.js";
 import { configureAutoSync, syncAllAccounts } from "../services/mail-sync.js";
 import { takePendingMailto } from "../services/mailto-target.js";
@@ -112,6 +113,39 @@ export function registerHandlers(): void {
     if (!text) throw new Error("Nothing to send.");
     logger.info("handlers", "assistant:send", { chars: text.length });
     return assistant.send(text);
+  });
+
+  // Hermes chat panel: streaming Responses API bridge. Events flow back via
+  // the assistant:chatEvent broadcast; the key never leaves the backend.
+  ipcMain.handle("assistant:chatStatus", async () => assistantChat.chatStatus());
+
+  ipcMain.handle("assistant:chatConfigure", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    const baseUrl = typeof p?.baseUrl === "string" ? p.baseUrl.trim() : "";
+    const apiKey = typeof p?.apiKey === "string" ? p.apiKey.trim() : "";
+    if (!baseUrl || !apiKey) throw new Error("Base URL and API key are both required.");
+    return assistantChat.chatConfigure(baseUrl, apiKey);
+  });
+
+  ipcMain.handle("assistant:chatSend", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    const requestId = typeof p?.requestId === "string" ? p.requestId : "";
+    const input = typeof p?.input === "string" ? p.input : "";
+    if (!requestId || !input.trim()) throw new Error("Nothing to send.");
+    return assistantChat.chatSend({
+      requestId,
+      input,
+      previousResponseId:
+        typeof p?.previousResponseId === "string" && p.previousResponseId
+          ? p.previousResponseId
+          : undefined,
+    });
+  });
+
+  ipcMain.handle("assistant:chatCancel", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    if (typeof p?.requestId === "string") assistantChat.chatCancel(p.requestId);
+    return { ok: true };
   });
 
   // Register Gmail handlers

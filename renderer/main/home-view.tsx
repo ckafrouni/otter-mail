@@ -5,6 +5,7 @@ import { MessageList } from "./gmail/message-list";
 import { MessageReader } from "./gmail/message-reader";
 import { NewMessageView } from "./gmail/new-message-view";
 import { CommandPalette } from "./gmail/command-palette";
+import { HermesChatPanel } from "./gmail/hermes-chat";
 import { ShortcutsHelpDialog } from "./gmail/shortcuts-help-dialog";
 import { TopBar } from "./gmail/top-bar";
 import { isTypingTarget } from "./gmail/keyboard";
@@ -44,7 +45,7 @@ type NavLoc = {
 };
 
 /** Drag-resizable pane width persisted to localStorage. */
-function useStoredWidth(key: string, def: number, min: number, max: number) {
+function useStoredWidth(key: string, def: number, min: number, max: number, dir: 1 | -1 = 1) {
   const [width, setWidth] = useState(() => {
     const saved = Number(localStorage.getItem(key));
     return Number.isFinite(saved) && saved >= min && saved <= max ? saved : def;
@@ -57,7 +58,8 @@ function useStoredWidth(key: string, def: number, min: number, max: number) {
     const startX = e.clientX;
     const startW = widthRef.current;
     const move = (ev: PointerEvent) => {
-      setWidth(Math.min(max, Math.max(min, startW + ev.clientX - startX)));
+      // dir -1: right-side panes grow when the handle drags left.
+      setWidth(Math.min(max, Math.max(min, startW + dir * (ev.clientX - startX))));
     };
     const up = () => {
       window.removeEventListener("pointermove", move);
@@ -122,6 +124,14 @@ export function HomeView() {
 
   const sidebarPane = useStoredWidth("gmail:pane:sidebar", 230, 180, 320);
   const listPane = useStoredWidth("gmail:pane:list", 400, 300, 640);
+  const chatPane = useStoredWidth("gmail:pane:chat", 340, 280, 560, -1);
+  const [chatOpen, setChatOpen] = useState(() => localStorage.getItem("gmail:chat-open") === "1");
+  const toggleChat = () => {
+    setChatOpen((open) => {
+      localStorage.setItem("gmail:chat-open", open ? "0" : "1");
+      return !open;
+    });
+  };
 
   // MessageList fills this each render; reader archive/trash advance through it.
   const advanceRef = useRef<(fromMessageId: string) => boolean>(() => false);
@@ -137,6 +147,17 @@ export function HomeView() {
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         setPaletteOpen((o) => !o);
+        return;
+      }
+      // ⌘I toggles the Hermes chat panel — but only outside a text field, so
+      // it keeps meaning italic in the composer/rich-text editor.
+      if (e.key === "i" && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+        if (isTypingTarget(e)) return;
+        e.preventDefault();
+        setChatOpen((open) => {
+          localStorage.setItem("gmail:chat-open", open ? "0" : "1");
+          return !open;
+        });
       }
     };
     window.addEventListener("keydown", down);
@@ -625,6 +646,8 @@ export function HomeView() {
           onAddAccount={() => void handleAddAccount()}
           onOpenPalette={() => setPaletteOpen(true)}
           onOpenHelp={() => setHelpOpen(true)}
+          chatOpen={chatOpen}
+          onToggleChat={toggleChat}
         />
         {/* Outer bottom corners run concentric with the 26px window radius (4px margin). */}
         <div className="flex min-h-0 flex-1 px-1 pb-1">
@@ -664,7 +687,9 @@ export function HomeView() {
               <PaneResizer onPointerDown={listPane.start} />
             </>
           ) : null}
-          <div className={`${PANEL_CARD_GLASS} min-w-0 flex-1 rounded-br-[22px]`}>
+          <div
+            className={`${PANEL_CARD_GLASS} min-w-0 flex-1 ${chatOpen ? "" : "rounded-br-[22px]"}`}
+          >
             {composeOpen && composeAccountId ? (
               <NewMessageView
                 key={mailtoSeq}
@@ -695,6 +720,21 @@ export function HomeView() {
               </div>
             )}
           </div>
+          {chatOpen ? (
+            <>
+              <PaneResizer onPointerDown={chatPane.start} />
+              <div
+                style={{ width: chatPane.width }}
+                className={`${PANEL_CARD_GLASS} shrink-0 rounded-br-[22px]`}
+              >
+                <HermesChatPanel
+                  accountId={selectedMessageId ? readerAccount : null}
+                  messageId={selectedMessageId}
+                  onClose={toggleChat}
+                />
+              </div>
+            </>
+          ) : null}
         </div>
       </div>
 

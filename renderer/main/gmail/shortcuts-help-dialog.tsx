@@ -15,6 +15,7 @@ const SECTIONS: { title: string; rows: [string, string][] }[] = [
       ["⌘1", "Combined mailbox"],
       ["⌘2–9", "Switch account"],
       ["⌘K", "Command palette"],
+      ["⌘I", "Chat with Hermes"],
     ],
   },
   {

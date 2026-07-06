@@ -48,6 +48,7 @@ import type { NativeThemeInfo } from "@glaze/core/ipc";
 import {
   gmailApi,
   type AssistantStatus,
+  type ChatStatus,
   type MailApp,
   type NotificationsMode,
   type SettingsPane,
@@ -398,6 +399,10 @@ export function SettingsView() {
   const [assistantToken, setAssistantToken] = useState("");
   const [assistantBotId, setAssistantBotId] = useState("");
   const [assistantSaving, setAssistantSaving] = useState(false);
+  const [chatStatus, setChatStatus] = useState<ChatStatus | null>(null);
+  const [chatBaseUrl, setChatBaseUrl] = useState("");
+  const [chatApiKey, setChatApiKey] = useState("");
+  const [chatSaving, setChatSaving] = useState(false);
 
   // Navigate to the pane (and view) other windows deep-link to, on mount and
   // whenever the backend signals a new target while this window is open.
@@ -542,12 +547,44 @@ export function SettingsView() {
     }
   };
 
+  const loadChatStatus = async () => {
+    try {
+      setChatStatus(await gmailApi.chatStatus());
+    } catch (error) {
+      console.log("[SettingsView:chatStatus] failed", { error: String(error) });
+    }
+  };
+
+  const handleChatSave = async () => {
+    if (!chatBaseUrl.trim() || !chatApiKey.trim()) {
+      toast.error("API base URL and key are both required");
+      return;
+    }
+    setChatSaving(true);
+    console.log("[SettingsView:chatConfigure]");
+    try {
+      const status = await gmailApi.chatConfigure({
+        baseUrl: chatBaseUrl.trim(),
+        apiKey: chatApiKey.trim(),
+      });
+      setChatStatus(status);
+      setChatBaseUrl("");
+      setChatApiKey("");
+      toast.success(`Hermes chat connected (${status.model ?? "agent"})`);
+    } catch (error) {
+      toast.error(`Could not connect: ${error}`);
+    } finally {
+      setChatSaving(false);
+    }
+  };
+
   useEffect(() => {
     void refreshThemeInfo();
     void loadCredentials();
     void loadSyncSettings();
     void loadMailApps();
     void loadAssistantStatus();
+    void loadChatStatus();
   }, []);
 
   const handleSyncIntervalChange = async (value: string) => {
@@ -781,6 +818,35 @@ export function SettingsView() {
                         : assistantStatus?.configured
                           ? "Reconnect"
                           : "Connect"}
+                    </Button>
+                  </div>
+                </Field>
+                <Field
+                  label="Hermes chat"
+                  description={
+                    chatStatus?.configured
+                      ? `Chat panel connected to ${chatStatus.baseUrl} (${chatStatus.model}).`
+                      : "The chat panel talks to Hermes' OpenAI-compatible API server over Tailscale. Paste the /v1 base URL and the API_SERVER_KEY."
+                  }
+                >
+                  <div className="flex flex-col items-end gap-1.5">
+                    <Input
+                      value={chatBaseUrl}
+                      onChange={(e) => setChatBaseUrl(e.target.value)}
+                      placeholder={chatStatus?.baseUrl ?? "https://<host>:8642/v1"}
+                      aria-label="Hermes API base URL"
+                      className="w-56"
+                    />
+                    <Input
+                      type="password"
+                      value={chatApiKey}
+                      onChange={(e) => setChatApiKey(e.target.value)}
+                      placeholder={chatStatus?.configured ? "Replace API key" : "API key"}
+                      aria-label="Hermes API key"
+                      className="w-56"
+                    />
+                    <Button size="small" disabled={chatSaving} onClick={() => void handleChatSave()}>
+                      {chatSaving ? "Connecting…" : chatStatus?.configured ? "Reconnect" : "Connect"}
                     </Button>
                   </div>
                 </Field>

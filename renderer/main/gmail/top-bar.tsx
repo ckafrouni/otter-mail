@@ -6,6 +6,7 @@ import {
   ContextMenuItem,
 } from "@glaze/core/components";
 import {
+  BotMessageSquareIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   CircleHelpIcon,
@@ -37,6 +38,8 @@ type TopBarProps = {
   onAddAccount: () => void;
   onOpenPalette: () => void;
   onOpenHelp: () => void;
+  chatOpen: boolean;
+  onToggleChat: () => void;
 };
 
 /** Round mailbox-switcher button, sized for the header row. */
@@ -144,6 +147,8 @@ export function TopBar({
   onAddAccount,
   onOpenPalette,
   onOpenHelp,
+  chatOpen,
+  onToggleChat,
 }: TopBarProps) {
   const isCombined = selectedAccountId === COMBINED_ACCOUNT_ID;
 
@@ -284,6 +289,12 @@ export function TopBar({
       ) : null}
 
       <DefaultMailButton />
+
+      <HintTooltip label={chatOpen ? "Hide Hermes chat" : "Chat with Hermes"} hint="⌘I">
+        <IconBtn label="Hermes chat" active={chatOpen} onClick={onToggleChat} className="size-7">
+          <BotMessageSquareIcon className="size-4" />
+        </IconBtn>
+      </HintTooltip>
 
       <HintTooltip label="Keyboard shortcuts" hint="?">
         <IconBtn label="Help" onClick={onOpenHelp} className="size-7">
