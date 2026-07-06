@@ -11,19 +11,26 @@ import {
   SendHorizontalIcon,
   SendIcon,
   SquarePlusIcon,
+  TextQuoteIcon,
   Trash2Icon,
   WrenchIcon,
   XIcon,
 } from "lucide-react";
 import { IconBtn, HintTooltip } from "./te-ui";
 import { gmailApi, type ChatEvent } from "./api";
-import { buildHandoffText, contextFromMessages, type AssistantContext } from "./ask-assistant";
+import {
+  buildHandoffText,
+  contextFromMessages,
+  contextFromQuote,
+  type AssistantContext,
+  type QuoteContext,
+} from "./ask-assistant";
 import { ChatMarkdown } from "./chat-markdown";
 import { useAccounts, useMessage } from "./hooks";
 import type { GmailMessageSummary } from "./types";
 
 /** What the attached context items are, so the chip shows a fitting icon. */
-type ContextKind = "draft" | "sent" | "mail" | "mixed";
+type ContextKind = "draft" | "sent" | "mail" | "mixed" | "quote";
 type ContextMeta = { subjects: string[]; count: number; kind: ContextKind };
 
 /** Classify one message from its labels. */
@@ -42,13 +49,15 @@ function contextKind(labelSets: string[][]): ContextKind {
 
 function ContextKindIcon({ kind, className }: { kind: ContextKind; className?: string }) {
   const Icon =
-    kind === "draft"
-      ? FilePenLineIcon
-      : kind === "sent"
-        ? SendIcon
-        : kind === "mixed"
-          ? LayersIcon
-          : MailIcon;
+    kind === "quote"
+      ? TextQuoteIcon
+      : kind === "draft"
+        ? FilePenLineIcon
+        : kind === "sent"
+          ? SendIcon
+          : kind === "mixed"
+            ? LayersIcon
+            : MailIcon;
   return <Icon className={className} />;
 }
 
@@ -283,6 +292,8 @@ export function HermesChatPanel({
   accountId,
   messageId,
   selectedRows,
+  quote,
+  onClearQuote,
   onClose,
 }: {
   /** Account of the open conversation (context attach), null when none. */
@@ -290,6 +301,9 @@ export function HermesChatPanel({
   messageId: string | null;
   /** Multi-selected list rows; take priority over the open conversation. */
   selectedRows?: GmailMessageSummary[];
+  /** A highlighted excerpt to attach; overrides the auto-derived context. */
+  quote?: QuoteContext | null;
+  onClearQuote?: () => void;
   onClose: () => void;
 }) {
   const [store, setStore] = useState<Store>(() => loadStore());
@@ -325,28 +339,36 @@ export function HermesChatPanel({
     accountsQuery.data?.find((a) => a.id === id)?.email ?? id ?? "";
   const openMessage = useMessage(accountId, messageId);
   const multiSelected = selectedRows && selectedRows.length > 0;
-  const context: AssistantContext | null = multiSelected
-    ? contextFromMessages(selectedRows, accountEmailById)
-    : accountId && messageId && openMessage.data
-      ? {
-          conversations: [
-            {
-              account: accountEmailById(accountId),
-              threadId: openMessage.data.threadId || openMessage.data.id,
-              subject: openMessage.data.subject || "(no subject)",
-              from: openMessage.data.fromEmail,
-              messageIds: [openMessage.data.id],
-            },
-          ],
-        }
-      : null;
-  // Draft / sent / mail kind of what's attached, for the chip's icon.
+  // A highlighted excerpt wins over any auto-derived context.
+  const context: AssistantContext | null = quote
+    ? contextFromQuote(quote)
+    : multiSelected
+      ? contextFromMessages(selectedRows, accountEmailById)
+      : accountId && messageId && openMessage.data
+        ? {
+            conversations: [
+              {
+                account: accountEmailById(accountId),
+                threadId: openMessage.data.threadId || openMessage.data.id,
+                subject: openMessage.data.subject || "(no subject)",
+                from: openMessage.data.fromEmail,
+                messageIds: [openMessage.data.id],
+              },
+            ],
+          }
+        : null;
+  // Draft / sent / mail / quote kind of what's attached, for the chip's icon.
   const contextLabelSets: string[][] = multiSelected
     ? selectedRows.map((r) => r.labelIds)
     : openMessage.data
       ? [openMessage.data.labelIds]
       : [];
-  const attachKind = contextKind(contextLabelSets);
+  const attachKind: ContextKind = quote ? "quote" : contextKind(contextLabelSets);
+
+  // A fresh quote re-arms the attach toggle so it isn't silently dropped.
+  useEffect(() => {
+    if (quote) setAttach(true);
+  }, [quote]);
 
   // Stream events land in their originating conversation (not necessarily the
   // active one); the listener mounts once and reads the stream via a ref.
@@ -415,7 +437,7 @@ export function HermesChatPanel({
           context: attached
             ? {
                 count: attached.conversations.length,
-                subjects: attached.conversations.map((x) => x.subject),
+                subjects: quote ? [quote.text] : attached.conversations.map((x) => x.subject),
                 kind: attachKind,
               }
             : undefined,
@@ -424,6 +446,8 @@ export function HermesChatPanel({
       ],
     }));
     setStreaming({ requestId, convoId });
+    // A quote is one-shot — release it once it's been sent.
+    if (attached && quote) onClearQuote?.();
     void gmailApi
       .chatSend({ requestId, input, previousResponseId: prevResponseId })
       .catch(() => {
@@ -605,9 +629,11 @@ export function HermesChatPanel({
               >
                 <ContextKindIcon kind={attachKind} className="size-3 shrink-0" />
                 <span className="min-w-0 truncate">
-                  {context.conversations.length > 1
-                    ? `${context.conversations.length} conversations`
-                    : context.conversations[0].subject}
+                  {quote
+                    ? `“${quote.text}”`
+                    : context.conversations.length > 1
+                      ? `${context.conversations.length} conversations`
+                      : context.conversations[0].subject}
                 </span>
               </button>
             ) : null}

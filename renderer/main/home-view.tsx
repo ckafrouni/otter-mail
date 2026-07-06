@@ -23,6 +23,7 @@ import {
 import { takeUndo, type UndoAction } from "./gmail/undo";
 import { getAccountColor, getAccountContrastColor } from "./gmail/account-style";
 import { gmailApi, type MailtoTarget } from "./gmail/api";
+import type { QuoteContext } from "./gmail/ask-assistant";
 import type { GmailMessageSummary } from "./gmail/types";
 import {
   useMailViews,
@@ -138,6 +139,8 @@ export function HomeView() {
     localStorage.setItem("gmail:chat-open", "1");
     setChatOpen(true);
   };
+  // A highlighted excerpt handed from the reader to the chat panel (one-shot).
+  const [pendingQuote, setPendingQuote] = useState<QuoteContext | null>(null);
 
   // MessageList fills this each render; reader archive/trash advance through it.
   const advanceRef = useRef<(fromMessageId: string) => boolean>(() => false);
@@ -719,6 +722,10 @@ export function HomeView() {
                 }}
                 onAdvance={handleReaderAdvance}
                 onOpenChat={openChat}
+                onQuote={(q) => {
+                  setPendingQuote(q);
+                  openChat();
+                }}
               />
             ) : (
               <div className="flex h-full items-center justify-center">
@@ -734,13 +741,18 @@ export function HomeView() {
               <PaneResizer onPointerDown={chatPane.start} />
               <div
                 style={{ width: chatPane.width }}
-                className={`${PANEL_CARD_GLASS} shrink-0 rounded-br-[22px]`}
+                className={`${PANEL_CARD} shrink-0 rounded-br-[22px]`}
               >
                 <HermesChatPanel
                   accountId={selectedMessageId ? readerAccount : null}
                   messageId={selectedMessageId}
                   selectedRows={chatSelection}
-                  onClose={toggleChat}
+                  quote={pendingQuote}
+                  onClearQuote={() => setPendingQuote(null)}
+                  onClose={() => {
+                    setPendingQuote(null);
+                    toggleChat();
+                  }}
                 />
               </div>
             </>

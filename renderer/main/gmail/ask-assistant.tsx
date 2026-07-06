@@ -18,7 +18,19 @@ export type AssistantContext = {
     subject: string;
     from: string;
     messageIds: string[];
+    /** Present when the item is a highlighted excerpt, not the whole thread. */
+    quote?: string;
   }[];
+};
+
+/** A text excerpt selected from a message, plus its thread pointer. */
+export type QuoteContext = {
+  text: string;
+  account: string;
+  accountId: string;
+  threadId: string;
+  subject: string;
+  messageId: string;
 };
 
 /** One row (or thread rep) → context entry. */
@@ -37,13 +49,35 @@ export function contextFromMessages(
   };
 }
 
+/** A highlighted excerpt → a single quote context entry. */
+export function contextFromQuote(q: QuoteContext): AssistantContext {
+  return {
+    conversations: [
+      {
+        account: q.account,
+        threadId: q.threadId,
+        subject: q.subject,
+        from: "",
+        messageIds: [q.messageId],
+        quote: q.text,
+      },
+    ],
+  };
+}
+
 /** Question + pointer block, shared by the Slack handoff and the chat panel. */
 export function buildHandoffText(question: string, context: AssistantContext): string {
   const lines: string[] = [question.trim(), "", "— context from OtterMail —"];
   for (const c of context.conversations) {
-    lines.push(
-      `• [${c.account}] "${c.subject}" — from ${c.from} (threadId ${c.threadId}, message ${c.messageIds.join(", ")})`,
-    );
+    if (c.quote) {
+      lines.push(
+        `• Quoted from "${c.subject}" [${c.account}] (threadId ${c.threadId}):\n  “${c.quote}”`,
+      );
+    } else {
+      lines.push(
+        `• [${c.account}] "${c.subject}" — from ${c.from} (threadId ${c.threadId}, message ${c.messageIds.join(", ")})`,
+      );
+    }
   }
   lines.push("Fetch full content with gog if needed.");
   return lines.join("\n");
