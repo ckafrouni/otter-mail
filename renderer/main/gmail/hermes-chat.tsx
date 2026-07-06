@@ -69,8 +69,43 @@ type ChatTurn = {
   tools: { name: string; output?: string }[];
   /** Attached mail context, shown as a chip above the user's message. */
   context?: ContextMeta;
+  /** Invoked skill, rendered as a badge on the user's message. */
+  skill?: string;
   error?: string;
 };
+
+/** Command-style badge for an invoked skill (composer + user message). */
+function SkillBadge({
+  name,
+  onRemove,
+  onAccent,
+}: {
+  name: string;
+  onRemove?: () => void;
+  onAccent?: boolean;
+}) {
+  return (
+    <span
+      className={[
+        "inline-flex shrink-0 items-center gap-1 rounded-[4px] px-1.5 py-0.5 text-[12px] font-semibold",
+        onAccent ? "bg-(--te-sel-fg)/20 text-(--te-sel-fg)" : "bg-(--te-ctl) text-(--te-text)",
+      ].join(" ")}
+    >
+      <span className="opacity-50">/</span>
+      {name}
+      {onRemove ? (
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label="Remove skill"
+          className="opacity-70 hover:opacity-100"
+        >
+          <XIcon className="size-3" />
+        </button>
+      ) : null}
+    </span>
+  );
+}
 
 /** Chip recap of the context sent with a user turn. */
 function ContextRecap({ context }: { context: ContextMeta }) {
@@ -341,6 +376,23 @@ export function HermesChatPanel({
   const [slashDismissed, setSlashDismissed] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
   const slashItemRef = useRef<HTMLButtonElement | null>(null);
+  // A picked skill is promoted out of the textarea into a badge; the textarea
+  // then holds only the instruction.
+  const [activeSkill, setActiveSkill] = useState<Skill | null>(null);
+  const handleDraftChange = (value: string) => {
+    setSlashDismissed(false);
+    // Typing a space after a complete "/known-skill" promotes it to the badge.
+    if (!activeSkill) {
+      const m = value.match(/^\/([a-z0-9-]+)\s([\s\S]*)$/i);
+      const sk = m && skills.find((s) => s.name.toLowerCase() === m[1].toLowerCase());
+      if (sk) {
+        setActiveSkill(sk);
+        setDraft(m![2]);
+        return;
+      }
+    }
+    setDraft(value);
+  };
   // The menu opens only while typing a bare "/slug" (no space yet).
   const slashMatch = draft.match(/^\/([a-z0-9-]*)$/i);
   const slashQuery = slashMatch ? slashMatch[1].toLowerCase() : null;
@@ -357,7 +409,8 @@ export function HermesChatPanel({
     slashItemRef.current?.scrollIntoView({ block: "nearest" });
   }, [slashIndex]);
   const pickSkill = (skill: Skill) => {
-    setDraft(`/${skill.name} `);
+    setActiveSkill(skill);
+    setDraft("");
     setSlashDismissed(true);
     inputRef.current?.focus();
   };
@@ -446,28 +499,26 @@ export function HermesChatPanel({
 
   const send = () => {
     const question = draft.trim();
-    if (!question || streaming || configured === false || !active) return;
+    if ((!question && !activeSkill) || streaming || configured === false || !active) return;
     const requestId = crypto.randomUUID();
     const convoId = active.id;
     const attached = attach && context ? context : null;
-    // A leading "/skill" invokes that skill: the agent loads it via skill_view
-    // and follows it. The displayed turn keeps the raw text the user typed.
-    const skillMatch = question.match(/^\/([a-z0-9-]+)\s*([\s\S]*)$/i);
-    const skill = skillMatch
-      ? skills.find((s) => s.name.toLowerCase() === skillMatch[1].toLowerCase())
-      : undefined;
+    // An active skill invokes it: the agent loads it via skill_view and follows
+    // it. The displayed turn shows the skill as a badge + the instruction.
+    const skill = activeSkill;
     const baseInput = skill
       ? `[IMPORTANT: The user invoked the "${skill.name}" skill. Load it with skill_view and follow its instructions.]${
-          skillMatch![2].trim() ? `\n\n${skillMatch![2].trim()}` : ""
+          question ? `\n\n${question}` : ""
         }`
       : question;
     const input = attached ? buildHandoffText(baseInput, attached) : baseInput;
     const prevResponseId = active.lastResponseId ?? undefined;
-    console.log("[HermesChat:send]", { requestId, attached: Boolean(attached) });
+    console.log("[HermesChat:send]", { requestId, attached: Boolean(attached), skill: skill?.name });
     setDraft("");
+    setActiveSkill(null);
     patchConversation(convoId, (c) => ({
       ...c,
-      title: c.turns.length === 0 ? clampTitle(question) : c.title,
+      title: c.turns.length === 0 ? clampTitle(skill ? `/${skill.name} ${question}` : question) : c.title,
       updatedAt: Date.now(),
       turns: [
         ...c.turns,
@@ -476,6 +527,7 @@ export function HermesChatPanel({
           role: "user",
           text: question,
           tools: [],
+          skill: skill?.name,
           context: attached
             ? {
                 count: attached.conversations.length,
@@ -616,6 +668,11 @@ export function HermesChatPanel({
                       <div>
                         {turn.context ? <ContextRecap context={turn.context} /> : null}
                         <div className="ml-6 rounded-[8px] rounded-br-[2px] bg-(--te-sel) px-3 py-2 text-[13px] leading-relaxed text-(--te-sel-fg)">
+                          {turn.skill ? (
+                            <span className="mb-1 mr-1.5 inline-flex align-middle">
+                              <SkillBadge name={turn.skill} onAccent />
+                            </span>
+                          ) : null}
                           {turn.text}
                         </div>
                       </div>
@@ -706,14 +763,26 @@ export function HermesChatPanel({
               </button>
             ) : null}
             <div className="rounded-[6px] border border-(--te-outline) bg-(--te-panel) focus-within:border-(--te-outline-hover)">
+              {activeSkill ? (
+                <div className="px-2.5 pt-2">
+                  <SkillBadge name={activeSkill.name} onRemove={() => setActiveSkill(null)} />
+                </div>
+              ) : null}
               <textarea
                 ref={inputRef}
                 value={draft}
-                onChange={(e) => {
-                  setDraft(e.target.value);
-                  setSlashDismissed(false);
-                }}
+                onChange={(e) => handleDraftChange(e.target.value)}
                 onKeyDown={(e) => {
+                  if (
+                    e.key === "Backspace" &&
+                    draft === "" &&
+                    activeSkill &&
+                    !slashOpen
+                  ) {
+                    e.preventDefault();
+                    setActiveSkill(null);
+                    return;
+                  }
                   if (slashOpen) {
                     if (e.key === "ArrowDown") {
                       e.preventDefault();
@@ -758,7 +827,7 @@ export function HermesChatPanel({
                   <button
                     type="button"
                     onClick={send}
-                    disabled={!draft.trim()}
+                    disabled={!draft.trim() && !activeSkill}
                     aria-label="Send"
                     className="flex h-7 w-9 items-center justify-center rounded-[5px] bg-(--te-accent) text-white hover:brightness-110 disabled:bg-(--te-ctl) disabled:text-(--te-faint)"
                   >
