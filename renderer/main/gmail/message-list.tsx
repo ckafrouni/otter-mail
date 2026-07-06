@@ -330,6 +330,7 @@ function MessageRow({
         ref={rowRef}
         type="button"
         onClick={onRowClick}
+        onDoubleClick={() => void gmailApi.openMessageWindow(ownerAccountId, message.id)}
         // shift-click must not start a text selection
         onMouseDown={(e) => {
           if (e.shiftKey) e.preventDefault();

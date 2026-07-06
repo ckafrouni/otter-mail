@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { injectActiveTheme } from "@glaze/core/components";
 import { MessageReader } from "../main/gmail/message-reader";
 import { HermesChatPanel } from "../main/gmail/hermes-chat";
+import { isTypingTarget } from "../main/gmail/keyboard";
 import { TE_DARK_THEME, TE_LIGHT_THEME } from "../main/gmail/te-theme";
 import type { QuoteContext } from "../main/gmail/ask-assistant";
 
@@ -29,8 +30,20 @@ export function MessageWindow() {
   const accountId = params.get("account") ?? "";
   const messageId = params.get("message") ?? "";
 
-  // A highlighted excerpt handed to the always-open chat panel.
+  // Chat collapsed by default; ⌘I toggles it (same as the main window).
+  const [chatOpen, setChatOpen] = useState(false);
   const [pendingQuote, setPendingQuote] = useState<QuoteContext | null>(null);
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === "i" && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+        if (isTypingTarget(e)) return;
+        e.preventDefault();
+        setChatOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", down);
+    return () => window.removeEventListener("keydown", down);
+  }, []);
 
   if (!accountId || !messageId) {
     return (
@@ -45,22 +58,31 @@ export function MessageWindow() {
       {/* Drag strip + native traffic-light clearance (matches the main TopBar). */}
       <div className="drag-region h-11 shrink-0" />
       <div className="flex min-h-0 flex-1 gap-1 px-1 pb-1">
-        <div className="min-w-0 flex-1 overflow-hidden rounded-[10px] rounded-bl-[16px] border border-(--te-border) bg-(--te-card-glass)">
+        <div
+          className={`min-w-0 flex-1 overflow-hidden rounded-[10px] rounded-bl-[16px] border border-(--te-border) bg-(--te-card-glass) ${
+            chatOpen ? "" : "rounded-br-[16px]"
+          }`}
+        >
           <MessageReader
             accountId={accountId}
             messageId={messageId}
-            onQuote={(q) => setPendingQuote(q)}
+            onOpenChat={() => setChatOpen(true)}
+            onQuote={(q) => {
+              if (chatOpen) setPendingQuote(q);
+            }}
           />
         </div>
-        <div className="w-[360px] shrink-0 overflow-hidden rounded-[10px] rounded-br-[16px] border border-(--te-border) bg-(--te-card)">
-          <HermesChatPanel
-            accountId={accountId}
-            messageId={messageId}
-            quote={pendingQuote}
-            onClearQuote={() => setPendingQuote(null)}
-            onClose={() => {}}
-          />
-        </div>
+        {chatOpen ? (
+          <div className="w-[360px] shrink-0 overflow-hidden rounded-[10px] rounded-br-[16px] border border-(--te-border) bg-(--te-card)">
+            <HermesChatPanel
+              accountId={accountId}
+              messageId={messageId}
+              quote={pendingQuote}
+              onClearQuote={() => setPendingQuote(null)}
+              onClose={() => setChatOpen(false)}
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   );
