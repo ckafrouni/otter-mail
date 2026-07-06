@@ -166,77 +166,82 @@ export function TopBar({
         <ChevronRightIcon className="size-4.5" />
       </IconBtn>
 
-      {/* Mailbox knobs: Combined + one per account, like the old left rail. */}
-      <div className="flex shrink-0 items-center gap-1.5 px-2">
+      {/* Mailbox switcher: Combined stands alone, the accounts form a tab group. */}
+      <div className="flex shrink-0 items-center gap-2 px-2">
         {accounts.length > 1 ? (
-          <AccountKnob
-            label="Combined"
-            hint="⌘1"
-            selected={isCombined}
-            onClick={() => onSelectAccount(COMBINED_ACCOUNT_ID)}
-            background="var(--te-strong)"
-            menu={
-              <>
-                <ContextMenuItem
-                  icon="slider.horizontal.3"
-                  onSelect={() =>
-                    void gmailApi.openSettings({ pane: "views", mailbox: COMBINED_ACCOUNT_ID })
-                  }
-                >
-                  Manage Views…
-                </ContextMenuItem>
-                <ContextMenuItem
-                  icon="gearshape"
-                  onSelect={() => void gmailApi.openSettings({ pane: "general" })}
-                >
-                  Settings…
-                </ContextMenuItem>
-              </>
-            }
-          >
-            <LayersIcon className="size-3.5" style={{ color: "var(--te-card)" }} />
-          </AccountKnob>
+          <>
+            <AccountKnob
+              label="Combined"
+              hint="⌘1"
+              selected={isCombined}
+              onClick={() => onSelectAccount(COMBINED_ACCOUNT_ID)}
+              background="var(--te-strong)"
+              menu={
+                <>
+                  <ContextMenuItem
+                    icon="slider.horizontal.3"
+                    onSelect={() =>
+                      void gmailApi.openSettings({ pane: "views", mailbox: COMBINED_ACCOUNT_ID })
+                    }
+                  >
+                    Manage Views…
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    icon="gearshape"
+                    onSelect={() => void gmailApi.openSettings({ pane: "general" })}
+                  >
+                    Settings…
+                  </ContextMenuItem>
+                </>
+              }
+            >
+              <LayersIcon className="size-3.5" style={{ color: "var(--te-card)" }} />
+            </AccountKnob>
+            <span className="h-5 w-px shrink-0 bg-(--te-border)" aria-hidden />
+          </>
         ) : null}
-        {accounts.map((account, i) => (
-          <AccountKnob
-            key={account.id}
-            label={getAccountDisplayName(account)}
-            hint={accounts.length > 1 ? `⌘${i + 2}` : "⌘1"}
-            selected={selectedAccountId === account.id}
-            onClick={() => onSelectAccount(account.id)}
-            background={getAccountColor(account)}
-            menu={
-              <>
-                <ContextMenuItem
-                  icon="person.crop.circle"
-                  onSelect={() => void gmailApi.openSettings({ pane: "accounts" })}
-                >
-                  Account Settings…
-                </ContextMenuItem>
-                <ContextMenuItem
-                  icon="slider.horizontal.3"
-                  onSelect={() =>
-                    void gmailApi.openSettings({ pane: "views", mailbox: account.id })
-                  }
-                >
-                  Manage Views…
-                </ContextMenuItem>
-              </>
-            }
-          >
-            {(getAccountDisplayName(account)[0] ?? "?").toUpperCase()}
-          </AccountKnob>
-        ))}
-        <HintTooltip label="Add Gmail account">
-          <button
-            type="button"
-            aria-label="Add Gmail account"
-            onClick={onAddAccount}
-            className="flex size-6 shrink-0 items-center justify-center rounded-full border border-(--te-outline) text-(--te-muted) hover:border-(--te-outline-hover) hover:text-(--te-strong)"
-          >
-            <PlusIcon className="size-3.5" />
-          </button>
-        </HintTooltip>
+        <div className="flex items-center gap-1 rounded-full border border-(--te-border) bg-(--te-ctl) p-1">
+          {accounts.map((account, i) => (
+            <AccountKnob
+              key={account.id}
+              label={getAccountDisplayName(account)}
+              hint={accounts.length > 1 ? `⌘${i + 2}` : "⌘1"}
+              selected={selectedAccountId === account.id}
+              onClick={() => onSelectAccount(account.id)}
+              background={getAccountColor(account)}
+              menu={
+                <>
+                  <ContextMenuItem
+                    icon="person.crop.circle"
+                    onSelect={() => void gmailApi.openSettings({ pane: "accounts" })}
+                  >
+                    Account Settings…
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    icon="slider.horizontal.3"
+                    onSelect={() =>
+                      void gmailApi.openSettings({ pane: "views", mailbox: account.id })
+                    }
+                  >
+                    Manage Views…
+                  </ContextMenuItem>
+                </>
+              }
+            >
+              {(getAccountDisplayName(account)[0] ?? "?").toUpperCase()}
+            </AccountKnob>
+          ))}
+          <HintTooltip label="Add Gmail account">
+            <button
+              type="button"
+              aria-label="Add Gmail account"
+              onClick={onAddAccount}
+              className="flex size-6 shrink-0 items-center justify-center rounded-full border border-dashed border-(--te-outline) text-(--te-muted) hover:border-(--te-outline-hover) hover:text-(--te-strong)"
+            >
+              <PlusIcon className="size-3.5" />
+            </button>
+          </HintTooltip>
+        </div>
       </div>
 
       <span className="min-w-0 flex-1" />
