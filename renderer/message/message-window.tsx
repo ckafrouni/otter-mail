@@ -42,8 +42,8 @@ export function MessageWindow() {
 
   return (
     <div className="flex h-full flex-col bg-(--te-frame) text-(--te-text)">
-      {/* Drag strip + native traffic-light clearance. */}
-      <div className="drag-region h-9 shrink-0" />
+      {/* Drag strip + native traffic-light clearance (matches the main TopBar). */}
+      <div className="drag-region h-11 shrink-0" />
       <div className="flex min-h-0 flex-1 gap-1 px-1 pb-1">
         <div className="min-w-0 flex-1 overflow-hidden rounded-[10px] rounded-bl-[16px] border border-(--te-border) bg-(--te-card-glass)">
           <MessageReader
