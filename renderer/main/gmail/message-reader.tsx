@@ -159,8 +159,9 @@ a { color: #e34500; }
 blockquote { border-left: 3px solid #d6d6d6; padding-left: 12px; margin: 4px 0; color: #555555; }
 </style>`;
 
-/** Per-iframe height observers, so a reused iframe never double-observes. */
-const iframeObservers = new WeakMap<HTMLIFrameElement, ResizeObserver>();
+/** Per-iframe height watchers, torn down when a reused iframe re-loads. */
+type IframeFit = { ro: ResizeObserver; poll: ReturnType<typeof setInterval> };
+const iframeObservers = new WeakMap<HTMLIFrameElement, IframeFit>();
 
 function MessageBody({
   bodyHtml,
@@ -186,17 +187,38 @@ function MessageBody({
           const doc = iframe.contentDocument || iframe.contentWindow?.document;
           if (!doc) return;
           // onLoad fires before late images/fonts finish, so the first
-          // scrollHeight is often too small (iframe ends up scrollable). Keep
-          // it sized to content as layout settles via a ResizeObserver.
+          // scrollHeight is too small and the iframe ends up scrollable. Guard
+          // against a stale doc (iframe reused after navigating) so a late
+          // callback never sizes to a detached document.
           const fit = () => {
+            if ((iframe.contentDocument || iframe.contentWindow?.document) !== doc) return;
             iframe.style.height = doc.documentElement.scrollHeight + "px";
           };
           fit();
-          iframeObservers.get(iframe)?.disconnect();
+          const prev = iframeObservers.get(iframe);
+          if (prev) {
+            prev.ro.disconnect();
+            clearInterval(prev.poll);
+          }
+          // Re-fit the moment each image finishes (the usual cause), …
+          doc.querySelectorAll("img").forEach((img) => {
+            const im = img as HTMLImageElement;
+            if (!im.complete) {
+              im.addEventListener("load", fit, { once: true });
+              im.addEventListener("error", fit, { once: true });
+            }
+          });
+          // … a ResizeObserver for body-height changes, …
           const ro = new ResizeObserver(fit);
-          ro.observe(doc.documentElement);
           if (doc.body) ro.observe(doc.body);
-          iframeObservers.set(iframe, ro);
+          // … and a short poll to catch CSS background images / web fonts that
+          // fire no load event (~6s, then stops; fit() no-ops once stale).
+          let ticks = 0;
+          const poll = setInterval(() => {
+            fit();
+            if (++ticks >= 24) clearInterval(poll);
+          }, 250);
+          iframeObservers.set(iframe, { ro, poll });
           if (onQuoteText) {
             // WKWebView doesn't reliably deliver `mouseup` from a sandboxed
             // iframe to a parent-attached listener, but `selectionchange` on
