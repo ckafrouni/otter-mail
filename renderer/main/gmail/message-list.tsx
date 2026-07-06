@@ -93,6 +93,8 @@ type MessageListProps = {
   onDeselect: () => void;
   /** Reader actions (archive/trash) advance through here; false = no next row. */
   advanceRef: React.MutableRefObject<(fromMessageId: string) => boolean>;
+  /** Reports the multi-selected rows so the chat panel can attach them. */
+  onSelectionChange?: (rows: GmailMessageSummary[]) => void;
 
   searchQuery: string;
 };
@@ -573,6 +575,7 @@ export function MessageList({
   onSelectMessage,
   onDeselect,
   advanceRef,
+  onSelectionChange,
   searchQuery,
 }: MessageListProps) {
   const isCombined = combined != null;
@@ -779,6 +782,18 @@ export function MessageList({
   };
 
   const checkedRows = visibleMessages.filter((m) => checked.has(m.id));
+
+  // Surface the multi-selection to the chat panel. Keyed on the id signature
+  // so it only fires when the set actually changes (checkedRows is a fresh
+  // array every render).
+  const selectionSig = checkedRows.map((m) => `${m.accountId ?? accountId}:${m.id}`).join(",");
+  const selectionRef = useRef(onSelectionChange);
+  selectionRef.current = onSelectionChange;
+  const checkedRowsRef = useRef(checkedRows);
+  checkedRowsRef.current = checkedRows;
+  useEffect(() => {
+    selectionRef.current?.(checkedRowsRef.current);
+  }, [selectionSig]);
   const bulk = (label: string, run: (m: GmailMessageSummary) => void) => {
     console.log("[MessageList:bulk]", { action: label, count: checkedRows.length });
     for (const m of checkedRows) run(m);

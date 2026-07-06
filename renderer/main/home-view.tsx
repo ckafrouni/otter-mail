@@ -126,6 +126,8 @@ export function HomeView() {
   const listPane = useStoredWidth("gmail:pane:list", 400, 300, 640);
   const chatPane = useStoredWidth("gmail:pane:chat", 340, 280, 560, -1);
   const [chatOpen, setChatOpen] = useState(() => localStorage.getItem("gmail:chat-open") === "1");
+  // Rows multi-selected in the list, surfaced to the chat panel's context chip.
+  const [chatSelection, setChatSelection] = useState<GmailMessageSummary[]>([]);
   const toggleChat = () => {
     setChatOpen((open) => {
       localStorage.setItem("gmail:chat-open", open ? "0" : "1");
@@ -681,6 +683,7 @@ export function HomeView() {
                     setReaderAccountId(null);
                   }}
                   advanceRef={advanceRef}
+                  onSelectionChange={setChatSelection}
                   searchQuery={searchQuery}
                 />
               </div>
@@ -730,6 +733,7 @@ export function HomeView() {
                 <HermesChatPanel
                   accountId={selectedMessageId ? readerAccount : null}
                   messageId={selectedMessageId}
+                  selectedRows={chatSelection}
                   onClose={toggleChat}
                 />
               </div>

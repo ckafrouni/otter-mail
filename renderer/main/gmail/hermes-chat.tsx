@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MessageScroller } from "@shadcn/react/message-scroller";
 import {
   ArrowDownIcon,
@@ -12,8 +12,10 @@ import {
 } from "lucide-react";
 import { IconBtn, HintTooltip } from "./te-ui";
 import { gmailApi, type ChatEvent } from "./api";
-import { buildHandoffText, type AssistantContext } from "./ask-assistant";
+import { buildHandoffText, contextFromMessages, type AssistantContext } from "./ask-assistant";
+import { ChatMarkdown } from "./chat-markdown";
 import { useAccounts, useMessage } from "./hooks";
+import type { GmailMessageSummary } from "./types";
 
 /** One transcript entry. Tool steps interleave into the assistant turn. */
 type ChatTurn = {
@@ -21,8 +23,24 @@ type ChatTurn = {
   role: "user" | "assistant";
   text: string;
   tools: { name: string; output?: string }[];
+  /** Attached mail context, shown as a chip above the user's message. */
+  context?: { subjects: string[]; count: number };
   error?: string;
 };
+
+/** Chip recap of the context sent with a user turn. */
+function ContextRecap({ context }: { context: { subjects: string[]; count: number } }) {
+  const label =
+    context.count > 1 ? `${context.count} conversations` : context.subjects[0] ?? "1 conversation";
+  return (
+    <div className="mb-1 flex justify-end">
+      <span className="te-label flex max-w-full items-center gap-1.5 rounded-[4px] border border-(--te-border) px-2 py-0.5 text-(--te-faint)">
+        <PaperclipIcon className="size-3 shrink-0" />
+        <span className="min-w-0 truncate">{label}</span>
+      </span>
+    </div>
+  );
+}
 
 const STORE_KEY = "gmail:hermes-chat:v1";
 const MAX_STORED_TURNS = 80;
@@ -58,44 +76,6 @@ function friendlyError(code: string): string {
   return ERROR_TEXT[code] ?? `Hermes answered with an error (${code}).`;
 }
 
-/** Minimal markdown: fenced code, inline code, bold. Enough for agent replies. */
-function renderMarkdownLite(text: string): ReactNode[] {
-  const out: ReactNode[] = [];
-  const fences = text.split(/```(?:[a-zA-Z0-9_-]*\n)?/);
-  fences.forEach((chunk, i) => {
-    if (i % 2 === 1) {
-      out.push(
-        <pre
-          key={`f${i}`}
-          className="te-scroll my-1.5 overflow-x-auto rounded-[5px] border border-(--te-border) bg-(--te-panel) px-2.5 py-2 text-[12px] leading-relaxed"
-        >
-          {chunk.replace(/\n$/, "")}
-        </pre>,
-      );
-      return;
-    }
-    const parts = chunk.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*)/);
-    out.push(
-      <span key={`t${i}`}>
-        {parts.map((p, j) => {
-          if (p.startsWith("`") && p.endsWith("`")) {
-            return (
-              <code key={j} className="rounded-[3px] bg-(--te-ctl) px-1 text-[12px]">
-                {p.slice(1, -1)}
-              </code>
-            );
-          }
-          if (p.startsWith("**") && p.endsWith("**")) {
-            return <strong key={j}>{p.slice(2, -2)}</strong>;
-          }
-          return p;
-        })}
-      </span>,
-    );
-  });
-  return out;
-}
-
 function ToolStep({ name, output }: { name: string; output?: string }) {
   const [open, setOpen] = useState(false);
   return (
@@ -129,11 +109,14 @@ function ToolStep({ name, output }: { name: string; output?: string }) {
 export function HermesChatPanel({
   accountId,
   messageId,
+  selectedRows,
   onClose,
 }: {
   /** Account of the open conversation (context attach), null when none. */
   accountId: string | null;
   messageId: string | null;
+  /** Multi-selected list rows; take priority over the open conversation. */
+  selectedRows?: GmailMessageSummary[];
   onClose: () => void;
 }) {
   const initial = useRef(loadStore());
@@ -154,16 +137,21 @@ export function HermesChatPanel({
     );
   }, []);
 
-  // Context of the open conversation (cache hit — the reader fetched it).
+  // Attach context: the multi-selection wins; otherwise the open conversation
+  // (cache hit — the reader fetched it). Both are pointer-only; Hermes gogs
+  // the bodies.
   const accountsQuery = useAccounts();
+  const accountEmailById = (id: string | undefined) =>
+    accountsQuery.data?.find((a) => a.id === id)?.email ?? id ?? "";
   const openMessage = useMessage(accountId, messageId);
-  const context: AssistantContext | null =
-    accountId && messageId && openMessage.data
+  const multiSelected = selectedRows && selectedRows.length > 0;
+  const context: AssistantContext | null = multiSelected
+    ? contextFromMessages(selectedRows, accountEmailById)
+    : accountId && messageId && openMessage.data
       ? {
           conversations: [
             {
-              account:
-                accountsQuery.data?.find((a) => a.id === accountId)?.email ?? accountId,
+              account: accountEmailById(accountId),
               threadId: openMessage.data.threadId || openMessage.data.id,
               subject: openMessage.data.subject || "(no subject)",
               from: openMessage.data.fromEmail,
@@ -222,12 +210,24 @@ export function HermesChatPanel({
     const question = draft.trim();
     if (!question || streamingId || configured === false) return;
     const requestId = crypto.randomUUID();
-    const input = attach && context ? buildHandoffText(question, context) : question;
-    console.log("[HermesChat:send]", { requestId, attached: Boolean(attach && context) });
+    const attached = attach && context ? context : null;
+    const input = attached ? buildHandoffText(question, attached) : question;
+    console.log("[HermesChat:send]", { requestId, attached: Boolean(attached) });
     setDraft("");
     setTurns((prev) => [
       ...prev,
-      { id: `u-${requestId}`, role: "user", text: question, tools: [] },
+      {
+        id: `u-${requestId}`,
+        role: "user",
+        text: question,
+        tools: [],
+        context: attached
+          ? {
+              count: attached.conversations.length,
+              subjects: attached.conversations.map((c) => c.subject),
+            }
+          : undefined,
+      },
       { id: `a-${requestId}`, role: "assistant", text: "", tools: [] },
     ]);
     requestRef.current = requestId;
@@ -313,16 +313,19 @@ export function HermesChatPanel({
                 {turns.map((turn) => (
                   <MessageScroller.Item key={turn.id} messageId={turn.id} scrollAnchor>
                     {turn.role === "user" ? (
-                      <div className="ml-6 rounded-[8px] rounded-br-[2px] bg-(--te-sel) px-3 py-2 text-[13px] leading-relaxed text-(--te-sel-fg)">
-                        {turn.text}
+                      <div>
+                        {turn.context ? <ContextRecap context={turn.context} /> : null}
+                        <div className="ml-6 rounded-[8px] rounded-br-[2px] bg-(--te-sel) px-3 py-2 text-[13px] leading-relaxed text-(--te-sel-fg)">
+                          {turn.text}
+                        </div>
                       </div>
                     ) : (
-                      <div className="mr-2 text-[13px] leading-relaxed text-(--te-text)">
+                      <div className="mr-2">
                         {turn.tools.map((t, i) => (
                           <ToolStep key={i} name={t.name} output={t.output} />
                         ))}
                         {turn.text ? (
-                          <div className="whitespace-pre-wrap">{renderMarkdownLite(turn.text)}</div>
+                          <ChatMarkdown text={turn.text} />
                         ) : !turn.error && streaming && turn.id === turns[turns.length - 1]?.id ? (
                           <span className="te-label text-(--te-faint)">thinking…</span>
                         ) : null}
@@ -367,7 +370,11 @@ export function HermesChatPanel({
                 ].join(" ")}
               >
                 <PaperclipIcon className="size-3 shrink-0" />
-                <span className="min-w-0 truncate">{context.conversations[0].subject}</span>
+                <span className="min-w-0 truncate">
+                  {context.conversations.length > 1
+                    ? `${context.conversations.length} conversations`
+                    : context.conversations[0].subject}
+                </span>
               </button>
             ) : null}
             <div className="rounded-[6px] border border-(--te-outline) bg-(--te-panel) focus-within:border-(--te-outline-hover)">
