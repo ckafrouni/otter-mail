@@ -148,6 +148,8 @@ export function registerHandlers(): void {
     return { ok: true };
   });
 
+  ipcMain.handle("assistant:chatSkills", async () => assistantChat.listSkills());
+
   // Register Gmail handlers
   registerGmailHandlers();
 

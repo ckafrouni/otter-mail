@@ -17,7 +17,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { IconBtn, HintTooltip } from "./te-ui";
-import { gmailApi, type ChatEvent } from "./api";
+import { gmailApi, type ChatEvent, type Skill } from "./api";
 import {
   buildHandoffText,
   contextFromMessages,
@@ -331,6 +331,32 @@ export function HermesChatPanel({
     );
   }, []);
 
+  // Skills for the "/" picker (gateway /commands aren't exposed by the API,
+  // but skills are, and the agent loads them via its skill_view tool).
+  const [skills, setSkills] = useState<Skill[]>([]);
+  useEffect(() => {
+    if (configured) gmailApi.chatSkills().then(setSkills, () => {});
+  }, [configured]);
+
+  const [slashDismissed, setSlashDismissed] = useState(false);
+  const [slashIndex, setSlashIndex] = useState(0);
+  // The menu opens only while typing a bare "/slug" (no space yet).
+  const slashMatch = draft.match(/^\/([a-z0-9-]*)$/i);
+  const slashQuery = slashMatch ? slashMatch[1].toLowerCase() : null;
+  const slashSkills =
+    slashQuery !== null
+      ? skills.filter((s) => s.name.toLowerCase().includes(slashQuery)).slice(0, 8)
+      : [];
+  const slashOpen = slashQuery !== null && !slashDismissed && slashSkills.length > 0;
+  useEffect(() => {
+    setSlashIndex(0);
+  }, [slashQuery]);
+  const pickSkill = (skill: Skill) => {
+    setDraft(`/${skill.name} `);
+    setSlashDismissed(true);
+    inputRef.current?.focus();
+  };
+
   // Attach context: the multi-selection wins; otherwise the open conversation
   // (cache hit — the reader fetched it). Both are pointer-only; Hermes gogs
   // the bodies.
@@ -419,7 +445,18 @@ export function HermesChatPanel({
     const requestId = crypto.randomUUID();
     const convoId = active.id;
     const attached = attach && context ? context : null;
-    const input = attached ? buildHandoffText(question, attached) : question;
+    // A leading "/skill" invokes that skill: the agent loads it via skill_view
+    // and follows it. The displayed turn keeps the raw text the user typed.
+    const skillMatch = question.match(/^\/([a-z0-9-]+)\s*([\s\S]*)$/i);
+    const skill = skillMatch
+      ? skills.find((s) => s.name.toLowerCase() === skillMatch[1].toLowerCase())
+      : undefined;
+    const baseInput = skill
+      ? `[IMPORTANT: The user invoked the "${skill.name}" skill. Load it with skill_view and follow its instructions.]${
+          skillMatch![2].trim() ? `\n\n${skillMatch![2].trim()}` : ""
+        }`
+      : question;
+    const input = attached ? buildHandoffText(baseInput, attached) : baseInput;
     const prevResponseId = active.lastResponseId ?? undefined;
     console.log("[HermesChat:send]", { requestId, attached: Boolean(attached) });
     setDraft("");
@@ -615,7 +652,32 @@ export function HermesChatPanel({
             />
           </MessageScroller.Root>
 
-          <div className="shrink-0 px-3 pb-3 pt-1">
+          <div className="relative shrink-0 px-3 pb-3 pt-1">
+            {slashOpen ? (
+              <div className="te-scroll absolute inset-x-3 bottom-full z-20 mb-1 max-h-64 overflow-y-auto rounded-[8px] border border-(--te-outline) bg-(--te-panel) p-1 shadow-lg">
+                <div className="te-label px-2 pb-1 pt-0.5 text-(--te-faint)">Skills</div>
+                {slashSkills.map((s, i) => (
+                  <button
+                    key={s.name}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      pickSkill(s);
+                    }}
+                    onMouseEnter={() => setSlashIndex(i)}
+                    className={[
+                      "flex w-full flex-col items-start rounded-[5px] px-2 py-1.5 text-left",
+                      i === slashIndex ? "bg-(--te-hover)" : "",
+                    ].join(" ")}
+                  >
+                    <span className="text-[12px] font-semibold text-(--te-text)">/{s.name}</span>
+                    <span className="w-full truncate text-[11px] text-(--te-faint)">
+                      {s.description}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
             {context ? (
               <button
                 type="button"
@@ -641,14 +703,39 @@ export function HermesChatPanel({
               <textarea
                 ref={inputRef}
                 value={draft}
-                onChange={(e) => setDraft(e.target.value)}
+                onChange={(e) => {
+                  setDraft(e.target.value);
+                  setSlashDismissed(false);
+                }}
                 onKeyDown={(e) => {
+                  if (slashOpen) {
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      setSlashIndex((i) => Math.min(slashSkills.length - 1, i + 1));
+                      return;
+                    }
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      setSlashIndex((i) => Math.max(0, i - 1));
+                      return;
+                    }
+                    if (e.key === "Enter" || e.key === "Tab") {
+                      e.preventDefault();
+                      pickSkill(slashSkills[slashIndex]);
+                      return;
+                    }
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      setSlashDismissed(true);
+                      return;
+                    }
+                  }
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
                     send();
                   }
                 }}
-                placeholder="Message Hermes…"
+                placeholder="Message Hermes…  (/ for skills)"
                 aria-label="Message Hermes"
                 rows={2}
                 className="w-full resize-none bg-transparent px-3 pt-2 text-[13px] text-(--te-strong) outline-none placeholder:text-(--te-faint)"

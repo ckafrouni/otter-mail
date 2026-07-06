@@ -81,6 +81,9 @@ export type ChatEvent =
   | { requestId: string; type: "done"; responseId: string | null }
   | { requestId: string; type: "error"; message: string };
 
+/** An installed Hermes skill, for the composer's "/" picker. */
+export type Skill = { name: string; description: string; category: string | null };
+
 export type ModifyMessageParams = {
   accountId: string;
   messageId: string;
@@ -339,4 +342,6 @@ export const gmailApi = {
 
   chatCancel: (requestId: string): Promise<{ ok: boolean }> =>
     ipc("assistant:chatCancel", { requestId }),
+
+  chatSkills: (): Promise<Skill[]> => ipc("assistant:chatSkills"),
 };

@@ -86,6 +86,34 @@ export async function chatConfigure(baseUrl: string, apiKey: string): Promise<Ch
   return { configured: true, baseUrl: base, model };
 }
 
+export type Skill = { name: string; description: string; category: string | null };
+
+let skillsCache: { at: number; data: Skill[] } | null = null;
+
+/** Lists the agent's installed skills for the composer's "/" picker (5-min cache). */
+export async function listSkills(): Promise<Skill[]> {
+  const config = await getChatConfig();
+  const key = await getKey();
+  if (!config || !key) return [];
+  if (skillsCache && Date.now() - skillsCache.at < 300_000) return skillsCache.data;
+  try {
+    const response = await fetch(`${config.baseUrl}/skills`, {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (!response.ok) return skillsCache?.data ?? [];
+    const body = (await response.json()) as { data?: Skill[] };
+    const skills = (body.data ?? []).map((s) => ({
+      name: String(s.name ?? ""),
+      description: String(s.description ?? ""),
+      category: s.category ?? null,
+    }));
+    skillsCache = { at: Date.now(), data: skills };
+    return skills;
+  } catch {
+    return skillsCache?.data ?? [];
+  }
+}
+
 const active = new Map<string, AbortController>();
 
 export function chatCancel(requestId: string): void {
