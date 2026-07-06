@@ -12,7 +12,7 @@ export const IconBtn = forwardRef<
       type="button"
       aria-label={label}
       className={[
-        "flex size-8 shrink-0 items-center justify-center rounded-[5px]",
+        "flex size-7 shrink-0 items-center justify-center rounded-[5px]",
         "disabled:opacity-35 disabled:pointer-events-none",
         active
           ? "bg-(--te-sel) text-(--te-sel-fg)"

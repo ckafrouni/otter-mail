@@ -1130,7 +1130,7 @@ export function MessageList({
   return (
     <div className="relative flex h-full min-w-0 flex-col">
       {/* Header */}
-      <div className="drag-region flex h-[52px] shrink-0 items-center gap-2 border-b border-(--te-border) px-4">
+      <div className="drag-region flex h-11 shrink-0 items-center gap-2 border-b border-(--te-border) px-4">
         <div className="min-w-0 flex-1">
           <div className="truncate text-[15px] font-bold leading-tight tracking-tight text-(--te-strong)">
             {mailboxTitle}
@@ -1145,13 +1145,13 @@ export function MessageList({
             active={filterOpen}
             onClick={() => (filterOpen ? closeSearch() : setFilterOpen(true))}
           >
-            <SearchIcon className="size-4" />
+            <SearchIcon className="size-3.5" />
           </IconBtn>
         </HintTooltip>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <IconBtn label="Filters" active={filtersActive}>
-              <SlidersHorizontalIcon className="size-4" />
+              <SlidersHorizontalIcon className="size-3.5" />
             </IconBtn>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
@@ -1191,7 +1191,7 @@ export function MessageList({
             active={unreadOnly}
             onClick={() => setUnreadOnly((o) => !o)}
           >
-            <ListFilterIcon className="size-4" />
+            <ListFilterIcon className="size-3.5" />
           </IconBtn>
         </HintTooltip>
       </div>
@@ -1333,7 +1333,7 @@ export function MessageList({
               <>
                 <HintTooltip label="Restore from Trash">
                   <IconBtn label="Restore from Trash" className="size-7" onClick={bulkUntrash}>
-                    <RotateCcwIcon className="size-4" />
+                    <RotateCcwIcon className="size-3.5" />
                   </IconBtn>
                 </HintTooltip>
                 <HintTooltip label="Delete Forever">
@@ -1350,12 +1350,12 @@ export function MessageList({
               <>
                 <HintTooltip label="Not Junk — move to Inbox">
                   <IconBtn label="Not Junk" className="size-7" onClick={bulkNotJunk}>
-                    <ShieldCheckIcon className="size-4" />
+                    <ShieldCheckIcon className="size-3.5" />
                   </IconBtn>
                 </HintTooltip>
                 <HintTooltip label="Move to Trash">
                   <IconBtn label="Move to Trash" className="size-7" onClick={bulkTrash}>
-                    <Trash2Icon className="size-4" />
+                    <Trash2Icon className="size-3.5" />
                   </IconBtn>
                 </HintTooltip>
                 <HintTooltip label="Delete Forever">
@@ -1372,17 +1372,17 @@ export function MessageList({
               <>
                 <HintTooltip label="Archive">
                   <IconBtn label="Archive" className="size-7" onClick={bulkArchive}>
-                    <ArchiveIcon className="size-4" />
+                    <ArchiveIcon className="size-3.5" />
                   </IconBtn>
                 </HintTooltip>
                 <HintTooltip label="Move to Trash">
                   <IconBtn label="Move to Trash" className="size-7" onClick={bulkTrash}>
-                    <Trash2Icon className="size-4" />
+                    <Trash2Icon className="size-3.5" />
                   </IconBtn>
                 </HintTooltip>
                 <HintTooltip label="Move to Junk">
                   <IconBtn label="Move to Junk" className="size-7" onClick={bulkJunk}>
-                    <ArchiveXIcon className="size-4" />
+                    <ArchiveXIcon className="size-3.5" />
                   </IconBtn>
                 </HintTooltip>
               </>
@@ -1390,18 +1390,18 @@ export function MessageList({
             <span className="mx-1 h-5 w-px shrink-0 bg-(--te-border)" aria-hidden />
             <HintTooltip label="Mark as read">
               <IconBtn label="Mark as read" className="size-7" onClick={bulkMarkRead}>
-                <MailOpenIcon className="size-4" />
+                <MailOpenIcon className="size-3.5" />
               </IconBtn>
             </HintTooltip>
             <HintTooltip label="Mark as unread">
               <IconBtn label="Mark as unread" className="size-7" onClick={bulkMarkUnread}>
-                <MailIcon className="size-4" />
+                <MailIcon className="size-3.5" />
               </IconBtn>
             </HintTooltip>
             <span className="mx-1 h-5 w-px shrink-0 bg-(--te-border)" aria-hidden />
             <HintTooltip label="Send selection to Hermes in Slack">
               <IconBtn label="Send to Slack" className="size-7" onClick={() => askAbout(checkedRows)}>
-                <SlackAiIcon className="size-4" />
+                <SlackAiIcon className="size-3.5" />
               </IconBtn>
             </HintTooltip>
             <HintTooltip label="Chat about the selection in Hermes">
@@ -1410,13 +1410,13 @@ export function MessageList({
                 className="size-7"
                 onClick={() => onOpenChat?.()}
               >
-                <BotMessageSquareIcon className="size-4" />
+                <BotMessageSquareIcon className="size-3.5" />
               </IconBtn>
             </HintTooltip>
             <span className="mx-1 h-5 w-px shrink-0 bg-(--te-border)" aria-hidden />
             <HintTooltip label="Clear selection" hint="Esc">
               <IconBtn label="Clear selection" className="size-7" onClick={clearChecked}>
-                <XIcon className="size-4" />
+                <XIcon className="size-3.5" />
               </IconBtn>
             </HintTooltip>
           </div>

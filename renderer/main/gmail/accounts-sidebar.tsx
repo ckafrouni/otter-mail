@@ -95,24 +95,24 @@ const GMAIL_LABEL_COLORS: { backgroundColor: string; textColor: string }[] = [
 const SIDEBAR_SYSTEM_ORDER = ["INBOX", "STARRED", "SENT", "DRAFT", "IMPORTANT", "SPAM", "TRASH"];
 
 const SYSTEM_LABEL_MAP: Record<string, { name: string; icon: ReactNode }> = {
-  INBOX: { name: "Inbox", icon: <InboxIcon className="size-4" /> },
-  STARRED: { name: "Starred", icon: <StarIcon className="size-4" /> },
-  SENT: { name: "Sent", icon: <SendIcon className="size-4" /> },
-  DRAFT: { name: "Drafts", icon: <FileIcon className="size-4" /> },
-  IMPORTANT: { name: "Important", icon: <BookmarkIcon className="size-4" /> },
-  SPAM: { name: "Junk", icon: <ArchiveXIcon className="size-4" /> },
-  TRASH: { name: "Trash", icon: <Trash2Icon className="size-4" /> },
+  INBOX: { name: "Inbox", icon: <InboxIcon className="size-3.5" /> },
+  STARRED: { name: "Starred", icon: <StarIcon className="size-3.5" /> },
+  SENT: { name: "Sent", icon: <SendIcon className="size-3.5" /> },
+  DRAFT: { name: "Drafts", icon: <FileIcon className="size-3.5" /> },
+  IMPORTANT: { name: "Important", icon: <BookmarkIcon className="size-3.5" /> },
+  SPAM: { name: "Junk", icon: <ArchiveXIcon className="size-3.5" /> },
+  TRASH: { name: "Trash", icon: <Trash2Icon className="size-3.5" /> },
 };
 
 function viewIcon(view: MailView): ReactNode {
-  if (view.kind === "inbox") return <InboxIcon className="size-4" />;
-  if (view.kind === "starred") return <StarIcon className="size-4" />;
-  if (view.kind === "sent") return <SendIcon className="size-4" />;
-  if (view.kind === "drafts") return <FileIcon className="size-4" />;
-  if (view.kind === "important") return <BookmarkIcon className="size-4" />;
-  if (view.kind === "junk") return <ArchiveXIcon className="size-4" />;
-  if (view.kind === "trash") return <Trash2Icon className="size-4" />;
-  return <LayersIcon className="size-4" />;
+  if (view.kind === "inbox") return <InboxIcon className="size-3.5" />;
+  if (view.kind === "starred") return <StarIcon className="size-3.5" />;
+  if (view.kind === "sent") return <SendIcon className="size-3.5" />;
+  if (view.kind === "drafts") return <FileIcon className="size-3.5" />;
+  if (view.kind === "important") return <BookmarkIcon className="size-3.5" />;
+  if (view.kind === "junk") return <ArchiveXIcon className="size-3.5" />;
+  if (view.kind === "trash") return <Trash2Icon className="size-3.5" />;
+  return <LayersIcon className="size-3.5" />;
 }
 
 /** Sidebar row: muted at rest, inverted block when selected; counts live in the badge only. */
@@ -613,7 +613,7 @@ export function AccountsSidebar({
   return (
     <div className="flex h-full min-w-0 flex-col">
       {/* Header: mailbox switcher + compose */}
-      <div className="drag-region flex h-[52px] shrink-0 items-center justify-between gap-2 border-b border-(--te-border) px-3">
+      <div className="drag-region flex h-11 shrink-0 items-center justify-between gap-2 border-b border-(--te-border) px-3">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -663,9 +663,9 @@ export function AccountsSidebar({
           type="button"
           onClick={onCompose}
           aria-label="New message"
-          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-(--te-selected) text-(--te-selected-fg) shadow-sm hover:opacity-90"
+          className="flex size-7 shrink-0 items-center justify-center rounded-full bg-(--te-selected) text-(--te-selected-fg) shadow-sm hover:opacity-90"
         >
-          <SquarePenIcon className="size-4" />
+          <SquarePenIcon className="size-3.5" />
         </button>
       </div>
 

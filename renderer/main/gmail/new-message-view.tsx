@@ -135,7 +135,7 @@ export function NewMessageView({
 
   return (
     <div className="flex h-full min-w-0 flex-col">
-      <div className="drag-region flex h-[52px] shrink-0 items-center gap-2 border-b border-(--te-border) px-4">
+      <div className="drag-region flex h-11 shrink-0 items-center gap-2 border-b border-(--te-border) px-4">
         <div className="min-w-0 flex-1">
           <div className="truncate text-[15px] font-bold leading-tight tracking-tight text-(--te-strong)">
             New message
@@ -158,12 +158,12 @@ export function NewMessageView({
               void draft.finalize({ deleteDraft: true });
             }}
           >
-            <Trash2Icon className="size-4" />
+            <Trash2Icon className="size-3.5" />
           </IconBtn>
         </HintTooltip>
         <HintTooltip label="Close (keeps the draft)" hint="Esc">
           <IconBtn label="Close" onClick={onClose}>
-            <XIcon className="size-4" />
+            <XIcon className="size-3.5" />
           </IconBtn>
         </HintTooltip>
       </div>
@@ -309,7 +309,7 @@ export function NewMessageView({
               aria-label="Send"
               className="flex h-7 w-9 items-center justify-center rounded-[5px] bg-(--te-accent) text-white hover:brightness-110 disabled:bg-(--te-ctl) disabled:text-(--te-faint)"
             >
-              <SendHorizontalIcon className="size-4" />
+              <SendHorizontalIcon className="size-3.5" />
             </button>
           </div>
         </div>

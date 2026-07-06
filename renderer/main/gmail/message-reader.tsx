@@ -474,7 +474,7 @@ function FileAttachmentRow({
             aria-label={`Download ${attachment.filename}`}
             className="flex size-7 shrink-0 items-center justify-center rounded-md text-(--te-muted) hover:bg-(--te-hover) hover:text-(--te-strong)"
           >
-            <DownloadIcon className="size-4" />
+            <DownloadIcon className="size-3.5" />
           </button>
         </div>
       </ContextMenuTrigger>
@@ -1069,7 +1069,7 @@ function InlineComposer({
             aria-label="Send"
             className="flex h-7 w-9 items-center justify-center rounded-[5px] bg-(--te-accent) text-white hover:brightness-110 disabled:bg-(--te-ctl) disabled:text-(--te-faint)"
           >
-            <SendHorizontalIcon className="size-4" />
+            <SendHorizontalIcon className="size-3.5" />
           </button>
         </div>
       </div>
@@ -1080,7 +1080,7 @@ function InlineComposer({
 function ReaderShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-full min-w-0 flex-col">
-      <div className="drag-region h-[52px] shrink-0 border-b border-(--te-border)" />
+      <div className="drag-region h-11 shrink-0 border-b border-(--te-border)" />
       {children}
     </div>
   );
@@ -1461,7 +1461,7 @@ export function MessageReader({
     <>
       <div className="flex h-full min-w-0 flex-col">
         {/* Conversation header */}
-        <div className="drag-region flex h-[52px] shrink-0 items-center gap-1 border-b border-(--te-border) px-4">
+        <div className="drag-region flex h-11 shrink-0 items-center gap-1 border-b border-(--te-border) px-4">
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
               <span className="truncate text-[15px] font-bold leading-tight tracking-tight text-(--te-strong)">
@@ -1501,17 +1501,17 @@ export function MessageReader({
 
           <HintTooltip label="Reply" hint="R">
             <IconBtn label="Reply" onClick={handleReply}>
-              <ReplyIcon className="size-4" />
+              <ReplyIcon className="size-3.5" />
             </IconBtn>
           </HintTooltip>
           <HintTooltip label="Reply all" hint="A">
             <IconBtn label="Reply all" onClick={handleReplyAll}>
-              <ReplyAllIcon className="size-4" />
+              <ReplyAllIcon className="size-3.5" />
             </IconBtn>
           </HintTooltip>
           <HintTooltip label="Forward" hint="F">
             <IconBtn label="Forward" onClick={handleForward}>
-              <ForwardIcon className="size-4" />
+              <ForwardIcon className="size-3.5" />
             </IconBtn>
           </HintTooltip>
 
@@ -1526,13 +1526,13 @@ export function MessageReader({
                   handleArchive();
                 }}
               >
-                <ArchiveIcon className="size-4" />
+                <ArchiveIcon className="size-3.5" />
               </IconBtn>
             </HintTooltip>
           ) : (
             <HintTooltip label="Move to Inbox" hint="E">
               <IconBtn label="Move to Inbox" onClick={handleUnarchive}>
-                <ArchiveRestoreIcon className="size-4" />
+                <ArchiveRestoreIcon className="size-3.5" />
               </IconBtn>
             </HintTooltip>
           )}
@@ -1546,7 +1546,7 @@ export function MessageReader({
           {isTrashed ? (
             <HintTooltip label="Restore from Trash" hint="#">
               <IconBtn label="Restore from Trash" onClick={handleUntrash}>
-                <RotateCcwIcon className="size-4" />
+                <RotateCcwIcon className="size-3.5" />
               </IconBtn>
             </HintTooltip>
           ) : (
@@ -1558,14 +1558,14 @@ export function MessageReader({
                   handleTrash();
                 }}
               >
-                <Trash2Icon className="size-4" />
+                <Trash2Icon className="size-3.5" />
               </IconBtn>
             </HintTooltip>
           )}
           {isJunk ? (
             <HintTooltip label="Not Junk — move to Inbox" hint="!">
               <IconBtn label="Not Junk" onClick={handleJunk}>
-                <ShieldCheckIcon className="size-4" />
+                <ShieldCheckIcon className="size-3.5" />
               </IconBtn>
             </HintTooltip>
           ) : (
@@ -1577,7 +1577,7 @@ export function MessageReader({
                   handleJunk();
                 }}
               >
-                <ArchiveXIcon className="size-4" />
+                <ArchiveXIcon className="size-3.5" />
               </IconBtn>
             </HintTooltip>
           )}
@@ -1587,7 +1587,7 @@ export function MessageReader({
           <LabelPickerMenu accountId={accountId} messageId={message.id} labelIds={message.labelIds}>
             <IconBtn label="Move to label">
               <span className="flex items-center gap-0.5">
-                <FolderIcon className="size-4" />
+                <FolderIcon className="size-3.5" />
                 <ChevronDownIcon className="size-3" />
               </span>
             </IconBtn>
@@ -1607,7 +1607,7 @@ export function MessageReader({
               label={isUnread ? "Mark as read" : "Mark as unread"}
               onClick={handleToggleRead}
             >
-              {isUnread ? <MailOpenIcon className="size-4" /> : <MailIcon className="size-4" />}
+              {isUnread ? <MailOpenIcon className="size-3.5" /> : <MailIcon className="size-3.5" />}
             </IconBtn>
           </HintTooltip>
 
@@ -1615,12 +1615,12 @@ export function MessageReader({
 
           <HintTooltip label="Send to Hermes in Slack">
             <IconBtn label="Send to Hermes in Slack" onClick={handleAskAssistant}>
-              <SlackAiIcon className="size-4" />
+              <SlackAiIcon className="size-3.5" />
             </IconBtn>
           </HintTooltip>
           <HintTooltip label="Chat about this in Hermes">
             <IconBtn label="Open in Hermes chat" onClick={() => onOpenChat?.()}>
-              <BotMessageSquareIcon className="size-4" />
+              <BotMessageSquareIcon className="size-3.5" />
             </IconBtn>
           </HintTooltip>
         </div>

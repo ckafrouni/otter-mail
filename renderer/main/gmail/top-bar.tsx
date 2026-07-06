@@ -297,13 +297,13 @@ export function TopBar({
 
       <HintTooltip label={chatOpen ? "Hide Hermes chat" : "Chat with Hermes"} hint="⌘I">
         <IconBtn label="Hermes chat" active={chatOpen} onClick={onToggleChat} className="size-7">
-          <BotMessageSquareIcon className="size-4" />
+          <BotMessageSquareIcon className="size-3.5" />
         </IconBtn>
       </HintTooltip>
 
       <HintTooltip label="Keyboard shortcuts" hint="?">
         <IconBtn label="Help" onClick={onOpenHelp} className="size-7">
-          <CircleHelpIcon className="size-4" />
+          <CircleHelpIcon className="size-3.5" />
         </IconBtn>
       </HintTooltip>
 
@@ -313,7 +313,7 @@ export function TopBar({
           onClick={() => void gmailApi.openSettings({ pane: "general" })}
           className="size-7"
         >
-          <SettingsIcon className="size-4" />
+          <SettingsIcon className="size-3.5" />
         </IconBtn>
       </HintTooltip>
 

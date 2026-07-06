@@ -600,7 +600,7 @@ export function HermesChatPanel({
 
   return (
     <div className="relative flex h-full min-w-0 flex-col">
-      <div className="drag-region flex h-[52px] shrink-0 items-center gap-2 border-b border-(--te-border) px-4">
+      <div className="drag-region flex h-11 shrink-0 items-center gap-2 border-b border-(--te-border) px-4">
         <BotMessageSquareIcon className="size-4 shrink-0 text-(--te-muted)" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-[15px] font-bold leading-tight tracking-tight text-(--te-strong)">
@@ -612,17 +612,17 @@ export function HermesChatPanel({
         </div>
         <HintTooltip label="Chat history">
           <IconBtn label="Chat history" active={historyOpen} onClick={() => setHistoryOpen((o) => !o)}>
-            <HistoryIcon className="size-4" />
+            <HistoryIcon className="size-3.5" />
           </IconBtn>
         </HintTooltip>
         <HintTooltip label="New chat">
           <IconBtn label="New chat" onClick={newChat}>
-            <SquarePlusIcon className="size-4" />
+            <SquarePlusIcon className="size-3.5" />
           </IconBtn>
         </HintTooltip>
         <HintTooltip label="Close">
           <IconBtn label="Close chat" onClick={onClose}>
-            <XIcon className="size-4" />
+            <XIcon className="size-3.5" />
           </IconBtn>
         </HintTooltip>
       </div>
@@ -707,7 +707,7 @@ export function HermesChatPanel({
                     aria-label="Jump to latest"
                     className="absolute bottom-3 left-1/2 flex size-7 -translate-x-1/2 items-center justify-center rounded-full border border-(--te-outline) bg-(--te-panel) text-(--te-muted) shadow-sm hover:text-(--te-strong)"
                   >
-                    <ArrowDownIcon className="size-4" />
+                    <ArrowDownIcon className="size-3.5" />
                   </button>
                 ) : null
               }
@@ -831,7 +831,7 @@ export function HermesChatPanel({
                     aria-label="Send"
                     className="flex h-7 w-9 items-center justify-center rounded-[5px] bg-(--te-accent) text-white hover:brightness-110 disabled:bg-(--te-ctl) disabled:text-(--te-faint)"
                   >
-                    <SendHorizontalIcon className="size-4" />
+                    <SendHorizontalIcon className="size-3.5" />
                   </button>
                 )}
               </div>
