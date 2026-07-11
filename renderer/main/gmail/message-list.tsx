@@ -914,6 +914,11 @@ export function MessageList({
   const allJunk =
     !allTrashed && checkedRows.length > 0 && checkedRows.every((m) => m.labelIds.includes("SPAM"));
 
+  // Delete acts on the multi-selection when there is one; read through a ref so
+  // the window listener (mounted once) sees the current rows.
+  const trashCheckedRef = useRef(bulkTrash);
+  trashCheckedRef.current = allTrashed ? bulkUntrash : bulkTrash;
+
   const bulkMarkUnread = () => {
     // Gmail-style: marking the open conversation unread returns to the list
     // (and keeps the reader from instantly re-marking it read).
@@ -1027,9 +1032,16 @@ export function MessageList({
           });
           break;
         }
-        case "#": {
-          if (!selectedRow) return;
+        // Delete (and fn+Delete) mirror Gmail's #.
+        case "#":
+        case "Backspace":
+        case "Delete": {
           e.preventDefault();
+          if (checkedRef.current.size > 0) {
+            trashCheckedRef.current();
+            break;
+          }
+          if (!selectedRow) return;
           // Trashed rows restore in place; live rows trash and advance.
           if (selectedRow.labelIds.includes("TRASH")) {
             void listUntrashThread.mutateAsync({ accountId: owner, threadId: selThreadId });
