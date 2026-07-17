@@ -256,12 +256,21 @@ function HtmlBody({
         if (!anchor) return;
         const raw = anchor.getAttribute("href") ?? "";
         if (raw.startsWith("#")) return; // in-page anchor: let the iframe scroll
-        e.preventDefault();
         const url = anchor.href; // resolved absolute URL
         if (/^(https?|mailto):/i.test(url)) {
+          console.log("[MessageBody:linkClick]", { href: raw.slice(0, 60) });
+          e.preventDefault();
           void window.glazeAPI.shell.openExternal(url).catch(() => {});
         }
       });
+      // The click handler above is the fast path, but WKWebView doesn't reliably
+      // deliver clicks from a sandboxed iframe to this parent-attached listener
+      // (same limitation as `mouseup`, below). `target="_blank"` links then just
+      // request a popup the sandbox blocks — nothing navigates, so the host's
+      // navigation layer (which already opens plain external links) never sees
+      // them. Force every link to navigate in-frame instead so that path fires.
+      doc.querySelectorAll("base[target]").forEach((b) => b.removeAttribute("target"));
+      doc.querySelectorAll("a[target]").forEach((a) => a.setAttribute("target", "_self"));
       if (quoteRef.current) {
         // WKWebView doesn't reliably deliver `mouseup` from a sandboxed iframe
         // to a parent-attached listener, but `selectionchange` on its document
