@@ -14,15 +14,7 @@ interface GoogleCredentials {
   clientSecret: string;
 }
 
-/**
- * Google OAuth Web client baked into the app, so it works out of the box with
- * no manual setup. A credential the user enters in Settings → Google OAuth
- * still takes precedence (see getCredentials).
- */
-const EMBEDDED_CREDENTIALS: GoogleCredentials = {
-  clientId: "701744856350-1k2teu82v81d23qeus1vii4g0v236vgr.apps.googleusercontent.com",
-  clientSecret: "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",
-};
+const EMPTY_CREDENTIALS: GoogleCredentials = { clientId: "", clientSecret: "" };
 
 async function getCredentialsPath(): Promise<string> {
   const userDataPath = app.getPath("userData");
@@ -37,13 +29,12 @@ export async function getCredentials(): Promise<GoogleCredentials> {
     const encrypted = Buffer.from(hexData.trim(), "hex");
     const json = await safeStorage.decryptString(encrypted);
     const parsed = JSON.parse(json) as GoogleCredentials;
-    const clientId = parsed.clientId ?? "";
-    const clientSecret = parsed.clientSecret ?? "";
-    // A complete user-entered credential wins; otherwise fall back to embedded.
-    if (clientId && clientSecret) return { clientId, clientSecret };
-    return { ...EMBEDDED_CREDENTIALS };
+    return {
+      clientId: parsed.clientId ?? "",
+      clientSecret: parsed.clientSecret ?? "",
+    };
   } catch {
-    return { ...EMBEDDED_CREDENTIALS };
+    return { ...EMPTY_CREDENTIALS };
   }
 }
 

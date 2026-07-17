@@ -3,7 +3,7 @@
   "name": "gmail-inbox",
   "version": "1.0.0",
   "productName": "OtterMail",
-  "description": "Manage multiple Gmail inboxes",
+  "description": "Better email client",
   "iconDescription": "A desktop mail viewer focused exclusively on Gmail, allowing users to access and manage multiple inboxes and organize messages using Gmail's tagging system. The app consolidates email management across different Gmail accounts and labels in one unified interface. Think of an inbox tray, stacked envelopes, or a filing cabinet with labeled drawers.",
   "private": true,
   "type": "module",
@@ -64,6 +64,6 @@
     "host": {
       "minVersion": "0.10.0.0"
     },
-    "updatedAt": 1784306343170
+    "updatedAt": 1784314264113
   }
 }
