@@ -358,11 +358,6 @@ export function DraftEditor({
                   : "saves automatically"}
           </div>
         </div>
-        <HintTooltip label="Delete draft">
-          <IconBtn label="Delete draft" onClick={handleDiscard}>
-            <Trash2Icon className="size-3.5" />
-          </IconBtn>
-        </HintTooltip>
         <HintTooltip label="Close" hint="Esc">
           <IconBtn label="Close" onClick={onDone}>
             <XIcon className="size-3.5" />
@@ -497,6 +492,11 @@ export function DraftEditor({
                 }}
               >
                 <PaperclipIcon className="size-3.5" />
+              </IconBtn>
+            </HintTooltip>
+            <HintTooltip label="Delete draft">
+              <IconBtn label="Delete draft" className="size-7" onClick={handleDiscard}>
+                <Trash2Icon className="size-3.5" />
               </IconBtn>
             </HintTooltip>
             {attachments == null ? (

@@ -270,6 +270,9 @@ export const gmailApi = {
   openComposeAttachment: (params: { name: string; base64: string }): Promise<{ ok: boolean }> =>
     ipc("gmail:openComposeAttachment", params),
 
+  /** Fetch a remote email image server-side (bypasses the iframe's CORP block). */
+  proxyImage: (url: string): Promise<{ dataUrl: string }> => ipc("gmail:proxyImage", { url }),
+
   openAttachment: (params: AttachmentFileParams): Promise<{ ok: boolean }> =>
     ipc("gmail:openAttachment", params),
 

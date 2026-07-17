@@ -209,10 +209,42 @@ function HtmlBody({
       ro?.disconnect();
       ro = new ResizeObserver(fit);
       ro.observe(doc.body);
-      doc.querySelectorAll("img").forEach((img) => {
-        if ((img as HTMLImageElement).complete) return;
+      // Some remote images won't load in the iframe — anything served with
+      // `Cross-Origin-Resource-Policy: same-origin` (Anthropic/Cloudflare, …) is
+      // blocked by WebKit since the frame's origin isn't the image's. Re-fetch
+      // those through the backend proxy (no CORP there) and swap in a data URL.
+      const proxyBrokenImage = (img: HTMLImageElement) => {
+        if (img.dataset.glazeProxied) return;
+        const src = img.getAttribute("src") ?? "";
+        if (!/^https?:/i.test(src)) return;
+        // Don't bother proxying 1×1 tracking beacons.
+        if (img.getAttribute("width") === "1" && img.getAttribute("height") === "1") return;
+        img.dataset.glazeProxied = "1";
+        void gmailApi
+          .proxyImage(src)
+          .then((res) => {
+            if (!res?.dataUrl) return;
+            img.addEventListener("load", fit, { once: true });
+            img.src = res.dataUrl;
+          })
+          .catch(() => {});
+      };
+      doc.querySelectorAll("img").forEach((el) => {
+        const img = el as HTMLImageElement;
+        if (img.complete) {
+          // Already settled: a broken load (naturalWidth 0) is our cue to proxy.
+          if (img.naturalWidth === 0 && (img.getAttribute("src") ?? "").length > 0) proxyBrokenImage(img);
+          return;
+        }
         img.addEventListener("load", fit, { once: true });
-        img.addEventListener("error", fit, { once: true });
+        img.addEventListener(
+          "error",
+          () => {
+            proxyBrokenImage(img);
+            fit();
+          },
+          { once: true },
+        );
       });
       // Open every link in the browser. The sandbox has no `allow-popups`, so
       // `target="_blank"` links (common in marketing mail) otherwise do nothing

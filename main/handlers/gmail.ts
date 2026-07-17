@@ -45,6 +45,7 @@ import {
   findDraftIdByMessageId,
   updateLabel,
   deleteLabel,
+  proxyRemoteImage,
 } from "../services/gmail-api.js";
 import * as mailStore from "../services/mail-store.js";
 import * as mailSync from "../services/mail-sync.js";
@@ -892,6 +893,19 @@ export function registerGmailHandlers(): void {
       return { ok: true };
     } catch (err) {
       console.log("[gmail:openComposeAttachment] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:proxyImage — fetch a remote email image server-side (bypasses the
+  // iframe's Cross-Origin-Resource-Policy block) and return it as a data URL
+  ipcMain.handle("gmail:proxyImage", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    try {
+      const url = assertString(p?.url, "url");
+      return await proxyRemoteImage(url);
+    } catch (err) {
+      console.log("[gmail:proxyImage] error", { error: String(err) });
       throw err;
     }
   });
