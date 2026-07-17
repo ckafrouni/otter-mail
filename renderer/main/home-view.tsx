@@ -53,25 +53,41 @@ function useStoredWidth(key: string, def: number, min: number, max: number, dir:
   });
   const widthRef = useRef(width);
   widthRef.current = width;
+  // The pane element itself, resized imperatively during a drag.
+  const paneRef = useRef<HTMLDivElement>(null);
 
   const start = (e: ReactPointerEvent) => {
     e.preventDefault();
     const startX = e.clientX;
     const startW = widthRef.current;
+    let latest = startW;
+    let raf = 0;
+    const apply = () => {
+      raf = 0;
+      if (paneRef.current) paneRef.current.style.width = `${latest}px`;
+    };
     const move = (ev: PointerEvent) => {
       // dir -1: right-side panes grow when the handle drags left.
-      setWidth(Math.min(max, Math.max(min, startW + dir * (ev.clientX - startX))));
+      latest = Math.min(max, Math.max(min, startW + dir * (ev.clientX - startX)));
+      // Drive the drag through the DOM only — calling setWidth on every
+      // pointermove re-renders the whole HomeView tree (message list, reader,
+      // chat) each frame, which is what made resizing slow and shaky. Batch the
+      // style write to one per frame and commit to React state once, on release.
+      if (!raf) raf = requestAnimationFrame(apply);
     };
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
-      localStorage.setItem(key, String(widthRef.current));
+      if (raf) cancelAnimationFrame(raf);
+      widthRef.current = latest;
+      setWidth(latest);
+      localStorage.setItem(key, String(latest));
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   };
 
-  return { width, start };
+  return { width, start, paneRef };
 }
 
 /** The 4px gap between panel cards doubles as the resize handle. */
@@ -661,6 +677,7 @@ export function HomeView() {
         {/* Outer bottom corners run concentric with the 26px window radius (4px margin). */}
         <div className="flex min-h-0 flex-1 px-1 pb-1">
           <div
+            ref={sidebarPane.paneRef}
             style={{ width: sidebarPane.width }}
             className={`${PANEL_CARD_GLASS} shrink-0 rounded-bl-[22px]`}
           >
@@ -676,7 +693,11 @@ export function HomeView() {
           <PaneResizer onPointerDown={sidebarPane.start} />
           {hasListTarget ? (
             <>
-              <div style={{ width: listPane.width }} className={`${PANEL_CARD} shrink-0`}>
+              <div
+                ref={listPane.paneRef}
+                style={{ width: listPane.width }}
+                className={`${PANEL_CARD} shrink-0`}
+              >
                 <MessageList
                   accountId={(isCombined ? firstRealAccountId : effectiveAccountId) ?? ""}
                   labelId={selectedLabelId}
@@ -747,6 +768,7 @@ export function HomeView() {
             <>
               <PaneResizer onPointerDown={chatPane.start} />
               <div
+                ref={chatPane.paneRef}
                 style={{ width: chatPane.width }}
                 className={`${PANEL_CARD} shrink-0 rounded-br-[22px]`}
               >
