@@ -21,8 +21,11 @@ import { IconBtn, HintTooltip } from "./te-ui";
 import { RichTextArea, textToHtml, type RichTextRef } from "./rich-text";
 import {
   AttachmentChips,
+  ComposeDropOverlay,
   attachmentSignature,
+  filesToComposeAttachments,
   pickComposeAttachments,
+  useComposeFileDrop,
 } from "./compose-attachments";
 import { useDraftAutosave } from "./use-draft-autosave";
 import { RecipientInput } from "./recipient-input";
@@ -59,6 +62,12 @@ export function NewMessageView({
   const sendMessage = useSendMessage();
 
   const fromAccount = accounts.find((a) => a.id === fromId) ?? accounts[0];
+
+  const { isDragging, dropProps } = useComposeFileDrop((files) => {
+    void filesToComposeAttachments(files, attachments).then((picked) => {
+      if (picked.length > 0) setAttachments((prev) => [...prev, ...picked]);
+    });
+  });
 
   const draft = useDraftAutosave({
     accountId: fromAccount?.id ?? null,
@@ -134,7 +143,8 @@ export function NewMessageView({
   };
 
   return (
-    <div className="flex h-full min-w-0 flex-col">
+    <div className="relative flex h-full min-w-0 flex-col" {...dropProps}>
+      <ComposeDropOverlay visible={isDragging} />
       <div className="drag-region flex h-11 shrink-0 items-center gap-2 border-b border-(--te-border) px-4">
         <div className="min-w-0 flex-1">
           <div className="truncate text-[15px] font-bold leading-tight tracking-tight text-(--te-strong)">
@@ -168,7 +178,7 @@ export function NewMessageView({
         </HintTooltip>
       </div>
 
-      <div className="flex flex-1 flex-col items-center justify-center gap-1.5 px-6 text-center">
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1.5 overflow-hidden px-6 text-center">
         <span className="flex size-11 items-center justify-center rounded-full border border-(--te-outline)">
           <PenLineIcon className="size-5 text-(--te-muted)" />
         </span>
@@ -279,7 +289,7 @@ export function NewMessageView({
             placeholder="Write your message…"
             ariaLabel="Message"
             onTextChange={setText}
-            minHeightClass="min-h-[72px]"
+            minHeightClass="min-h-[36vh]"
             initialHTML={prefill?.body ? textToHtml(prefill.body) : undefined}
           />
           <AttachmentChips

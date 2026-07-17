@@ -17,8 +17,11 @@ import {
 } from "./message-reader";
 import {
   AttachmentChips,
+  ComposeDropOverlay,
   attachmentSignature,
+  filesToComposeAttachments,
   pickComposeAttachments,
+  useComposeFileDrop,
 } from "./compose-attachments";
 import type { ComposeAttachment, GmailMessageDetail, GmailMessageSummary } from "./types";
 
@@ -324,12 +327,21 @@ export function DraftEditor({
     })();
   };
 
+  // Drop-to-attach is suspended until the draft's originals are back in memory
+  // (attachments == null), so a drop can't drop them from the next save.
+  const { isDragging, dropProps } = useComposeFileDrop((files) => {
+    void filesToComposeAttachments(files, attachments ?? []).then((picked) => {
+      if (picked.length > 0) setAttachments((prev) => [...(prev ?? []), ...picked]);
+    });
+  }, attachments == null);
+
   const recipientRow = "flex items-center gap-2 border-b border-(--te-border) px-3 py-1.5";
   const fieldInput =
     "min-w-0 flex-1 bg-transparent text-[13px] text-(--te-strong) outline-none placeholder:text-(--te-faint)";
 
   return (
-    <div className="flex h-full min-w-0 flex-col">
+    <div className="relative flex h-full min-w-0 flex-col" {...dropProps}>
+      <ComposeDropOverlay visible={isDragging} />
       <div className="drag-region flex h-11 shrink-0 items-center gap-2 border-b border-(--te-border) px-4">
         <div className="min-w-0 flex-1">
           <div className="truncate text-[15px] font-bold leading-tight tracking-tight text-(--te-strong)">
@@ -386,7 +398,7 @@ export function DraftEditor({
           })}
         </div>
       ) : (
-        <div className="flex flex-1 flex-col items-center justify-center gap-1.5 px-6 text-center">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1.5 overflow-hidden px-6 text-center">
           <span className="flex size-11 items-center justify-center rounded-full border border-(--te-outline)">
             <FileIcon className="size-5 text-(--te-muted)" />
           </span>
@@ -463,7 +475,7 @@ export function DraftEditor({
             ariaLabel="Message"
             onTextChange={setText}
             autoFocus
-            minHeightClass="min-h-[72px]"
+            minHeightClass="min-h-[36vh]"
             initialHTML={
               detail.bodyHtml ?? (detail.bodyText ? textToHtml(detail.bodyText) : undefined)
             }

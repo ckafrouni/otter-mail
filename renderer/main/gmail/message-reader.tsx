@@ -59,8 +59,11 @@ import { RichTextArea, textToHtml, type RichTextRef } from "./rich-text";
 import { RecipientInput } from "./recipient-input";
 import {
   AttachmentChips,
+  ComposeDropOverlay,
   attachmentSignature,
+  filesToComposeAttachments,
   pickComposeAttachments,
+  useComposeFileDrop,
 } from "./compose-attachments";
 import { AskAssistantDialog, type AssistantContext, type QuoteContext } from "./ask-assistant";
 import { DraftEditor } from "./draft-editor";
@@ -210,6 +213,22 @@ function HtmlBody({
         if ((img as HTMLImageElement).complete) return;
         img.addEventListener("load", fit, { once: true });
         img.addEventListener("error", fit, { once: true });
+      });
+      // Open every link in the browser. The sandbox has no `allow-popups`, so
+      // `target="_blank"` links (common in marketing mail) otherwise do nothing
+      // on a plain click, and a targetless link would navigate the iframe away
+      // from the email — route them all through the OS instead. (Right-click →
+      // Open works today only because that's the native WKWebView menu.)
+      doc.addEventListener("click", (e) => {
+        const anchor = (e.target as Element | null)?.closest?.("a");
+        if (!anchor) return;
+        const raw = anchor.getAttribute("href") ?? "";
+        if (raw.startsWith("#")) return; // in-page anchor: let the iframe scroll
+        e.preventDefault();
+        const url = anchor.href; // resolved absolute URL
+        if (/^(https?|mailto):/i.test(url)) {
+          void window.glazeAPI.shell.openExternal(url).catch(() => {});
+        }
       });
       if (quoteRef.current) {
         // WKWebView doesn't reliably deliver `mouseup` from a sandboxed iframe
@@ -992,6 +1011,12 @@ function InlineComposer({
       );
   };
 
+  const { isDragging, dropProps } = useComposeFileDrop((files) => {
+    void filesToComposeAttachments(files, attachments ?? []).then((picked) => {
+      if (picked.length > 0) setAttachments((prev) => [...(prev ?? []), ...picked]);
+    });
+  }, attachments == null);
+
   const senderFirstName =
     (lastMessage.fromName || lastMessage.fromEmail).split(" ")[0] || "thread";
   const placeholder =
@@ -1002,7 +1027,8 @@ function InlineComposer({
         : "Add a note (optional)…";
 
   return (
-    <div className="shrink-0 px-5 pb-4 pt-1" data-inline-compose="">
+    <div className="relative shrink-0 px-5 pb-4 pt-1" data-inline-compose="" {...dropProps}>
+      <ComposeDropOverlay visible={isDragging} />
       <div
         className="rounded-[6px] border border-(--te-outline) bg-(--te-panel) focus-within:border-(--te-outline-hover)"
         onKeyDown={(e) => {
@@ -1080,6 +1106,7 @@ function InlineComposer({
           placeholder={placeholder}
           ariaLabel={INLINE_MODE_LABEL[mode]}
           onTextChange={setText}
+          minHeightClass="min-h-[160px]"
         />
         <AttachmentChips
           attachments={attachments}

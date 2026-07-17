@@ -1,7 +1,11 @@
+import { useRef, useState, type DragEvent } from "react";
 import { toast } from "@glaze/core/components";
 import { PaperclipIcon, XIcon } from "lucide-react";
 import { gmailApi } from "./api";
 import type { ComposeAttachment } from "./types";
+
+/** Mirror of the backend cap (gmail-api.ts) so renderer-side drops fail early. */
+const MAX_ATTACHMENT_TOTAL_BYTES = 25 * 1024 * 1024;
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -9,11 +13,15 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function attachmentBytes(a: ComposeAttachment): number {
+  return a.size || Math.floor((a.base64.length * 3) / 4);
+}
+
 /** Open the native file picker; the backend enforces the 25 MB total cap. */
 export async function pickComposeAttachments(
   existing: ComposeAttachment[],
 ): Promise<ComposeAttachment[]> {
-  const existingBytes = existing.reduce((sum, a) => sum + Math.floor((a.base64.length * 3) / 4), 0);
+  const existingBytes = existing.reduce((sum, a) => sum + attachmentBytes(a), 0);
   try {
     const res = await gmailApi.pickAttachments(existingBytes);
     if (res.error) toast.error(res.error);
@@ -22,6 +30,113 @@ export async function pickComposeAttachments(
     toast.error("Could not attach files");
     return [];
   }
+}
+
+function readFileAsAttachment(file: File): Promise<ComposeAttachment> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+    reader.onload = () => {
+      // FileReader gives a `data:<mime>;base64,<payload>` URL — keep the payload.
+      const result = String(reader.result ?? "");
+      const comma = result.indexOf(",");
+      resolve({
+        name: file.name || "attachment",
+        mimeType: file.type || "application/octet-stream",
+        size: file.size,
+        base64: comma >= 0 ? result.slice(comma + 1) : "",
+      });
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Read dropped/pasted files into attachments in the renderer (base64), skipping
+ * any that would push the running total past the 25 MB cap.
+ */
+export async function filesToComposeAttachments(
+  files: File[],
+  existing: ComposeAttachment[],
+): Promise<ComposeAttachment[]> {
+  let total = existing.reduce((sum, a) => sum + attachmentBytes(a), 0);
+  const out: ComposeAttachment[] = [];
+  let skipped = false;
+  for (const file of files) {
+    if (total + file.size > MAX_ATTACHMENT_TOTAL_BYTES) {
+      skipped = true;
+      continue;
+    }
+    try {
+      out.push(await readFileAsAttachment(file));
+      total += file.size;
+    } catch {
+      skipped = true;
+    }
+  }
+  if (skipped) toast.error("Some files were skipped (25 MB total limit)");
+  return out;
+}
+
+/**
+ * Gmail-style drag-and-drop: drop files anywhere on the composer to attach.
+ * Returns `dropProps` to spread on the drop container and `isDragging` for the
+ * overlay. Ignores internal drags (e.g. dragging an attachment out to Finder),
+ * which carry no `Files` type.
+ */
+export function useComposeFileDrop(
+  onFiles: (files: File[]) => void,
+  disabled?: boolean,
+): { isDragging: boolean; dropProps: Record<string, (e: DragEvent) => void> } {
+  const [isDragging, setIsDragging] = useState(false);
+  const depth = useRef(0);
+  const carriesFiles = (e: DragEvent) =>
+    Array.from(e.dataTransfer?.types ?? []).includes("Files");
+  return {
+    isDragging,
+    dropProps: {
+      onDragEnter: (e) => {
+        if (disabled || !carriesFiles(e)) return;
+        e.preventDefault();
+        depth.current += 1;
+        setIsDragging(true);
+      },
+      onDragOver: (e) => {
+        if (disabled || !carriesFiles(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      },
+      onDragLeave: (e) => {
+        if (disabled || !carriesFiles(e)) return;
+        // dragenter/leave fire per child element; count depth so leaving a child
+        // doesn't dismiss the overlay while still over the container.
+        depth.current -= 1;
+        if (depth.current <= 0) {
+          depth.current = 0;
+          setIsDragging(false);
+        }
+      },
+      onDrop: (e) => {
+        if (disabled) return;
+        e.preventDefault();
+        depth.current = 0;
+        setIsDragging(false);
+        const files = Array.from(e.dataTransfer?.files ?? []);
+        if (files.length > 0) onFiles(files);
+      },
+    },
+  };
+}
+
+/** Full-cover "Drop files to attach" hint; pointer-events-none so the drop lands on the container. */
+export function ComposeDropOverlay({ visible }: { visible: boolean }) {
+  if (!visible) return null;
+  return (
+    <div className="pointer-events-none absolute inset-0 z-30 m-1 flex flex-col items-center justify-center gap-2 rounded-[8px] border-2 border-dashed border-(--te-accent) bg-(--te-panel) text-(--te-strong)">
+      <PaperclipIcon className="size-6 text-(--te-accent)" />
+      <span className="text-[13px] font-semibold">Drop files to attach</span>
+    </div>
+  );
 }
 
 /** Stable signature for autosave dirty-checks. */
