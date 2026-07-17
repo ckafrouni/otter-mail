@@ -159,9 +159,116 @@ a { color: #e34500; }
 blockquote { border-left: 3px solid #d6d6d6; padding-left: 12px; margin: 4px 0; color: #555555; }
 </style>`;
 
-/** Per-iframe height watchers, torn down when a reused iframe re-loads. */
-type IframeFit = { ro: ResizeObserver; poll: ReturnType<typeof setInterval> };
-const iframeObservers = new WeakMap<HTMLIFrameElement, IframeFit>();
+/**
+ * HTML mail in an auto-height iframe. The height watchers must NOT hang off the
+ * iframe's `load` event: that only fires once every subresource has settled, and
+ * marketing mail is full of remote images and tracking pixels that routinely
+ * stall it for tens of seconds (observed: 37s) — the iframe would sit at the
+ * 150px CSS default, clipped and internally scrollable, the whole time. So watch
+ * for the srcdoc document as soon as it is PARSED and fit from there; `load` and
+ * the per-image listeners are then just later refinements for late-arriving art.
+ */
+function HtmlBody({
+  html,
+  onQuoteText,
+}: {
+  html: string;
+  onQuoteText?: (text: string) => void;
+}) {
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const quoteRef = useRef(onQuoteText);
+  quoteRef.current = onQuoteText;
+
+  useEffect(() => {
+    const iframe = frameRef.current;
+    if (!iframe) return;
+    let ro: ResizeObserver | null = null;
+    let wired: Document | null = null;
+    let stopped = false;
+
+    const mountedAt = performance.now();
+    let sized = false;
+    const fit = () => {
+      const h = iframe.contentDocument?.documentElement?.scrollHeight ?? 0;
+      if (h <= 0) return;
+      iframe.style.height = h + "px";
+      if (!sized) {
+        sized = true;
+        console.log("[MessageBody:sized]", { ms: Math.round(performance.now() - mountedAt), height: h });
+      }
+    };
+
+    // Attach to whichever document is in the frame, once it has a body.
+    const wire = () => {
+      const doc = iframe.contentDocument;
+      if (!doc?.body || doc === wired) return;
+      wired = doc;
+      ro?.disconnect();
+      ro = new ResizeObserver(fit);
+      ro.observe(doc.body);
+      doc.querySelectorAll("img").forEach((img) => {
+        if ((img as HTMLImageElement).complete) return;
+        img.addEventListener("load", fit, { once: true });
+        img.addEventListener("error", fit, { once: true });
+      });
+      if (quoteRef.current) {
+        // WKWebView doesn't reliably deliver `mouseup` from a sandboxed iframe
+        // to a parent-attached listener, but `selectionchange` on its document
+        // does — report the (final) non-empty selection.
+        const report = () => {
+          const text = doc.getSelection()?.toString().trim() ?? "";
+          if (text) quoteRef.current?.(text);
+        };
+        doc.addEventListener("mouseup", report);
+        doc.addEventListener("selectionchange", report);
+      }
+      fit();
+    };
+
+    // srcdoc parsing is async with no event we can subscribe to before the
+    // document exists, so spin on frames until it shows up (1–2 frames)…
+    const spin = () => {
+      if (stopped) return;
+      wire();
+      if (!wired) requestAnimationFrame(spin);
+    };
+    requestAnimationFrame(spin);
+
+    // … then keep re-fitting for a while: CSS background images and web fonts
+    // change the height but fire no load event we can hook.
+    let ticks = 0;
+    const poll = setInterval(() => {
+      wire();
+      fit();
+      if (++ticks >= 40) clearInterval(poll);
+    }, 250);
+
+    const onLoad = () => {
+      wire();
+      fit();
+    };
+    iframe.addEventListener("load", onLoad);
+
+    return () => {
+      stopped = true;
+      clearInterval(poll);
+      ro?.disconnect();
+      iframe.removeEventListener("load", onLoad);
+    };
+  }, [html]);
+
+  // Marketing/HTML mail is designed for a white canvas — give it a light card
+  // inside the dark conversation, like an unfurled preview card.
+  return (
+    <iframe
+      ref={frameRef}
+      sandbox="allow-same-origin"
+      srcDoc={MESSAGE_BODY_PRELUDE + html}
+      className="w-full rounded-[6px] border border-(--te-border) bg-white"
+      title="Message body"
+    />
+  );
+}
 
 function MessageBody({
   bodyHtml,
@@ -174,65 +281,7 @@ function MessageBody({
   onQuoteText?: (text: string) => void;
 }) {
   if (bodyHtml) {
-    // Marketing/HTML mail is designed for a white canvas — give it a light
-    // card inside the dark conversation, like an unfurled preview card.
-    return (
-      <iframe
-        sandbox="allow-same-origin"
-        srcDoc={MESSAGE_BODY_PRELUDE + bodyHtml}
-        className="w-full rounded-[6px] border border-(--te-border) bg-white"
-        title="Message body"
-        onLoad={(e) => {
-          const iframe = e.currentTarget;
-          const doc = iframe.contentDocument || iframe.contentWindow?.document;
-          if (!doc) return;
-          // onLoad fires before late images/fonts finish, so the first
-          // scrollHeight is too small and the iframe ends up scrollable. Guard
-          // against a stale doc (iframe reused after navigating) so a late
-          // callback never sizes to a detached document.
-          const fit = () => {
-            if ((iframe.contentDocument || iframe.contentWindow?.document) !== doc) return;
-            iframe.style.height = doc.documentElement.scrollHeight + "px";
-          };
-          fit();
-          const prev = iframeObservers.get(iframe);
-          if (prev) {
-            prev.ro.disconnect();
-            clearInterval(prev.poll);
-          }
-          // Re-fit the moment each image finishes (the usual cause), …
-          doc.querySelectorAll("img").forEach((img) => {
-            const im = img as HTMLImageElement;
-            if (!im.complete) {
-              im.addEventListener("load", fit, { once: true });
-              im.addEventListener("error", fit, { once: true });
-            }
-          });
-          // … a ResizeObserver for body-height changes, …
-          const ro = new ResizeObserver(fit);
-          if (doc.body) ro.observe(doc.body);
-          // … and a short poll to catch CSS background images / web fonts that
-          // fire no load event (~6s, then stops; fit() no-ops once stale).
-          let ticks = 0;
-          const poll = setInterval(() => {
-            fit();
-            if (++ticks >= 24) clearInterval(poll);
-          }, 250);
-          iframeObservers.set(iframe, { ro, poll });
-          if (onQuoteText) {
-            // WKWebView doesn't reliably deliver `mouseup` from a sandboxed
-            // iframe to a parent-attached listener, but `selectionchange` on
-            // its document does — report the (final) non-empty selection.
-            const report = () => {
-              const text = doc.getSelection()?.toString().trim() ?? "";
-              if (text) onQuoteText(text);
-            };
-            doc.addEventListener("mouseup", report);
-            doc.addEventListener("selectionchange", report);
-          }
-        }}
-      />
-    );
+    return <HtmlBody html={bodyHtml} onQuoteText={onQuoteText} />;
   }
   if (bodyText) {
     // Flush inside the message card (the card is the surface now).

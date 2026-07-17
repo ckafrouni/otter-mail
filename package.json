@@ -58,12 +58,12 @@
   "packageManager": "npm@11.11.0+sha512-82gRxKrh/eY5UnNorkTFcdBQAGpgjWehkfGVqAGlJjejEtJZGGJUqjo3mbBTNbc5BTnPKGVtGPBZGhElujX5cw==",
   "glaze": {
     "capabilities": {},
-    "sdkVersion": "0.9.1.0",
+    "sdkVersion": "0.10.0.0",
     "createdAt": "2026-07-01T12:05:07.615Z",
     "lastMigration": "cli-js-entry",
     "host": {
-      "minVersion": "0.9.1.0"
+      "minVersion": "0.10.0.0"
     },
-    "updatedAt": 1783242811178
+    "updatedAt": 1784303825191
   }
 }
