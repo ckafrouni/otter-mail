@@ -280,7 +280,7 @@ app.whenReady().then(async () => {
 
   await setupApplicationMenu();
 
-  void createTray({ onSync: () => void syncAllAccounts({ force: true }) });
+  void createTray();
 
   void pruneAttachmentCache();
 

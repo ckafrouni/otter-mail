@@ -625,6 +625,23 @@ export function countInboxUnreadForAccount(accountId: string): number {
   return row?.n ?? 0;
 }
 
+/** Most recent unread INBOX threads for a single account — the tray popover's mini inbox. */
+export function listUnreadInboxPreview(accountId: string, limit: number): GmailMessageSummary[] {
+  const d = getDb();
+  const rows = d
+    .prepare(
+      threadPageQuery(`
+        SELECT DISTINCT m.accountId AS accountId, m.threadId AS threadId
+          FROM messages m
+          JOIN message_labels ml
+            ON ml.accountId = m.accountId AND ml.messageId = m.id
+         WHERE m.accountId = ? AND ml.labelId = 'INBOX' AND m.unread = 1 AND ${NOT_SPAM_TRASH}
+      `),
+    )
+    .all(accountId, limit, 0) as unknown as ThreadRow[];
+  return rows.map(rowToThreadSummary);
+}
+
 export function countMessagesForLabel(accountId: string, labelId: string): number {
   const d = getDb();
   const row = d

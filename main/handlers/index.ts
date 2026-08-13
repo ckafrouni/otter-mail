@@ -15,6 +15,7 @@ import {
   takeSettingsTarget,
 } from "../windows/settings-window.js";
 import { registerGmailHandlers } from "./gmail.js";
+import { registerTrayPopoverHandlers } from "./tray-popover.js";
 import * as assistant from "../services/assistant.js";
 import * as assistantChat from "../services/assistant-chat.js";
 import { openMessageWindow } from "../windows/message-window.js";
@@ -161,6 +162,9 @@ export function registerHandlers(): void {
 
   // Register Gmail handlers
   registerGmailHandlers();
+
+  // Tray popover (mini inbox) handlers
+  registerTrayPopoverHandlers();
 
   logger.info("handlers", "✓ IPC handlers registered");
 

@@ -45,7 +45,7 @@ import * as mailStore from "../services/mail-store.js";
 import * as mailSync from "../services/mail-sync.js";
 import { getSenderAvatar } from "../services/avatar-store.js";
 import { updateDockBadge } from "../services/notifier.js";
-import { refreshTrayMenu } from "../services/tray.js";
+import { refreshTray } from "../services/tray.js";
 import { getSettings, updateSettings, type AppSettings } from "../services/settings-store.js";
 import * as viewsStore from "../services/views-store.js";
 import type { ComposeAttachment, MailView, ViewRule } from "../gmail/types.js";
@@ -164,7 +164,7 @@ export function registerGmailHandlers(): void {
       const signature = asString(p?.signature);
       const updated = await storeUpdateAccount(accountId, { displayName, color, signature });
       ipcMain.broadcast("gmail:accounts-changed");
-      void refreshTrayMenu();
+      void refreshTray();
       return updated;
     } catch (err) {
       console.log("[gmail:updateAccount] error", { error: String(err) });

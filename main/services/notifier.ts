@@ -13,7 +13,7 @@ import { app, BrowserWindow, Notification, logger } from "@glaze/core/backend";
 import { getAccount } from "./account-store.js";
 import { getSettings } from "./settings-store.js";
 import * as mailStore from "./mail-store.js";
-import { refreshTrayMenu } from "./tray.js";
+import { refreshTray } from "./tray.js";
 import type { GmailAccount, GmailMessageSummary } from "../gmail/types.js";
 
 const MAX_INDIVIDUAL_NOTIFICATIONS = 3;
@@ -86,5 +86,5 @@ export function updateDockBadge(): void {
   } catch (err) {
     logger.info("notifier", `badge update failed: ${String(err)}`);
   }
-  void refreshTrayMenu();
+  void refreshTray();
 }
