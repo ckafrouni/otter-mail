@@ -12,6 +12,8 @@ export interface GmailAccount {
   displayName?: string;
   /** User-set accent color (hex) for this account, edited in Settings. */
   color?: string;
+  /** Rich-text HTML signature appended to new/reply/forward compose bodies. */
+  signature?: string;
 }
 
 export interface GmailLabel {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArchiveXIcon,
   BookmarkIcon,
@@ -6,6 +6,7 @@ import {
   FileIcon,
   InboxIcon,
   LayersIcon,
+  PenLineIcon,
   PlusIcon,
   SendIcon,
   SettingsIcon,
@@ -59,6 +60,7 @@ import {
   useUpdateAccount,
 } from "../main/gmail/hooks";
 import { useMailViews } from "../main/gmail/custom-views";
+import { RichTextArea, type RichTextRef } from "../main/gmail/rich-text";
 import { ViewEditorForm } from "../main/gmail/view-editor-form";
 import {
   ACCOUNT_COLOR_PALETTE,
@@ -109,6 +111,8 @@ function AccountRow({ account }: { account: GmailAccount }) {
   const removeAccount = useRemoveAccount();
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [name, setName] = useState(getAccountDisplayName(account));
+  const [signatureOpen, setSignatureOpen] = useState(false);
+  const signatureRef = useRef<RichTextRef>(null);
 
   useEffect(() => {
     setName(getAccountDisplayName(account));
@@ -121,10 +125,20 @@ function AccountRow({ account }: { account: GmailAccount }) {
     void updateAccount.mutateAsync({ accountId: account.id, displayName: trimmed });
   };
 
+  const commitSignature = () => {
+    const editor = signatureRef.current;
+    if (!editor) return;
+    const html = editor.getText().trim().length === 0 ? "" : editor.getHTML();
+    if (html === (account.signature ?? "")) return;
+    console.log("[SettingsView:updateSignature]", { accountId: account.id });
+    void updateAccount.mutateAsync({ accountId: account.id, signature: html });
+  };
+
   const color = getAccountColor(account);
 
   return (
-    <div className="flex items-center gap-3 py-2.5">
+    <div className="flex flex-col gap-2 py-2.5">
+    <div className="flex items-center gap-3">
       <Avatar size="small">
         {account.picture ? <AvatarImage src={account.picture} alt={name} /> : null}
         <AvatarFallback>{(name[0] ?? "?").toUpperCase()}</AvatarFallback>
@@ -184,6 +198,32 @@ function AccountRow({ account }: { account: GmailAccount }) {
           <Trash2Icon className="size-4" />
         </Button>
       )}
+    </div>
+      <div className="pl-11">
+        <button
+          type="button"
+          onClick={() => setSignatureOpen((v) => !v)}
+          className="flex items-center gap-1.5 text-[12px] text-tertiary hover:text-secondary"
+        >
+          <PenLineIcon className="size-3" />
+          {account.signature ? "Edit signature" : "Add signature"}
+          <ChevronRightIcon
+            className={`size-3 transition-transform ${signatureOpen ? "rotate-90" : ""}`}
+          />
+        </button>
+        {signatureOpen ? (
+          <div className="mt-2 rounded-[6px] border border-(--te-outline) bg-(--te-panel)">
+            <RichTextArea
+              ref={signatureRef}
+              placeholder="Your signature…"
+              ariaLabel={`Signature for ${account.email}`}
+              minHeightClass="min-h-[70px]"
+              initialHTML={account.signature}
+              onBlur={commitSignature}
+            />
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

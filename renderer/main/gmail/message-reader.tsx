@@ -1148,6 +1148,7 @@ function InlineComposer({
           ariaLabel={INLINE_MODE_LABEL[mode]}
           onTextChange={setText}
           minHeightClass="min-h-[160px]"
+          signatureHTML={accountsQuery.data?.find((a) => a.id === accountId)?.signature}
         />
         <AttachmentChips
           attachments={attachments}

@@ -280,6 +280,7 @@ export function NewMessageView({
             onTextChange={setText}
             minHeightClass="min-h-[36vh]"
             initialHTML={prefill?.body ? textToHtml(prefill.body) : undefined}
+            signatureHTML={fromAccount?.signature}
           />
           <AttachmentChips
             attachments={attachments}

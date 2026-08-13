@@ -88,13 +88,30 @@ export const RichTextArea = forwardRef<
     placeholder: string;
     ariaLabel: string;
     onTextChange?: (plainText: string) => void;
+    onBlur?: () => void;
     autoFocus?: boolean;
     minHeightClass?: string;
     /** Seeds the editor once on mount (e.g. resuming a draft). */
     initialHTML?: string;
+    /**
+     * Appended below `initialHTML` once on mount (e.g. an account's
+     * signature on a fresh compose) — never touched again for that mount,
+     * so switching "From" mid-compose doesn't swap it. The caret is placed
+     * before it so typing naturally lands above the signature.
+     */
+    signatureHTML?: string;
   }
 >(function RichTextArea(
-  { placeholder, ariaLabel, onTextChange, autoFocus, minHeightClass, initialHTML },
+  {
+    placeholder,
+    ariaLabel,
+    onTextChange,
+    onBlur,
+    autoFocus,
+    minHeightClass,
+    initialHTML,
+    signatureHTML,
+  },
   ref,
 ) {
   const editorRef = useRef<HTMLDivElement>(null);
@@ -129,13 +146,24 @@ export const RichTextArea = forwardRef<
 
   const seededRef = useRef(false);
   useEffect(() => {
-    if (!seededRef.current && initialHTML && editorRef.current) {
+    const el = editorRef.current;
+    if (!seededRef.current && el && (initialHTML || signatureHTML)) {
       seededRef.current = true;
-      editorRef.current.innerHTML = initialHTML;
+      el.innerHTML = (initialHTML ?? "") + (signatureHTML ? `<br><br>${signatureHTML}` : "");
       emitChange();
+      if (signatureHTML) {
+        // Collapse the caret to the very start so typing lands above the
+        // signature instead of inside/after it.
+        const range = document.createRange();
+        range.setStart(el, 0);
+        range.collapse(true);
+        const selection = document.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+      }
     }
     if (autoFocus) editorRef.current?.focus();
-  }, [autoFocus, initialHTML]);
+  }, [autoFocus, initialHTML, signatureHTML]);
 
   const refreshToolbar = () => {
     const el = editorRef.current;
@@ -302,6 +330,7 @@ export const RichTextArea = forwardRef<
         data-placeholder={placeholder}
         onInput={emitChange}
         onKeyDown={handleKeyDown}
+        onBlur={onBlur}
         className={[
           "te-scroll max-h-[55vh] w-full overflow-y-auto bg-transparent px-3 py-2.5",
           "text-[15px] leading-relaxed text-(--te-strong) outline-none",

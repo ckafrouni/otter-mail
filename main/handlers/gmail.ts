@@ -160,7 +160,8 @@ export function registerGmailHandlers(): void {
       const accountId = assertString(p?.accountId, "accountId");
       const displayName = asString(p?.displayName);
       const color = asString(p?.color);
-      const updated = await storeUpdateAccount(accountId, { displayName, color });
+      const signature = asString(p?.signature);
+      const updated = await storeUpdateAccount(accountId, { displayName, color, signature });
       ipcMain.broadcast("gmail:accounts-changed");
       return updated;
     } catch (err) {

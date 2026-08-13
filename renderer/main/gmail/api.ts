@@ -153,6 +153,7 @@ export type UpdateAccountParams = {
   accountId: string;
   displayName?: string;
   color?: string;
+  signature?: string;
 };
 
 export type NotificationsMode = "off" | "inbox" | "all";
