@@ -14,6 +14,8 @@ import {
   DropdownMenuContent,
   DropdownMenuCheckboxItem,
   DropdownMenuSeparator,
+  SegmentedControl,
+  SegmentedControlItem,
   Text,
 } from "@glaze/core/components";
 import {
@@ -21,7 +23,6 @@ import {
   ArchiveXIcon,
   BotMessageSquareIcon,
   FlagIcon,
-  ListFilterIcon,
   MailIcon,
   MailOpenIcon,
   RotateCcwIcon,
@@ -616,7 +617,10 @@ export function MessageList({
   searchQuery,
 }: MessageListProps) {
   const isCombined = combined != null;
-  const [unreadOnly, setUnreadOnly] = useState(false);
+  // "All / Unread" mode switcher — a segmented control in the header, not a
+  // buried icon toggle, so the current display mode is always visible.
+  const [mailboxMode, setMailboxMode] = useState<"all" | "unread">("all");
+  const unreadOnly = mailboxMode === "unread";
 
   // Search is local (FTS5 over the mail cache): account-scoped in account mode,
   // across every account in Combined mode. Results are message-level rows.
@@ -1197,15 +1201,16 @@ export function MessageList({
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
-        <HintTooltip label={unreadOnly ? "Show all messages" : "Filter unread"}>
-          <IconBtn
-            label={unreadOnly ? "Show all messages" : "Filter unread"}
-            active={unreadOnly}
-            onClick={() => setUnreadOnly((o) => !o)}
-          >
-            <ListFilterIcon className="size-3.5" />
-          </IconBtn>
-        </HintTooltip>
+        <SegmentedControl
+          type="single"
+          value={mailboxMode}
+          onValueChange={(v) => setMailboxMode(v as "all" | "unread")}
+          size="small"
+          variant="filled"
+        >
+          <SegmentedControlItem value="all">All</SegmentedControlItem>
+          <SegmentedControlItem value="unread">Unread</SegmentedControlItem>
+        </SegmentedControl>
       </div>
 
       {filterOpen ? (
