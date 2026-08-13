@@ -12,7 +12,7 @@
  * reshow, so a second click on the icon actually closes the popover.
  */
 
-import { BrowserWindow, screen, app } from "@glaze/core/backend";
+import { BrowserWindow, screen } from "@glaze/core/backend";
 import { getPreloadPath, getWindowUrl } from "./window-paths.js";
 
 const POPOVER_WIDTH = 340;
@@ -88,7 +88,9 @@ export async function toggleTrayPopover(bounds: {
 
   positionPopover(win, bounds);
   win.show();
-  app.focus({ steal: true });
+  // Focus just this window — app.focus({steal:true}) would raise every
+  // window in the app, including the (possibly hidden) main window.
+  win.focus();
 }
 
 export function hideTrayPopover(): void {

@@ -21,8 +21,15 @@ const TRAY_UUID = "b8b6e6b0-2b2d-4c7a-9b7a-5c6a6b6b0f3d";
 
 let tray: Tray | null = null;
 
-export function focusMainWindow(): void {
-  const win = BrowserWindow.getAllWindows().find((w) => w.windowKey === "main");
+/** Show (and create if needed) the main window. */
+export async function focusMainWindow(): Promise<void> {
+  let win = BrowserWindow.getAllWindows().find((w) => w.windowKey === "main");
+  if (!win || win.isDestroyed()) {
+    // Dynamically import to avoid circular dependency at module load time.
+    const { createMainWindow } = await import("../index.js");
+    await createMainWindow();
+    win = BrowserWindow.getAllWindows().find((w) => w.windowKey === "main");
+  }
   win?.show();
   app.focus({ steal: true });
 }

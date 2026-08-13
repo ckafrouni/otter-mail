@@ -63,7 +63,7 @@ export function registerTrayPopoverHandlers(): void {
   });
 
   ipcMain.handle("tray:compose", async () => {
-    focusMainWindow();
+    await focusMainWindow();
     ipcMain.broadcast("compose:new");
     hideTrayPopover();
   });
@@ -74,7 +74,7 @@ export function registerTrayPopoverHandlers(): void {
   });
 
   ipcMain.handle("tray:openApp", async () => {
-    focusMainWindow();
+    await focusMainWindow();
     hideTrayPopover();
   });
 

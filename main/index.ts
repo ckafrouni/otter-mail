@@ -63,7 +63,7 @@ if (process.env.GLAZE_DEV_HARNESS === "1") {
 let mainWindow: BrowserWindow | null = null;
 
 // ── Window creation ───────────────────────────────────────────────────
-async function createMainWindow() {
+export async function createMainWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     logger.debug("main", "Main window already exists, skipping creation");
     return;
