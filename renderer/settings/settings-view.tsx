@@ -41,6 +41,7 @@ import {
   Avatar,
   AvatarImage,
   AvatarFallback,
+  ColorWell,
   Text,
   toast,
 } from "@glaze/core/components";
@@ -63,7 +64,6 @@ import { useMailViews } from "../main/gmail/custom-views";
 import { RichTextArea, type RichTextRef } from "../main/gmail/rich-text";
 import { ViewEditorForm } from "../main/gmail/view-editor-form";
 import {
-  ACCOUNT_COLOR_PALETTE,
   getAccountColor,
   getAccountDisplayName,
 } from "../main/gmail/account-style";
@@ -157,20 +157,13 @@ function AccountRow({ account }: { account: GmailAccount }) {
           {account.email}
         </Text>
       </div>
-      <div className="flex items-center gap-1.5 shrink-0">
-        {ACCOUNT_COLOR_PALETTE.map((swatch) => (
-          <button
-            key={swatch}
-            type="button"
-            aria-label={`Set color ${swatch}`}
-            className="size-4 rounded-full flex items-center justify-center"
-            style={{ backgroundColor: swatch }}
-            onClick={() => void updateAccount.mutateAsync({ accountId: account.id, color: swatch })}
-          >
-            {color === swatch ? <span className="size-1.5 rounded-full bg-white" /> : null}
-          </button>
-        ))}
-      </div>
+      <ColorWell
+        value={color}
+        onChange={(swatch) => void updateAccount.mutateAsync({ accountId: account.id, color: swatch })}
+        size="small"
+        aria-label={`Set color for ${account.email}`}
+        className="shrink-0"
+      />
       {confirmingRemove ? (
         <div className="flex items-center gap-1.5 shrink-0">
           <Button variant="filled" size="small" onClick={() => setConfirmingRemove(false)}>
