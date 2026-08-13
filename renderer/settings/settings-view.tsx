@@ -137,62 +137,62 @@ function AccountRow({ account }: { account: GmailAccount }) {
   const color = getAccountColor(account);
 
   return (
-    <div className="flex flex-col gap-2 py-2.5">
-    <div className="flex items-center gap-3">
-      <Avatar size="small">
-        {account.picture ? <AvatarImage src={account.picture} alt={name} /> : null}
-        <AvatarFallback>{(name[0] ?? "?").toUpperCase()}</AvatarFallback>
-      </Avatar>
-      <div className="flex flex-col flex-1 min-w-0 gap-0.5">
-        <Input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onBlur={commitName}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-          }}
-          className="w-56"
-        />
-        <Text variant="mini" color="tertiary" truncate>
-          {account.email}
-        </Text>
-      </div>
-      <ColorWell
-        value={color}
-        onChange={(swatch) => void updateAccount.mutateAsync({ accountId: account.id, color: swatch })}
-        size="small"
-        aria-label={`Set color for ${account.email}`}
-        className="shrink-0"
-      />
-      {confirmingRemove ? (
-        <div className="flex items-center gap-1.5 shrink-0">
-          <Button variant="filled" size="small" onClick={() => setConfirmingRemove(false)}>
-            Cancel
-          </Button>
-          <Button
-            variant="filled"
-            size="small"
-            className="text-support-red"
-            disabled={removeAccount.isPending}
-            onClick={() => void removeAccount.mutateAsync(account.id)}
-          >
-            {removeAccount.isPending ? "Removing…" : "Remove"}
-          </Button>
+    <div className="flex flex-col py-2 gap-3">
+      <div className="flex items-center gap-2.5">
+        <Avatar size="small" className="mt-0.5">
+          {account.picture ? <AvatarImage src={account.picture} alt={name} /> : null}
+          <AvatarFallback>{(name[0] ?? "?").toUpperCase()}</AvatarFallback>
+        </Avatar>
+        <div className="flex flex-col flex-1 min-w-0 gap-1">
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={commitName}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            }}
+            className="w-56"
+          />
+          <Text variant="mini" color="tertiary" truncate>
+            {account.email}
+          </Text>
         </div>
-      ) : (
-        <Button
-          variant="transparent"
+        <ColorWell
+          value={color}
+          onChange={(swatch) => void updateAccount.mutateAsync({ accountId: account.id, color: swatch })}
           size="small"
-          iconOnly
-          aria-label={`Remove ${account.email}`}
-          className="shrink-0 text-tertiary hover:text-support-red"
-          onClick={() => setConfirmingRemove(true)}
-        >
-          <Trash2Icon className="size-4" />
-        </Button>
-      )}
-    </div>
-      <div className="pl-11">
+          aria-label={`Set color for ${account.email}`}
+          className="shrink-0 mt-0.5"
+        />
+        {confirmingRemove ? (
+          <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+            <Button variant="filled" size="small" onClick={() => setConfirmingRemove(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="filled"
+              size="small"
+              className="text-support-red"
+              disabled={removeAccount.isPending}
+              onClick={() => void removeAccount.mutateAsync(account.id)}
+            >
+              {removeAccount.isPending ? "Removing…" : "Remove"}
+            </Button>
+          </div>
+        ) : (
+          <Button
+            variant="transparent"
+            size="small"
+            iconOnly
+            aria-label={`Remove ${account.email}`}
+            className="shrink-0 text-tertiary hover:text-support-red mt-0.5"
+            onClick={() => setConfirmingRemove(true)}
+          >
+            <Trash2Icon className="size-4" />
+          </Button>
+        )}
+      </div>
+      <div className="pl-[42px]">
         <button
           type="button"
           onClick={() => setSignatureOpen((v) => !v)}
