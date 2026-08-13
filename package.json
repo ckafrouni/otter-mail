@@ -60,10 +60,10 @@
     "capabilities": {},
     "sdkVersion": "0.13.0.0",
     "createdAt": "2026-07-01T12:05:07.615Z",
-    "lastMigration": "ai-tsconfig-paths",
+    "lastMigration": "tray-retina-icons",
     "host": {
       "minVersion": "0.13.0.0"
     },
-    "updatedAt": 1786635266158
+    "updatedAt": 1786635266287
   }
 }
