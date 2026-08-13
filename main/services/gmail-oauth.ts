@@ -9,7 +9,7 @@
 
 import { OAuthService } from "@glaze/core/oauth";
 import type { OAuthServiceOptions } from "@glaze/core/oauth";
-import { getCredentials, hasCredentials } from "./credentials-store.js";
+import { getCredentials } from "./credentials-store.js";
 import { addAccount as storeAddAccount } from "./account-store.js";
 import type { GmailAccount } from "../gmail/types.js";
 
@@ -29,7 +29,11 @@ const SCOPES = [
   "https://www.googleapis.com/auth/contacts.other.readonly",
 ];
 
-function buildServiceOptions(providerId: string, clientId: string, clientSecret: string): OAuthServiceOptions {
+function buildServiceOptions(
+  providerId: string,
+  clientId: string,
+  clientSecret: string,
+): OAuthServiceOptions {
   return {
     providerId,
     clientId,
@@ -56,12 +60,6 @@ function makeService(providerId: string, clientId: string, clientSecret: string)
  * - Saves metadata to account-store
  */
 export async function addAccount(): Promise<GmailAccount> {
-  if (!(await hasCredentials())) {
-    throw new Error(
-      "Google OAuth credentials are not configured. Please set Client ID and Client Secret first.",
-    );
-  }
-
   const { clientId, clientSecret } = await getCredentials();
 
   // Use pending service for the initial flow

@@ -1,51 +1,24 @@
 /**
  * credentials-store.ts
  *
- * Persists Google OAuth Client ID + Secret encrypted via safeStorage.
- * File: userData/google-oauth.enc (Buffer stored as hex string for portability)
+ * Built-in Google OAuth Client ID + Secret, shared by every install of this
+ * app so users don't need their own GCP project. Per RFC 8252, a distributed
+ * desktop app's OAuth secret can't be kept confidential — PKCE plus the
+ * user's own Google sign-in is the real security boundary, not this value.
  */
 
-import fs from "fs/promises";
-import path from "path";
-import { app, safeStorage } from "@glaze/core/backend";
+const CLIENT_ID = "701744856350-0uaum6pgdshhh5icam480iqs2e0jvlob.apps.googleusercontent.com";
+const CLIENT_SECRET = "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";
 
-interface GoogleCredentials {
+export interface GoogleCredentials {
   clientId: string;
   clientSecret: string;
 }
 
-const EMPTY_CREDENTIALS: GoogleCredentials = { clientId: "", clientSecret: "" };
-
-async function getCredentialsPath(): Promise<string> {
-  const userDataPath = app.getPath("userData");
-  await fs.mkdir(userDataPath, { recursive: true });
-  return path.join(userDataPath, "google-oauth.enc");
-}
-
 export async function getCredentials(): Promise<GoogleCredentials> {
-  try {
-    const credPath = await getCredentialsPath();
-    const hexData = await fs.readFile(credPath, "utf-8");
-    const encrypted = Buffer.from(hexData.trim(), "hex");
-    const json = await safeStorage.decryptString(encrypted);
-    const parsed = JSON.parse(json) as GoogleCredentials;
-    return {
-      clientId: parsed.clientId ?? "",
-      clientSecret: parsed.clientSecret ?? "",
-    };
-  } catch {
-    return { ...EMPTY_CREDENTIALS };
-  }
-}
-
-export async function setCredentials(credentials: GoogleCredentials): Promise<void> {
-  const credPath = await getCredentialsPath();
-  const json = JSON.stringify(credentials);
-  const encrypted = await safeStorage.encryptString(json);
-  await fs.writeFile(credPath, encrypted.toString("hex"), "utf-8");
+  return { clientId: CLIENT_ID, clientSecret: CLIENT_SECRET };
 }
 
 export async function hasCredentials(): Promise<boolean> {
-  const { clientId, clientSecret } = await getCredentials();
-  return clientId.length > 0 && clientSecret.length > 0;
+  return true;
 }

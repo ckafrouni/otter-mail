@@ -13,9 +13,6 @@ import type {
 const ipc = <T = unknown>(channel: string, params?: unknown): Promise<T> =>
   window.glazeAPI.glaze.ipc.invoke<T>(channel, params);
 
-export type CredentialsResult = { hasCredentials: boolean; clientId: string };
-export type SetCredentialsParams = { clientId: string; clientSecret: string };
-
 export type ListMessagesParams = {
   accountId: string;
   labelIds?: string[];
@@ -167,15 +164,14 @@ export type SyncSettings = {
 
 export type SaveViewParams = { id?: string; name: string; rules: ViewRule[]; mailbox?: string };
 
-export type SettingsPane = "general" | "accounts" | "views" | "oauth";
-export type SettingsTarget = { pane: SettingsPane; viewId?: string | null; mailbox?: string | null };
+export type SettingsPane = "general" | "accounts" | "views";
+export type SettingsTarget = {
+  pane: SettingsPane;
+  viewId?: string | null;
+  mailbox?: string | null;
+};
 
 export const gmailApi = {
-  getCredentials: (): Promise<CredentialsResult> => ipc("gmail:getCredentials"),
-
-  setCredentials: (params: SetCredentialsParams): Promise<CredentialsResult> =>
-    ipc("gmail:setCredentials", params),
-
   listAccounts: (): Promise<GmailAccount[]> => ipc("gmail:listAccounts"),
 
   addAccount: (): Promise<GmailAccount> => ipc("gmail:addAccount"),
@@ -186,8 +182,7 @@ export const gmailApi = {
   updateAccount: (params: UpdateAccountParams): Promise<GmailAccount> =>
     ipc("gmail:updateAccount", params),
 
-  listLabels: (accountId: string): Promise<GmailLabel[]> =>
-    ipc("gmail:listLabels", { accountId }),
+  listLabels: (accountId: string): Promise<GmailLabel[]> => ipc("gmail:listLabels", { accountId }),
 
   createLabel: (accountId: string, name: string): Promise<GmailLabel> =>
     ipc("gmail:createLabel", { accountId, name }),
@@ -205,9 +200,8 @@ export const gmailApi = {
   listMessages: (params: ListMessagesParams): Promise<ListMessagesResult> =>
     ipc("gmail:listMessages", params),
 
-  listCombinedMessages: (
-    params: ListCombinedMessagesParams,
-  ): Promise<ListMessagesResult> => ipc("gmail:listCombinedMessages", params),
+  listCombinedMessages: (params: ListCombinedMessagesParams): Promise<ListMessagesResult> =>
+    ipc("gmail:listCombinedMessages", params),
 
   searchMessages: (params: SearchMessagesParams): Promise<ListMessagesResult> =>
     ipc("gmail:searchMessages", params),
@@ -263,9 +257,8 @@ export const gmailApi = {
   getAttachment: (params: GetAttachmentParams): Promise<GetAttachmentResult> =>
     ipc("gmail:getAttachment", params),
 
-  getAttachmentData: (
-    params: GetAttachmentDataParams,
-  ): Promise<{ base64: string; size: number }> => ipc("gmail:getAttachmentData", params),
+  getAttachmentData: (params: GetAttachmentDataParams): Promise<{ base64: string; size: number }> =>
+    ipc("gmail:getAttachmentData", params),
 
   openComposeAttachment: (params: { name: string; base64: string }): Promise<{ ok: boolean }> =>
     ipc("gmail:openComposeAttachment", params),
@@ -285,8 +278,7 @@ export const gmailApi = {
   suggestContacts: (params: { q: string; limit?: number }): Promise<ContactSuggestion[]> =>
     ipc("gmail:suggestContacts", params),
 
-  syncAccount: (accountId: string): Promise<SyncStatus> =>
-    ipc("gmail:syncAccount", { accountId }),
+  syncAccount: (accountId: string): Promise<SyncStatus> => ipc("gmail:syncAccount", { accountId }),
 
   getSyncStatus: (accountId: string): Promise<SyncStatus> =>
     ipc("gmail:getSyncStatus", { accountId }),

@@ -3,21 +3,15 @@
  *
  * All channels proxy to services (credentials-store, account-store,
  * gmail-oauth, gmail-api). Handlers are thin; business logic lives in services.
- *
- * NOTE: gmail:getCredentials NEVER returns the client secret.
  */
 
 import { ipcMain, nativeImage, shell, WebContents } from "@glaze/core/backend";
-import { getCredentials, setCredentials, hasCredentials } from "../services/credentials-store.js";
 import {
   listAccounts,
   removeAccount as storeRemoveAccount,
   updateAccount as storeUpdateAccount,
 } from "../services/account-store.js";
-import {
-  addAccount as oauthAddAccount,
-  removeAccountTokens,
-} from "../services/gmail-oauth.js";
+import { addAccount as oauthAddAccount, removeAccountTokens } from "../services/gmail-oauth.js";
 import {
   listLabels,
   createLabel,
@@ -64,8 +58,12 @@ function parseRules(raw: unknown): ViewRule[] {
     .filter((r) => typeof r?.accountId === "string")
     .map((r) => ({
       accountId: r.accountId as string,
-      allOf: Array.isArray(r.allOf) ? r.allOf.filter((x): x is string => typeof x === "string") : [],
-      noneOf: Array.isArray(r.noneOf) ? r.noneOf.filter((x): x is string => typeof x === "string") : [],
+      allOf: Array.isArray(r.allOf)
+        ? r.allOf.filter((x): x is string => typeof x === "string")
+        : [],
+      noneOf: Array.isArray(r.noneOf)
+        ? r.noneOf.filter((x): x is string => typeof x === "string")
+        : [],
     }));
 }
 
@@ -105,10 +103,7 @@ function parseAttachments(raw: unknown): ComposeAttachment[] | undefined {
     .map((a) => ({
       name: a.name as string,
       mimeType: a.mimeType as string,
-      size:
-        typeof a.size === "number"
-          ? a.size
-          : Math.floor(((a.base64 as string).length * 3) / 4),
+      size: typeof a.size === "number" ? a.size : Math.floor(((a.base64 as string).length * 3) / 4),
       base64: a.base64 as string,
     }));
   return list.length > 0 ? list : undefined;
@@ -117,36 +112,6 @@ function parseAttachments(raw: unknown): ComposeAttachment[] | undefined {
 // ── Registration ──────────────────────────────────────────────────────────────
 
 export function registerGmailHandlers(): void {
-
-  // gmail:getCredentials — returns hasCredentials + clientId (never clientSecret)
-  ipcMain.handle("gmail:getCredentials", async (_event) => {
-    console.log("[gmail:getCredentials]", {});
-    try {
-      const { clientId } = await getCredentials();
-      const has = await hasCredentials();
-      return { hasCredentials: has, clientId };
-    } catch (err) {
-      console.log("[gmail:getCredentials] error", { error: String(err) });
-      throw err;
-    }
-  });
-
-  // gmail:setCredentials — saves both fields, returns hasCredentials + clientId only
-  ipcMain.handle("gmail:setCredentials", async (_event, params: unknown) => {
-    const p = params as Record<string, unknown>;
-    console.log("[gmail:setCredentials]", { clientId: p?.clientId });
-    try {
-      const clientId = assertString(p?.clientId, "clientId");
-      const clientSecret = assertString(p?.clientSecret, "clientSecret");
-      await setCredentials({ clientId, clientSecret });
-      const has = await hasCredentials();
-      return { hasCredentials: has, clientId };
-    } catch (err) {
-      console.log("[gmail:setCredentials] error", { error: String(err) });
-      throw err;
-    }
-  });
-
   // gmail:listAccounts
   ipcMain.handle("gmail:listAccounts", async (_event) => {
     console.log("[gmail:listAccounts]", {});
@@ -241,7 +206,11 @@ export function registerGmailHandlers(): void {
   // gmail:updateLabel — rename (cascades to nested labels) and/or recolor
   ipcMain.handle("gmail:updateLabel", async (_event, params: unknown) => {
     const p = params as Record<string, unknown>;
-    console.log("[gmail:updateLabel]", { accountId: p?.accountId, labelId: p?.labelId, name: p?.name });
+    console.log("[gmail:updateLabel]", {
+      accountId: p?.accountId,
+      labelId: p?.labelId,
+      name: p?.name,
+    });
     try {
       const accountId = assertString(p?.accountId, "accountId");
       const labelId = assertString(p?.labelId, "labelId");
@@ -584,7 +553,12 @@ export function registerGmailHandlers(): void {
       const addLabelIds = asStringArray(p?.addLabelIds);
       const removeLabelIds = asStringArray(p?.removeLabelIds);
       const result = await modifyThread(accountId, threadId, { addLabelIds, removeLabelIds });
-      mailStore.applyLabelChangeToThread(accountId, threadId, addLabelIds ?? [], removeLabelIds ?? []);
+      mailStore.applyLabelChangeToThread(
+        accountId,
+        threadId,
+        addLabelIds ?? [],
+        removeLabelIds ?? [],
+      );
       updateDockBadge();
       return result;
     } catch (err) {
@@ -653,7 +627,10 @@ export function registerGmailHandlers(): void {
   ipcMain.handle("gmail:deleteThreadsForever", async (_event, params: unknown) => {
     const p = params as Record<string, unknown>;
     const threadIds = asStringArray(p?.threadIds) ?? [];
-    console.log("[gmail:deleteThreadsForever]", { accountId: p?.accountId, count: threadIds.length });
+    console.log("[gmail:deleteThreadsForever]", {
+      accountId: p?.accountId,
+      count: threadIds.length,
+    });
     try {
       const accountId = assertString(p?.accountId, "accountId");
       const messageIds: string[] = [];
@@ -1033,14 +1010,18 @@ export function registerGmailHandlers(): void {
       if (p?.syncIntervalSeconds !== undefined) {
         const raw = p.syncIntervalSeconds;
         if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) {
-          throw new Error('Invalid parameter: "syncIntervalSeconds" must be a non-negative number.');
+          throw new Error(
+            'Invalid parameter: "syncIntervalSeconds" must be a non-negative number.',
+          );
         }
         patch.syncIntervalSeconds = Math.min(Math.round(raw), 24 * 60 * 60);
       }
       if (p?.notificationsMode !== undefined) {
         const mode = p.notificationsMode;
         if (mode !== "off" && mode !== "inbox" && mode !== "all") {
-          throw new Error('Invalid parameter: "notificationsMode" must be "off", "inbox", or "all".');
+          throw new Error(
+            'Invalid parameter: "notificationsMode" must be "off", "inbox", or "all".',
+          );
         }
         patch.notificationsMode = mode;
       }

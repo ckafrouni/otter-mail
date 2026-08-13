@@ -10,7 +10,6 @@ import { ShortcutsHelpDialog } from "./gmail/shortcuts-help-dialog";
 import { TopBar } from "./gmail/top-bar";
 import { isTypingTarget } from "./gmail/keyboard";
 import {
-  useCredentials,
   useAccounts,
   useAddAccount,
   useAccountSync,
@@ -125,13 +124,11 @@ export function HomeView() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
-  const credentialsQuery = useCredentials();
   const accountsQuery = useAccounts();
   const addAccount = useAddAccount();
   const { views } = useMailViews();
 
   const accounts = accountsQuery.data ?? [];
-  const credentials = credentialsQuery.data;
   const accountIds = accounts.map((a) => a.id);
   const firstRealAccountId = accounts[0]?.id ?? null;
 
@@ -563,7 +560,10 @@ export function HomeView() {
 
   // Palette mail result: jump to the owning account (Combined stays put) and open.
   const handlePaletteOpenMessage = (message: GmailMessageSummary) => {
-    console.log("[HomeView:paletteOpenMessage]", { messageId: message.id, accountId: message.accountId });
+    console.log("[HomeView:paletteOpenMessage]", {
+      messageId: message.id,
+      accountId: message.accountId,
+    });
     const owner = message.accountId ?? firstRealAccountId;
     if (!owner) return;
     if (!isCombined && owner !== effectiveAccountId) {
@@ -584,11 +584,6 @@ export function HomeView() {
     setSearchQuery("");
   };
 
-  const handleOpenSettings = () => {
-    console.log("[HomeView:openSettings]");
-    void window.glazeAPI.glaze.ipc.invoke("window:openSettings");
-  };
-
   const handleAddAccount = async () => {
     console.log("[HomeView:addAccount]");
     try {
@@ -600,33 +595,7 @@ export function HomeView() {
     }
   };
 
-  // (a) Loading credentials
-  if (credentialsQuery.isLoading) {
-    return (
-      <div className="h-full flex items-center justify-center bg-(--te-card)">
-        <div className="size-6 rounded-full border-2 border-accent border-t-transparent animate-spin" />
-      </div>
-    );
-  }
-
-  // (a) No credentials configured
-  if (!credentials?.hasCredentials) {
-    return (
-      <div className="h-full flex items-center justify-center bg-(--te-card)">
-        <EmptyState
-          title="Set up Gmail"
-          description="Configure your Google OAuth credentials in Settings to connect Gmail accounts."
-          actions={
-            <Button variant="accent" onClick={handleOpenSettings}>
-              Open Settings
-            </Button>
-          }
-        />
-      </div>
-    );
-  }
-
-  // (b) Credentials set but no accounts connected
+  // No accounts connected
   if (!accountsQuery.isLoading && accounts.length === 0) {
     return (
       <div className="h-full flex items-center justify-center bg-(--te-card)">

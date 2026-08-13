@@ -5,7 +5,6 @@ import {
   ChevronRightIcon,
   FileIcon,
   InboxIcon,
-  KeyRoundIcon,
   LayersIcon,
   PlusIcon,
   SendIcon,
@@ -53,10 +52,19 @@ import {
   type NotificationsMode,
   type SettingsPane,
 } from "../main/gmail/api";
-import { useAccounts, useAddAccount, useRemoveAccount, useUpdateAccount } from "../main/gmail/hooks";
+import {
+  useAccounts,
+  useAddAccount,
+  useRemoveAccount,
+  useUpdateAccount,
+} from "../main/gmail/hooks";
 import { useMailViews } from "../main/gmail/custom-views";
 import { ViewEditorForm } from "../main/gmail/view-editor-form";
-import { ACCOUNT_COLOR_PALETTE, getAccountColor, getAccountDisplayName } from "../main/gmail/account-style";
+import {
+  ACCOUNT_COLOR_PALETTE,
+  getAccountColor,
+  getAccountDisplayName,
+} from "../main/gmail/account-style";
 import type { GmailAccount, MailView } from "../main/gmail/types";
 
 const NOTIFICATIONS_OPTIONS: { value: NotificationsMode; label: string }[] = [
@@ -80,7 +88,6 @@ const PANES: { id: SettingsPane; label: string; color: string; icon: typeof User
   { id: "general", label: "General", color: "#8E8E93", icon: SettingsIcon },
   { id: "accounts", label: "Accounts", color: "#007AFF", icon: UsersIcon },
   { id: "views", label: "Views", color: "#AF52DE", icon: LayersIcon },
-  { id: "oauth", label: "Google OAuth", color: "#34C759", icon: KeyRoundIcon },
 ];
 
 function PaneIconTile({ color, Icon }: { color: string; Icon: typeof UsersIcon }) {
@@ -237,7 +244,8 @@ function ViewsPane({
         </Text>
       );
     }
-    const editingView = editingId === "new" ? null : views.find((v) => v.id === editingId) ?? null;
+    const editingView =
+      editingId === "new" ? null : (views.find((v) => v.id === editingId) ?? null);
     const mailbox = editingView
       ? (editingView.mailbox ?? COMBINED_MAILBOX)
       : (editingMailbox ?? COMBINED_MAILBOX);
@@ -272,7 +280,8 @@ function ViewsPane({
               {
                 label: "Views",
                 views: views.filter(
-                  (v) => v.kind === "custom" && (v.mailbox ?? COMBINED_MAILBOX) === COMBINED_MAILBOX,
+                  (v) =>
+                    v.kind === "custom" && (v.mailbox ?? COMBINED_MAILBOX) === COMBINED_MAILBOX,
                 ),
                 canAdd: true,
                 emptyHint: "No views yet.",
@@ -376,7 +385,8 @@ export function SettingsView() {
     });
   };
   const goBack = () => setNav((n) => ({ ...n, index: Math.max(0, n.index - 1) }));
-  const goForward = () => setNav((n) => ({ ...n, index: Math.min(n.stack.length - 1, n.index + 1) }));
+  const goForward = () =>
+    setNav((n) => ({ ...n, index: Math.min(n.stack.length - 1, n.index + 1) }));
 
   const { views } = useMailViews();
   const accountsQuery = useAccounts();
@@ -384,12 +394,6 @@ export function SettingsView() {
   const addAccount = useAddAccount();
 
   const [themeInfo, setThemeInfo] = useState<NativeThemeInfo | null>(null);
-
-  // Google OAuth state
-  const [clientId, setClientId] = useState("");
-  const [clientSecret, setClientSecret] = useState("");
-  const [hasCredentials, setHasCredentials] = useState(false);
-  const [isSavingCredentials, setIsSavingCredentials] = useState(false);
 
   const [syncInterval, setSyncInterval] = useState<number | null>(null);
   const [notificationsMode, setNotificationsMode] = useState<NotificationsMode | null>(null);
@@ -467,18 +471,6 @@ export function SettingsView() {
       setThemeInfo(info);
     } catch (error) {
       toast.error(`Failed to get theme info: ${error}`);
-    }
-  };
-
-  const loadCredentials = async () => {
-    console.log("[SettingsView:loadCredentials]");
-    try {
-      const result = await gmailApi.getCredentials();
-      setHasCredentials(result.hasCredentials);
-      setClientId(result.clientId ?? "");
-      // Leave secret blank — show hint if credentials are already saved
-    } catch (error) {
-      toast.error(`Failed to load credentials: ${error}`);
     }
   };
 
@@ -580,7 +572,6 @@ export function SettingsView() {
 
   useEffect(() => {
     void refreshThemeInfo();
-    void loadCredentials();
     void loadSyncSettings();
     void loadMailApps();
     void loadAssistantStatus();
@@ -621,32 +612,12 @@ export function SettingsView() {
     }
   };
 
-  const handleSaveCredentials = async () => {
-    if (!clientId.trim() || !clientSecret.trim()) {
-      toast.error("Client ID and Client Secret are required");
-      return;
-    }
-    console.log("[SettingsView:saveCredentials]");
-    setIsSavingCredentials(true);
-    try {
-      const result = await gmailApi.setCredentials({
-        clientId: clientId.trim(),
-        clientSecret: clientSecret.trim(),
-      });
-      setHasCredentials(result.hasCredentials);
-      setClientSecret(""); // Clear secret after save
-      toast.success("Google OAuth credentials saved");
-    } catch (error) {
-      toast.error(`Failed to save credentials: ${error}`);
-    } finally {
-      setIsSavingCredentials(false);
-    }
-  };
-
   const firstAccount = accounts[0] ?? null;
   const accountHeaderName = firstAccount ? getAccountDisplayName(firstAccount) : "No accounts";
   const accountHeaderDetail =
-    accounts.length > 1 ? `${accounts.length} accounts` : (firstAccount?.email ?? "Connect one to start");
+    accounts.length > 1
+      ? `${accounts.length} accounts`
+      : (firstAccount?.email ?? "Connect one to start");
 
   const paneTitle =
     loc.pane === "views" && loc.viewId
@@ -744,12 +715,20 @@ export function SettingsView() {
                 </Field>
               </FieldSet>
               <FieldSet title="Mail">
-                <Field label="Check for new mail" description="Sync runs in the background at this cadence.">
+                <Field
+                  label="Check for new mail"
+                  description="Sync runs in the background at this cadence."
+                >
                   <Select
                     value={syncInterval != null ? String(syncInterval) : undefined}
                     onValueChange={(value) => void handleSyncIntervalChange(value)}
                   >
-                    <SelectTrigger id="syncInterval" size="small" variant="transparent" className="w-40">
+                    <SelectTrigger
+                      id="syncInterval"
+                      size="small"
+                      variant="transparent"
+                      className="w-40"
+                    >
                       <SelectValue placeholder="Loading…" />
                     </SelectTrigger>
                     <SelectContent>
@@ -761,12 +740,20 @@ export function SettingsView() {
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Notifications" description="Notify about new mail found by background sync.">
+                <Field
+                  label="Notifications"
+                  description="Notify about new mail found by background sync."
+                >
                   <Select
                     value={notificationsMode ?? undefined}
                     onValueChange={(value) => void handleNotificationsModeChange(value)}
                   >
-                    <SelectTrigger id="notificationsMode" size="small" variant="transparent" className="w-40">
+                    <SelectTrigger
+                      id="notificationsMode"
+                      size="small"
+                      variant="transparent"
+                      className="w-40"
+                    >
                       <SelectValue placeholder="Loading…" />
                     </SelectTrigger>
                     <SelectContent>
@@ -793,7 +780,9 @@ export function SettingsView() {
                       type="password"
                       value={assistantToken}
                       onChange={(e) => setAssistantToken(e.target.value)}
-                      placeholder={assistantStatus?.configured ? "Replace token (xoxp-…)" : "xoxp-…"}
+                      placeholder={
+                        assistantStatus?.configured ? "Replace token (xoxp-…)" : "xoxp-…"
+                      }
                       aria-label="Slack user token"
                       className="w-56"
                     />
@@ -845,8 +834,16 @@ export function SettingsView() {
                       aria-label="Hermes API key"
                       className="w-56"
                     />
-                    <Button size="small" disabled={chatSaving} onClick={() => void handleChatSave()}>
-                      {chatSaving ? "Connecting…" : chatStatus?.configured ? "Reconnect" : "Connect"}
+                    <Button
+                      size="small"
+                      disabled={chatSaving}
+                      onClick={() => void handleChatSave()}
+                    >
+                      {chatSaving
+                        ? "Connecting…"
+                        : chatStatus?.configured
+                          ? "Reconnect"
+                          : "Connect"}
                     </Button>
                   </div>
                 </Field>
@@ -860,7 +857,12 @@ export function SettingsView() {
                     value={defaultMailBundleId ?? undefined}
                     onValueChange={(value) => void handleDefaultMailChange(value)}
                   >
-                    <SelectTrigger id="defaultMailApp" size="small" variant="transparent" className="w-40">
+                    <SelectTrigger
+                      id="defaultMailApp"
+                      size="small"
+                      variant="transparent"
+                      className="w-40"
+                    >
                       <SelectValue placeholder="Loading…" />
                     </SelectTrigger>
                     <SelectContent>
@@ -909,42 +911,6 @@ export function SettingsView() {
               onOpenView={(viewId, mailbox) => navigate({ pane: "views", viewId, mailbox })}
               onDone={() => navigate({ pane: "views", viewId: null })}
             />
-          ) : null}
-
-          {loc.pane === "oauth" ? (
-            <FieldSet
-              title="Google OAuth"
-              description="Your own Google Cloud OAuth client, used to connect Gmail accounts."
-            >
-              <Field label="Client ID">
-                <Input
-                  id="clientId"
-                  type="text"
-                  value={clientId}
-                  onChange={(e) => setClientId(e.target.value)}
-                  placeholder="your-client-id.apps.googleusercontent.com"
-                />
-              </Field>
-              <Field label="Client Secret">
-                <Input
-                  id="clientSecret"
-                  type="password"
-                  value={clientSecret}
-                  onChange={(e) => setClientSecret(e.target.value)}
-                  placeholder={hasCredentials ? "Saved — enter to update" : "Enter client secret"}
-                />
-              </Field>
-              <Field>
-                <Button
-                  variant="accent"
-                  size="small"
-                  onClick={() => void handleSaveCredentials()}
-                  disabled={isSavingCredentials || !clientId.trim() || !clientSecret.trim()}
-                >
-                  {isSavingCredentials ? "Saving..." : "Save"}
-                </Button>
-              </Field>
-            </FieldSet>
           ) : null}
         </div>
       </ScrollArea>
