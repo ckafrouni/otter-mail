@@ -14,6 +14,7 @@ import { registerHandlers } from "./handlers/index.js";
 import { parseMailtoUrl, setPendingMailto } from "./services/mailto-target.js";
 import { syncAllAccounts } from "./services/mail-sync.js";
 import { pruneAttachmentCache } from "./services/attachment-cache.js";
+import { createTray, destroyTray } from "./services/tray.js";
 import { getPreloadPath, getWindowUrl } from "./windows/window-paths.js";
 import { openSettingsWindow } from "./windows/settings-window.js";
 
@@ -258,6 +259,10 @@ app.on("before-quit", () => {
   logger.info("main", "App before-quit, cleaning up...");
 });
 
+app.on("will-quit", () => {
+  destroyTray();
+});
+
 // ── App ready ─────────────────────────────────────────────────────────
 const startTime = Date.now();
 logger.info("main", "⏱️ [COLD_START] Waiting for app ready...", {
@@ -274,6 +279,8 @@ app.whenReady().then(async () => {
   await devHarness?.runParityAutotestIfRequested();
 
   await setupApplicationMenu();
+
+  void createTray({ onSync: () => void syncAllAccounts({ force: true }) });
 
   void pruneAttachmentCache();
 

@@ -443,6 +443,11 @@ export function HomeView() {
     return unsub;
   }, []);
 
+  // "New Message" triggered from the menu-bar tray icon.
+  useEffect(() => {
+    return window.glazeAPI.glaze.ipc.onNotification("compose:new", () => setComposeOpen(true));
+  }, []);
+
   const effectiveAccountId = isCombined
     ? COMBINED_ACCOUNT_ID
     : selectedAccountId && accounts.some((a) => a.id === selectedAccountId)

@@ -610,6 +610,21 @@ export function countInboxUnreadAll(): number {
   return row?.n ?? 0;
 }
 
+/** Total unread INBOX messages for a single account — drives the tray menu sublabels. */
+export function countInboxUnreadForAccount(accountId: string): number {
+  const d = getDb();
+  const row = d
+    .prepare(`
+      SELECT COUNT(*) AS n
+        FROM messages m
+        JOIN message_labels ml
+          ON ml.accountId = m.accountId AND ml.messageId = m.id AND ml.labelId = 'INBOX'
+       WHERE m.unread = 1 AND m.accountId = ?
+    `)
+    .get(accountId) as unknown as { n: number } | undefined;
+  return row?.n ?? 0;
+}
+
 export function countMessagesForLabel(accountId: string, labelId: string): number {
   const d = getDb();
   const row = d
