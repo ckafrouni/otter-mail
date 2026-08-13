@@ -13,11 +13,6 @@ import {
   Dialog,
   Field,
   Input,
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
   Text,
   toast,
 } from "@glaze/core/components";
@@ -49,7 +44,6 @@ import type { GmailLabel, MailView } from "./types";
 import { gmailApi } from "./api";
 import { COMBINED_ACCOUNT_ID, useMailViews } from "./custom-views";
 import { buildLabelTree, type LabelTreeNode } from "./label-tree";
-import { getAccountDisplayName } from "./account-style";
 import { UnreadPill, HintTooltip } from "./te-ui";
 
 const LABEL_DRAG_MIME = "application/x-gmail-label";
@@ -491,13 +485,6 @@ export function AccountsSidebar({
   );
   const { deleteView, resetView } = useMailViews();
 
-  const selectedAccount = accounts.find((a) => a.id === selectedAccountId) ?? null;
-  const mailboxTitle = isCombined
-    ? "Combined"
-    : selectedAccount
-      ? getAccountDisplayName(selectedAccount)
-      : "No account";
-
   // Same order as the Combined built-in views, Important appended.
   const systemLabels = labels
     .filter((l) => l.type === "system" && l.id in SYSTEM_LABEL_MAP)
@@ -614,50 +601,7 @@ export function AccountsSidebar({
     <div className="flex h-full min-w-0 flex-col">
       {/* Header: mailbox switcher + compose */}
       <div className="drag-region flex h-11 shrink-0 items-center justify-between gap-2 border-b border-(--te-border) px-3">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label="Switch account"
-              className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 hover:bg-(--te-hover)"
-            >
-              <span className="truncate text-[15px] font-bold tracking-tight text-(--te-strong)">{mailboxTitle}</span>
-              <ChevronDownIcon className="size-3.5 shrink-0 text-(--te-muted)" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            {accounts.length > 1 ? (
-              <>
-                <DropdownMenuItem
-                  onSelect={() => {
-                    console.log("[AccountsSidebar:selectAccount]", {
-                      accountId: COMBINED_ACCOUNT_ID,
-                    });
-                    onSelectAccount(COMBINED_ACCOUNT_ID);
-                  }}
-                >
-                  Combined (all mailboxes)
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-              </>
-            ) : null}
-            {accounts.map((account) => (
-              <DropdownMenuItem
-                key={account.id}
-                onSelect={() => {
-                  console.log("[AccountsSidebar:selectAccount]", { accountId: account.id });
-                  onSelectAccount(account.id);
-                }}
-              >
-                <span className="truncate">{account.email}</span>
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => void gmailApi.openSettings({ pane: "accounts" })}>
-              Manage accounts…
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <span className="flex-1" />
 
         <button
           type="button"
