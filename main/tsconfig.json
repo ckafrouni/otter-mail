@@ -19,6 +19,10 @@
         "../../glaze-core/backend/index.d.ts",
         "../../../../sdk/current/@glaze/core/backend/index.d.ts"
       ],
+      "@glaze/core/ai": [
+        "../../glaze-core/ai/index.d.ts",
+        "../../../../sdk/current/@glaze/core/ai/index.d.ts"
+      ],
       "@glaze/core/oauth": [
         "../../glaze-core/oauth/index.d.ts",
         "../../../../sdk/current/@glaze/core/oauth/index.d.ts"

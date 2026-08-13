@@ -27,6 +27,7 @@
       "@main/*": ["./main/*"],
       "@shared/*": ["./renderer/shared/*"],
       "@glaze/core/backend": ["../glaze-core/backend/index", "../../../sdk/current/@glaze/core/backend/index"],
+      "@glaze/core/ai": ["../glaze-core/ai/index", "../../../sdk/current/@glaze/core/ai/index"],
       "@glaze/core/oauth": ["../glaze-core/oauth/index", "../../../sdk/current/@glaze/core/oauth/index"],
       "@glaze/core/ipc": ["../glaze-core/ipc/index", "../../../sdk/current/@glaze/core/ipc/index"],
       "@glaze/core/preload": ["../glaze-core/preload/index", "../../../sdk/current/@glaze/core/preload/index"],
