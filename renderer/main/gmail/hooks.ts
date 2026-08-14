@@ -7,6 +7,7 @@ import {
   useQueryClient,
   type InfiniteData,
 } from "@tanstack/react-query";
+import { toast } from "@glaze/core/components";
 import {
   gmailApi,
   type ModifyMessageParams,
@@ -28,6 +29,18 @@ import { resolveRules } from "./custom-views";
 import { registerUndo, isPureMarkRead } from "./undo";
 
 const STALE_TIME = 30_000;
+
+/** Gmail write mutations fail silently otherwise — a revoked/expired Google
+ *  grant surfaces as an OAuth 401 with no other symptom (the row/badge just
+ *  never updates), so calling that out specifically saves a confusing "why
+ *  didn't this save" round trip. */
+function describeGmailWriteError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/unauthorized|oauth/i.test(message)) {
+    return "Google sign-in expired for this account — remove and re-add it in Settings → Accounts.";
+  }
+  return `Couldn't save the change: ${message}`;
+}
 
 // ---- Query Keys ----
 export const queryKeys = {
@@ -731,7 +744,8 @@ export function useModifyMessage() {
         prevLabels,
       };
     },
-    onError: (_err, _params, context) => {
+    onError: (err, _params, context) => {
+      toast.error(describeGmailWriteError(err));
       if (!context) return;
       if (context.prevMessage) qc.setQueryData(context.messageKey, context.prevMessage);
       for (const [key, data] of context.prevMessagesQueries) qc.setQueryData(key, data);
@@ -988,7 +1002,8 @@ export function useModifyThread() {
         prevLabels,
       };
     },
-    onError: (_err, _params, context) => {
+    onError: (err, _params, context) => {
+      toast.error(describeGmailWriteError(err));
       if (!context) return;
       for (const [key, data] of context.prevMessagesQueries) qc.setQueryData(key, data);
       for (const [key, data] of context.prevCombinedQueries) qc.setQueryData(key, data);

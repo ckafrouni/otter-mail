@@ -724,23 +724,29 @@ export function ExpandedRow({
 }) {
   const detailQuery = useMessage(accountId, summary.id);
   const modifyMessage = useModifyMessage();
+  const modifyMessageRef = useRef(modifyMessage);
+  modifyMessageRef.current = modifyMessage;
   const markedRead = useRef(false);
 
   // Reading a message marks it read — debounced so j/k scrubbing through the
   // list (which mounts and unmounts expanded rows) doesn't fire per row.
+  // The mutation is read through a ref (not a dependency): react-query
+  // returns a new `modifyMessage` object on every render, which was
+  // resetting this timer on any incidental re-render (e.g. a window-focus
+  // refetch) and could push the 300ms mark past the window closing.
   useEffect(() => {
     if (markedRead.current || !summary.unread) return;
     const timer = setTimeout(() => {
       markedRead.current = true;
       console.log("[MessageReader:markRead]", { messageId: summary.id });
-      void modifyMessage.mutateAsync({
+      void modifyMessageRef.current.mutateAsync({
         accountId,
         messageId: summary.id,
         removeLabelIds: ["UNREAD"],
       });
     }, 300);
     return () => clearTimeout(timer);
-  }, [summary.unread, summary.id, accountId, modifyMessage]);
+  }, [summary.unread, summary.id, accountId]);
 
   const detail = detailQuery.data;
 
