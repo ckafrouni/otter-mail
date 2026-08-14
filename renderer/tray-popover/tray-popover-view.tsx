@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { injectActiveTheme, SegmentedControl, SegmentedControlItem } from "@glaze/core/components";
-import { SquarePen, RotateCw, ExternalLink, Power } from "lucide-react";
+import { SquarePen, RotateCw, ExternalLink, Power, ArchiveIcon, Trash2Icon } from "lucide-react";
 import { SenderAvatar } from "../main/gmail/sender-avatar";
 import { getAccountColor, getAccountDisplayName } from "../main/gmail/account-style";
 import { decodeEntities } from "../main/gmail/text";
 import { IconBtn, HintTooltip, UnreadPill } from "../main/gmail/te-ui";
 import { TE_DARK_THEME, TE_LIGHT_THEME } from "../main/gmail/te-theme";
+import { gmailApi } from "../main/gmail/api";
 import { trayApi, type TrayAccountSnapshot } from "./api";
 import type { GmailMessageSummary } from "../main/gmail/types";
 
@@ -69,18 +70,22 @@ function InboxRow({
   accountName,
   showAccountLabel,
   onOpen,
+  onArchive,
+  onTrash,
 }: {
   message: GmailMessageSummary;
   accountColor: string;
   accountName: string;
   showAccountLabel: boolean;
   onOpen: () => void;
+  onArchive: () => void;
+  onTrash: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full items-start gap-2 rounded-[6px] px-2 py-1.5 text-left hover:bg-(--te-hover)"
+      className="group flex w-full items-start gap-2 rounded-[6px] px-2 py-1.5 text-left hover:bg-(--te-hover)"
     >
       <SenderAvatar
         name={message.fromName}
@@ -93,14 +98,42 @@ function InboxRow({
           <span className="truncate text-[12.5px] font-semibold text-(--te-strong)">
             {message.fromName || message.fromEmail}
           </span>
-          <span className="flex shrink-0 items-center gap-1.5">
-            {showAccountLabel ? (
-              <span className="truncate max-w-20 text-[10.5px] font-semibold" style={{ color: accountColor }}>
-                {accountName}
+          <span className="relative flex h-4 shrink-0 items-center">
+            <span className="flex items-center gap-1.5 group-hover:pointer-events-none group-hover:opacity-0">
+              {showAccountLabel ? (
+                <span className="truncate max-w-20 text-[10.5px] font-semibold" style={{ color: accountColor }}>
+                  {accountName}
+                </span>
+              ) : null}
+              <span className="shrink-0 text-[10.5px] text-(--te-muted)">
+                {formatRelativeDate(message.date)}
               </span>
-            ) : null}
-            <span className="shrink-0 text-[10.5px] text-(--te-muted)">
-              {formatRelativeDate(message.date)}
+            </span>
+            <span className="absolute inset-y-0 right-0 flex items-center gap-1.5 opacity-0 group-hover:opacity-100">
+              <button
+                type="button"
+                aria-label="Archive"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onArchive();
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="shrink-0 text-(--te-muted) hover:text-(--te-strong)"
+              >
+                <ArchiveIcon className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                aria-label="Move to Trash"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onTrash();
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="shrink-0 text-(--te-muted) hover:text-(--red)"
+              >
+                <Trash2Icon className="size-3.5" />
+              </button>
             </span>
           </span>
         </div>
@@ -199,6 +232,16 @@ export function TrayPopoverView() {
     }
   }
 
+  async function handleArchive(accountId: string, threadId: string) {
+    await gmailApi.modifyThread({ accountId, threadId, removeLabelIds: ["INBOX"] });
+    await queryClient.invalidateQueries({ queryKey: ["tray:snapshot"] });
+  }
+
+  async function handleTrash(accountId: string, threadId: string) {
+    await gmailApi.trashThread(accountId, threadId);
+    await queryClient.invalidateQueries({ queryKey: ["tray:snapshot"] });
+  }
+
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-[10px] bg-(--te-frame) text-(--te-text)">
       <div className="flex shrink-0 items-center justify-between px-3 pb-1 pt-3">
@@ -252,6 +295,8 @@ export function TrayPopoverView() {
               accountName={accountName}
               showAccountLabel={effectiveTab === ALL_TAB}
               onOpen={() => void trayApi.openThread(accountId, message.id)}
+              onArchive={() => void handleArchive(accountId, message.threadId)}
+              onTrash={() => void handleTrash(accountId, message.threadId)}
             />
           ))
         )}
