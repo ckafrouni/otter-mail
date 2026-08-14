@@ -706,8 +706,12 @@ export function MessageList({
 
   const allMessages: GmailMessageSummary[] =
     messagesQuery.data?.pages.flatMap((p) => p.messages) ?? [];
+  // In Unread mode, clicking a message marks it read (optimistically), which
+  // would normally drop it from this filter instantly. Keep the currently
+  // selected row pinned in place — Gmail-style — so it only disappears once the
+  // selection moves to another message.
   const visibleMessages = unreadOnly
-    ? allMessages.filter((m) => m.threadUnread ?? m.unread)
+    ? allMessages.filter((m) => (m.threadUnread ?? m.unread) || m.id === selectedMessageId)
     : allMessages;
   const hasNextPage = messagesQuery.hasNextPage;
   const isFetchingNextPage = messagesQuery.isFetchingNextPage;
