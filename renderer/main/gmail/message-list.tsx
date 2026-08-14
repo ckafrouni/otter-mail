@@ -70,6 +70,7 @@ import { getAccountColor, getAccountDisplayName } from "./account-style";
 import { SYSTEM_LABEL_NAMES, labelDisplayName } from "./label-names";
 import { decodeEntities } from "./text";
 import type { GmailAccount, GmailLabel, GmailMessageSummary, ViewRule } from "./types";
+import { pickAdvanceTarget } from "./advance-direction";
 
 type ResolveLabel = (accountId: string | undefined, labelId: string) => GmailLabel | undefined;
 
@@ -942,13 +943,14 @@ export function MessageList({
 
   const advanceFrom = (rowId: string) => {
     const idx = visibleMessages.findIndex((m) => m.id === rowId);
-    const next = visibleMessages[idx + 1] ?? visibleMessages[idx - 1];
+    const next = pickAdvanceTarget(visibleMessages, idx);
     if (next) onSelectMessage(next.id, next.accountId ?? accountId);
+    else onDeselect();
   };
   advanceRef.current = (fromMessageId: string) => {
     const idx = visibleMessages.findIndex((m) => m.id === fromMessageId);
     if (idx === -1) return false;
-    const next = visibleMessages[idx + 1] ?? visibleMessages[idx - 1];
+    const next = pickAdvanceTarget(visibleMessages, idx);
     if (!next) return false;
     onSelectMessage(next.id, next.accountId ?? accountId);
     return true;
@@ -1002,8 +1004,9 @@ export function MessageList({
       const selectedRow = idx >= 0 ? rows[idx] : undefined;
       const select = (m: GmailMessageSummary) => onSelectMessage(m.id, m.accountId ?? fallbackAccount);
       const advance = () => {
-        const next = rows[idx + 1] ?? rows[idx - 1];
+        const next = pickAdvanceTarget(rows, idx);
         if (next) select(next);
+        else onDeselect();
       };
       const owner = selectedRow ? (selectedRow.accountId ?? fallbackAccount) : "";
       const selThreadId = selectedRow ? selectedRow.threadId || selectedRow.id : "";

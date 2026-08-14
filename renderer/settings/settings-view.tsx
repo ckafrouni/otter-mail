@@ -69,6 +69,11 @@ import {
   getAccountDisplayName,
 } from "../main/gmail/account-style";
 import type { GmailAccount, MailView } from "../main/gmail/types";
+import {
+  getAdvanceDirection,
+  setAdvanceDirection as persistAdvanceDirection,
+  type AdvanceDirection,
+} from "../main/gmail/advance-direction";
 
 const NOTIFICATIONS_OPTIONS: { value: NotificationsMode; label: string }[] = [
   { value: "off", label: "Off" },
@@ -84,6 +89,12 @@ const SYNC_INTERVAL_OPTIONS = [
   { value: 60, label: "Every minute" },
   { value: 300, label: "Every 5 minutes" },
   { value: 900, label: "Every 15 minutes" },
+];
+
+const ADVANCE_DIRECTION_OPTIONS: { value: AdvanceDirection; label: string }[] = [
+  { value: "next", label: "Next message" },
+  { value: "previous", label: "Previous message" },
+  { value: "none", label: "Don't select another message" },
 ];
 
 // System Settings-style sidebar entries: white glyph on a colored tile.
@@ -431,6 +442,15 @@ export function SettingsView() {
 
   const [syncInterval, setSyncInterval] = useState<number | null>(null);
   const [notificationsMode, setNotificationsMode] = useState<NotificationsMode | null>(null);
+  const [advanceDirection, setAdvanceDirectionState] = useState<AdvanceDirection>(() =>
+    getAdvanceDirection(),
+  );
+  const handleAdvanceDirectionChange = (value: string) => {
+    const direction = value as AdvanceDirection;
+    console.log("[SettingsView:setAdvanceDirection]", { direction });
+    setAdvanceDirectionState(direction);
+    persistAdvanceDirection(direction);
+  };
   const [launchAtLogin, setLaunchAtLogin] = useState(false);
   const [trayEnabled, setTrayEnabled] = useState(true);
   const [mailApps, setMailApps] = useState<MailApp[]>([]);
@@ -840,6 +860,28 @@ export function SettingsView() {
                     </SelectTrigger>
                     <SelectContent>
                       {NOTIFICATIONS_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field
+                  label="After archive, delete, or move"
+                  description="Which message to select next in the list."
+                >
+                  <Select value={advanceDirection} onValueChange={handleAdvanceDirectionChange}>
+                    <SelectTrigger
+                      id="advanceDirection"
+                      size="small"
+                      variant="transparent"
+                      className="w-56"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ADVANCE_DIRECTION_OPTIONS.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                           {option.label}
                         </SelectItem>
