@@ -335,9 +335,15 @@ function recomputeLabelCounts(accountId: string, labelIds: string[]): void {
        WHERE ml.accountId = ? AND ml.labelId IN (${placeholders})
        GROUP BY ml.labelId
     `)
-    .all(accountId, ...labelIds) as unknown as { labelId: string; total: number; unread: number | null }[];
+    .all(accountId, ...labelIds) as unknown as {
+    labelId: string;
+    total: number;
+    unread: number | null;
+  }[];
   const counts = new Map(rows.map((r) => [r.labelId, { total: r.total, unread: r.unread ?? 0 }]));
-  const update = d.prepare("UPDATE labels SET unread = ?, total = ? WHERE accountId = ? AND id = ?");
+  const update = d.prepare(
+    "UPDATE labels SET unread = ?, total = ? WHERE accountId = ? AND id = ?",
+  );
   for (const labelId of labelIds) {
     const c = counts.get(labelId) ?? { total: 0, unread: 0 };
     update.run(c.unread, c.total, accountId, labelId);
@@ -549,7 +555,9 @@ export function getStoredReplyHeaders(
 ): { messageIdHeader: string | null; referencesHeader: string | null } {
   const d = getDb();
   const row = d
-    .prepare("SELECT messageIdHeader, referencesHeader FROM messages WHERE accountId = ? AND id = ?")
+    .prepare(
+      "SELECT messageIdHeader, referencesHeader FROM messages WHERE accountId = ? AND id = ?",
+    )
     .get(accountId, messageId) as unknown as
     | { messageIdHeader: string | null; referencesHeader: string | null }
     | undefined;
@@ -566,7 +574,9 @@ export function setReplyHeaders(
   referencesHeader: string | null,
 ): void {
   getDb()
-    .prepare("UPDATE messages SET messageIdHeader = ?, referencesHeader = ? WHERE accountId = ? AND id = ?")
+    .prepare(
+      "UPDATE messages SET messageIdHeader = ?, referencesHeader = ? WHERE accountId = ? AND id = ?",
+    )
     .run(messageIdHeader, referencesHeader, accountId, messageId);
 }
 
@@ -574,9 +584,7 @@ export function setReplyHeaders(
 export function getUndownloadedMessageIds(accountId: string): string[] {
   const d = getDb();
   const rows = d
-    .prepare(
-      "SELECT id FROM messages WHERE accountId = ? AND detailFetched = 0 ORDER BY date DESC",
-    )
+    .prepare("SELECT id FROM messages WHERE accountId = ? AND detailFetched = 0 ORDER BY date DESC")
     .all(accountId) as unknown as { id: string }[];
   return rows.map((r) => r.id);
 }
@@ -625,9 +633,14 @@ export function countInboxUnreadForAccount(accountId: string): number {
   return row?.n ?? 0;
 }
 
-/** Most recent unread INBOX threads for a single account — the tray popover's mini inbox. */
-export function listUnreadInboxPreview(accountId: string, limit: number): GmailMessageSummary[] {
+/** Most recent INBOX threads for a single account — the tray popover's mini inbox. `unreadOnly` restricts to unread threads (the popover's default "Unread" mode); pass false for its "All" mode. */
+export function listInboxPreview(
+  accountId: string,
+  limit: number,
+  unreadOnly: boolean,
+): GmailMessageSummary[] {
   const d = getDb();
+  const unreadClause = unreadOnly ? "AND m.unread = 1" : "";
   const rows = d
     .prepare(
       threadPageQuery(`
@@ -635,7 +648,7 @@ export function listUnreadInboxPreview(accountId: string, limit: number): GmailM
           FROM messages m
           JOIN message_labels ml
             ON ml.accountId = m.accountId AND ml.messageId = m.id
-         WHERE m.accountId = ? AND ml.labelId = 'INBOX' AND m.unread = 1 AND ${NOT_SPAM_TRASH}
+         WHERE m.accountId = ? AND ml.labelId = 'INBOX' ${unreadClause} AND ${NOT_SPAM_TRASH}
       `),
     )
     .all(accountId, limit, 0) as unknown as ThreadRow[];
@@ -645,9 +658,7 @@ export function listUnreadInboxPreview(accountId: string, limit: number): GmailM
 export function countMessagesForLabel(accountId: string, labelId: string): number {
   const d = getDb();
   const row = d
-    .prepare(
-      "SELECT COUNT(*) AS n FROM message_labels WHERE accountId = ? AND labelId = ?",
-    )
+    .prepare("SELECT COUNT(*) AS n FROM message_labels WHERE accountId = ? AND labelId = ?")
     .get(accountId, labelId) as unknown as { n: number };
   return row?.n ?? 0;
 }
@@ -966,9 +977,7 @@ export function getLabels(accountId: string): GmailLabel[] {
     unread: r.unread ?? undefined,
     total: r.total ?? undefined,
     color:
-      r.bgColor && r.textColor
-        ? { backgroundColor: r.bgColor, textColor: r.textColor }
-        : undefined,
+      r.bgColor && r.textColor ? { backgroundColor: r.bgColor, textColor: r.textColor } : undefined,
   }));
 }
 
@@ -1017,16 +1026,12 @@ export function setKv(key: string, value: string): void {
   ).run(key, value);
 }
 
-export function setSyncState(
-  accountId: string,
-  patch: Partial<SyncStateRow>,
-): void {
+export function setSyncState(accountId: string, patch: Partial<SyncStateRow>): void {
   const d = getDb();
   const current = getSyncState(accountId);
   const next = {
     historyId: patch.historyId !== undefined ? patch.historyId : current.historyId,
-    fullSyncDone:
-      patch.fullSyncDone !== undefined ? patch.fullSyncDone : current.fullSyncDone,
+    fullSyncDone: patch.fullSyncDone !== undefined ? patch.fullSyncDone : current.fullSyncDone,
     lastSyncAt: patch.lastSyncAt !== undefined ? patch.lastSyncAt : current.lastSyncAt,
   };
   d.prepare(`

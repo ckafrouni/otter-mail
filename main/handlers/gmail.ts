@@ -5,7 +5,7 @@
  * gmail-oauth, gmail-api). Handlers are thin; business logic lives in services.
  */
 
-import { ipcMain, nativeImage, shell, WebContents } from "@glaze/core/backend";
+import { app, ipcMain, nativeImage, shell, WebContents } from "@glaze/core/backend";
 import {
   listAccounts,
   removeAccount as storeRemoveAccount,
@@ -45,7 +45,7 @@ import * as mailStore from "../services/mail-store.js";
 import * as mailSync from "../services/mail-sync.js";
 import { getSenderAvatar } from "../services/avatar-store.js";
 import { updateDockBadge } from "../services/notifier.js";
-import { refreshTray } from "../services/tray.js";
+import { refreshTray, createTray, destroyTray } from "../services/tray.js";
 import { getSettings, updateSettings, type AppSettings } from "../services/settings-store.js";
 import * as viewsStore from "../services/views-store.js";
 import type { ComposeAttachment, MailView, ViewRule } from "../gmail/types.js";
@@ -1028,9 +1028,31 @@ export function registerGmailHandlers(): void {
         }
         patch.notificationsMode = mode;
       }
+      if (p?.launchAtLogin !== undefined) {
+        if (typeof p.launchAtLogin !== "boolean") {
+          throw new Error('Invalid parameter: "launchAtLogin" must be a boolean.');
+        }
+        patch.launchAtLogin = p.launchAtLogin;
+      }
+      if (p?.trayEnabled !== undefined) {
+        if (typeof p.trayEnabled !== "boolean") {
+          throw new Error('Invalid parameter: "trayEnabled" must be a boolean.');
+        }
+        patch.trayEnabled = p.trayEnabled;
+      }
       const settings = await updateSettings(patch);
       if (patch.syncIntervalSeconds !== undefined) {
         mailSync.configureAutoSync(settings.syncIntervalSeconds);
+      }
+      if (patch.launchAtLogin !== undefined) {
+        app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin });
+      }
+      if (patch.trayEnabled !== undefined) {
+        if (settings.trayEnabled) {
+          await createTray();
+        } else {
+          destroyTray();
+        }
       }
       return settings;
     } catch (err) {

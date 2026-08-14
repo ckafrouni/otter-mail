@@ -15,6 +15,7 @@ import { parseMailtoUrl, setPendingMailto } from "./services/mailto-target.js";
 import { syncAllAccounts } from "./services/mail-sync.js";
 import { pruneAttachmentCache } from "./services/attachment-cache.js";
 import { createTray, destroyTray } from "./services/tray.js";
+import { getSettings } from "./services/settings-store.js";
 import { getPreloadPath, getWindowUrl } from "./windows/window-paths.js";
 import { openSettingsWindow } from "./windows/settings-window.js";
 
@@ -280,7 +281,11 @@ app.whenReady().then(async () => {
 
   await setupApplicationMenu();
 
-  void createTray();
+  const startupSettings = await getSettings();
+  app.setLoginItemSettings({ openAtLogin: startupSettings.launchAtLogin });
+  if (startupSettings.trayEnabled) {
+    void createTray();
+  }
 
   void pruneAttachmentCache();
 

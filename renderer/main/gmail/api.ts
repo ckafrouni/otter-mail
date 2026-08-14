@@ -161,6 +161,8 @@ export type NotificationsMode = "off" | "inbox" | "all";
 export type SyncSettings = {
   syncIntervalSeconds: number;
   notificationsMode: NotificationsMode;
+  launchAtLogin: boolean;
+  trayEnabled: boolean;
 };
 
 export type SaveViewParams = { id?: string; name: string; rules: ViewRule[]; mailbox?: string };

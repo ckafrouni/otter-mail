@@ -9,7 +9,11 @@
 
 import { app, ipcMain, logger } from "@glaze/core/backend";
 import { listAccounts } from "../services/account-store.js";
-import { countInboxUnreadAll, countInboxUnreadForAccount, listUnreadInboxPreview } from "../services/mail-store.js";
+import {
+  countInboxUnreadAll,
+  countInboxUnreadForAccount,
+  listInboxPreview,
+} from "../services/mail-store.js";
 import { syncAllAccounts } from "../services/mail-sync.js";
 import { focusMainWindow } from "../services/tray.js";
 import { hideTrayPopover } from "../windows/tray-popover-window.js";
@@ -35,13 +39,15 @@ function assertString(value: unknown, name: string): string {
 }
 
 export function registerTrayPopoverHandlers(): void {
-  ipcMain.handle("tray:getSnapshot", async (): Promise<TraySnapshot> => {
+  ipcMain.handle("tray:getSnapshot", async (_event, params: unknown): Promise<TraySnapshot> => {
+    const p = params as Record<string, unknown> | undefined;
+    const unreadOnly = p?.unreadOnly !== false;
     const accounts = await listAccounts();
     return {
       accounts: accounts.map((account) => ({
         account,
         unreadCount: countInboxUnreadForAccount(account.id),
-        messages: listUnreadInboxPreview(account.id, PREVIEW_LIMIT),
+        messages: listInboxPreview(account.id, PREVIEW_LIMIT, unreadOnly),
       })),
       totalUnread: countInboxUnreadAll(),
     };

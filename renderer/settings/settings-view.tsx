@@ -32,6 +32,7 @@ import {
   SidebarListItemContent,
   SidebarListItemTitle,
   SplitView,
+  Switch,
   Toolbar,
   ToolbarTitle,
   Field,
@@ -430,6 +431,8 @@ export function SettingsView() {
 
   const [syncInterval, setSyncInterval] = useState<number | null>(null);
   const [notificationsMode, setNotificationsMode] = useState<NotificationsMode | null>(null);
+  const [launchAtLogin, setLaunchAtLogin] = useState(false);
+  const [trayEnabled, setTrayEnabled] = useState(true);
   const [mailApps, setMailApps] = useState<MailApp[]>([]);
   const [defaultMailBundleId, setDefaultMailBundleId] = useState<string | null>(null);
   const [assistantStatus, setAssistantStatus] = useState<AssistantStatus | null>(null);
@@ -513,6 +516,8 @@ export function SettingsView() {
       const settings = await gmailApi.getSyncSettings();
       setSyncInterval(settings.syncIntervalSeconds);
       setNotificationsMode(settings.notificationsMode);
+      setLaunchAtLogin(settings.launchAtLogin);
+      setTrayEnabled(settings.trayEnabled);
     } catch (error) {
       toast.error(`Failed to load sync settings: ${error}`);
     }
@@ -635,6 +640,28 @@ export function SettingsView() {
     }
   };
 
+  const handleLaunchAtLoginChange = async (checked: boolean) => {
+    setLaunchAtLogin(checked);
+    console.log("[SettingsView:setLaunchAtLogin]", { checked });
+    try {
+      await gmailApi.setSyncSettings({ launchAtLogin: checked });
+    } catch (error) {
+      toast.error(`Failed to save launch-at-login setting: ${error}`);
+      void loadSyncSettings();
+    }
+  };
+
+  const handleTrayEnabledChange = async (checked: boolean) => {
+    setTrayEnabled(checked);
+    console.log("[SettingsView:setTrayEnabled]", { checked });
+    try {
+      await gmailApi.setSyncSettings({ trayEnabled: checked });
+    } catch (error) {
+      toast.error(`Failed to save menu-bar icon setting: ${error}`);
+      void loadSyncSettings();
+    }
+  };
+
   const handleThemeChange = async (value: string) => {
     const source = value as "system" | "light" | "dark";
     try {
@@ -745,6 +772,28 @@ export function SettingsView() {
                       Dark
                     </Label>
                   </RadioGroup>
+                </Field>
+              </FieldSet>
+              <FieldSet title="Startup & Menu Bar">
+                <Field
+                  label="Launch at login"
+                  description="Automatically open OtterMail when you log in to your Mac."
+                >
+                  <Switch
+                    id="launchAtLogin"
+                    checked={launchAtLogin}
+                    onCheckedChange={(checked) => void handleLaunchAtLoginChange(checked)}
+                  />
+                </Field>
+                <Field
+                  label="Show menu-bar icon"
+                  description="Show an OtterMail icon in the menu bar with a quick unread inbox view."
+                >
+                  <Switch
+                    id="trayEnabled"
+                    checked={trayEnabled}
+                    onCheckedChange={(checked) => void handleTrayEnabledChange(checked)}
+                  />
                 </Field>
               </FieldSet>
               <FieldSet title="Mail">

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { injectActiveTheme } from "@glaze/core/components";
+import { injectActiveTheme, SegmentedControl, SegmentedControlItem } from "@glaze/core/components";
 import { SquarePen, RotateCw, ExternalLink, Power } from "lucide-react";
 import { SenderAvatar } from "../main/gmail/sender-avatar";
 import { getAccountColor, getAccountDisplayName } from "../main/gmail/account-style";
@@ -51,7 +51,9 @@ function TabKnob({
         onClick={onClick}
         className={[
           "flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white",
-          selected ? "ring-2 ring-(--te-strong) ring-offset-1 ring-offset-(--te-frame)" : "opacity-75 hover:opacity-100",
+          selected
+            ? "ring-2 ring-(--te-strong) ring-offset-1 ring-offset-(--te-frame)"
+            : "opacity-75 hover:opacity-100",
         ].join(" ")}
         style={{ background }}
       >
@@ -79,16 +81,27 @@ function InboxRow({
       className="flex w-full items-start gap-2 rounded-[6px] px-2 py-1.5 text-left hover:bg-(--te-hover)"
       style={showAccountColor ? { boxShadow: `inset 2px 0 0 ${accountColor}` } : undefined}
     >
-      <SenderAvatar name={message.fromName} email={message.fromEmail} accountId={message.accountId} size="sm" />
+      <SenderAvatar
+        name={message.fromName}
+        email={message.fromEmail}
+        accountId={message.accountId}
+        size="sm"
+      />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
           <span className="truncate text-[12.5px] font-semibold text-(--te-strong)">
             {message.fromName || message.fromEmail}
           </span>
-          <span className="shrink-0 text-[10.5px] text-(--te-muted)">{formatRelativeDate(message.date)}</span>
+          <span className="shrink-0 text-[10.5px] text-(--te-muted)">
+            {formatRelativeDate(message.date)}
+          </span>
         </div>
-        <div className="truncate text-[12px] text-(--te-text)">{message.subject || "(no subject)"}</div>
-        <div className="truncate text-[11.5px] text-(--te-muted)">{decodeEntities(message.snippet)}</div>
+        <div className="truncate text-[12px] text-(--te-text)">
+          {message.subject || "(no subject)"}
+        </div>
+        <div className="truncate text-[11.5px] text-(--te-muted)">
+          {decodeEntities(message.snippet)}
+        </div>
       </div>
     </button>
   );
@@ -104,10 +117,12 @@ export function TrayPopoverView() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<string>(ALL_TAB);
   const [syncing, setSyncing] = useState(false);
+  // Same "All / Unread" mode switcher as the main window's message list.
+  const [mode, setMode] = useState<"all" | "unread">("unread");
 
   const snapshotQuery = useQuery({
-    queryKey: ["tray:snapshot"],
-    queryFn: () => trayApi.getSnapshot(),
+    queryKey: ["tray:snapshot", mode],
+    queryFn: () => trayApi.getSnapshot(mode === "unread"),
   });
 
   useEffect(() => {
@@ -140,7 +155,8 @@ export function TrayPopoverView() {
   const showTabs = accounts.length > 1;
   const effectiveTab = showTabs ? activeTab : (accounts[0]?.account.id ?? ALL_TAB);
 
-  const activeAccount: TrayAccountSnapshot | null = accounts.find((a) => a.account.id === effectiveTab) ?? null;
+  const activeAccount: TrayAccountSnapshot | null =
+    accounts.find((a) => a.account.id === effectiveTab) ?? null;
 
   const rows = useMemo(() => {
     if (effectiveTab === ALL_TAB || !activeAccount) {
@@ -213,7 +229,9 @@ export function TrayPopoverView() {
           </div>
         ) : rows.length === 0 ? (
           <div className="flex h-full items-center justify-center px-4 text-center">
-            <span className="text-[12.5px] text-(--te-muted)">No unread mail.</span>
+            <span className="text-[12.5px] text-(--te-muted)">
+              {mode === "unread" ? "No unread mail." : "No mail."}
+            </span>
           </div>
         ) : (
           rows.map(({ message, accountId, accountColor }) => (
@@ -233,10 +251,24 @@ export function TrayPopoverView() {
           <IconBtn label="New Message" onClick={() => void trayApi.compose()}>
             <SquarePen className="size-4" />
           </IconBtn>
-          <IconBtn label="Synchronize All Mailboxes" onClick={() => void handleSync()} disabled={syncing}>
+          <IconBtn
+            label="Synchronize All Mailboxes"
+            onClick={() => void handleSync()}
+            disabled={syncing}
+          >
             <RotateCw className={syncing ? "size-4 animate-spin" : "size-4"} />
           </IconBtn>
         </div>
+        <SegmentedControl
+          type="single"
+          value={mode}
+          onValueChange={(v) => setMode(v as "all" | "unread")}
+          size="small"
+          variant="filled"
+        >
+          <SegmentedControlItem value="all">All</SegmentedControlItem>
+          <SegmentedControlItem value="unread">Unread</SegmentedControlItem>
+        </SegmentedControl>
         <div className="flex items-center gap-0.5">
           <IconBtn label="Open OtterMail" onClick={() => void trayApi.openApp()}>
             <ExternalLink className="size-4" />

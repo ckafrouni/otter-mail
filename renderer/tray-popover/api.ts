@@ -15,8 +15,9 @@ export type TraySnapshot = {
 };
 
 export const trayApi = {
-  getSnapshot: () => ipc<TraySnapshot>("tray:getSnapshot"),
-  openThread: (accountId: string, messageId: string) => ipc<void>("tray:openThread", { accountId, messageId }),
+  getSnapshot: (unreadOnly: boolean) => ipc<TraySnapshot>("tray:getSnapshot", { unreadOnly }),
+  openThread: (accountId: string, messageId: string) =>
+    ipc<void>("tray:openThread", { accountId, messageId }),
   compose: () => ipc<void>("tray:compose"),
   sync: () => ipc<{ ok: boolean }>("tray:sync"),
   openApp: () => ipc<void>("tray:openApp"),

@@ -16,11 +16,17 @@ export type AppSettings = {
   syncIntervalSeconds: number;
   /** New-mail notifications: off, inbox-only, or every new message. */
   notificationsMode: NotificationsMode;
+  /** Automatically open the app when the user logs in. */
+  launchAtLogin: boolean;
+  /** Show the menu-bar icon and mini-inbox popover. */
+  trayEnabled: boolean;
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
   syncIntervalSeconds: 30,
   notificationsMode: "inbox",
+  launchAtLogin: false,
+  trayEnabled: true,
 };
 
 async function getSettingsPath(): Promise<string> {
