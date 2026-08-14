@@ -62,13 +62,30 @@ async function ensurePopover(): Promise<BrowserWindow> {
   return popover;
 }
 
+/**
+ * The tray click event's `bounds.y`/`height` are unreliable for vertical
+ * placement (menu-bar bounds can come through in a flipped coordinate space),
+ * which was pushing the popover toward the bottom of the screen instead of
+ * just under the menu bar. `bounds.x` is unaffected (flipping is vertical
+ * only), so pick the display by x-range and anchor purely off its
+ * `workArea.y` — the pixel row right below that display's menu bar — rather
+ * than trusting the tray bounds' vertical values at all.
+ */
+function displayForX(centerX: number) {
+  const displays = screen.getAllDisplays();
+  return (
+    displays.find((d) => centerX >= d.bounds.x && centerX < d.bounds.x + d.bounds.width) ??
+    screen.getPrimaryDisplay()
+  );
+}
+
 function positionPopover(win: BrowserWindow, bounds: { x: number; y: number; width: number; height: number }): void {
   const centerX = Math.round(bounds.x + bounds.width / 2);
-  const { workArea } = screen.getDisplayNearestPoint({ x: centerX, y: bounds.y });
+  const { workArea } = displayForX(centerX);
   const minX = workArea.x + 8;
   const maxX = workArea.x + workArea.width - POPOVER_WIDTH - 8;
   const x = Math.min(Math.max(Math.round(centerX - POPOVER_WIDTH / 2), minX), maxX);
-  const y = Math.round(bounds.y + bounds.height + 4);
+  const y = workArea.y + 4;
   win.setPosition(x, y);
 }
 
