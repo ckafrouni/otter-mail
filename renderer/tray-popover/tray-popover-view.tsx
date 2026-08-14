@@ -66,12 +66,14 @@ function TabKnob({
 function InboxRow({
   message,
   accountColor,
-  showAccountColor,
+  accountName,
+  showAccountLabel,
   onOpen,
 }: {
   message: GmailMessageSummary;
   accountColor: string;
-  showAccountColor: boolean;
+  accountName: string;
+  showAccountLabel: boolean;
   onOpen: () => void;
 }) {
   return (
@@ -79,7 +81,6 @@ function InboxRow({
       type="button"
       onClick={onOpen}
       className="flex w-full items-start gap-2 rounded-[6px] px-2 py-1.5 text-left hover:bg-(--te-hover)"
-      style={showAccountColor ? { boxShadow: `inset 2px 0 0 ${accountColor}` } : undefined}
     >
       <SenderAvatar
         name={message.fromName}
@@ -92,8 +93,15 @@ function InboxRow({
           <span className="truncate text-[12.5px] font-semibold text-(--te-strong)">
             {message.fromName || message.fromEmail}
           </span>
-          <span className="shrink-0 text-[10.5px] text-(--te-muted)">
-            {formatRelativeDate(message.date)}
+          <span className="flex shrink-0 items-center gap-1.5">
+            {showAccountLabel ? (
+              <span className="truncate max-w-20 text-[10.5px] font-semibold" style={{ color: accountColor }}>
+                {accountName}
+              </span>
+            ) : null}
+            <span className="shrink-0 text-[10.5px] text-(--te-muted)">
+              {formatRelativeDate(message.date)}
+            </span>
           </span>
         </div>
         <div className="truncate text-[12px] text-(--te-text)">
@@ -166,6 +174,7 @@ export function TrayPopoverView() {
             message,
             accountId: a.account.id,
             accountColor: getAccountColor(a.account),
+            accountName: getAccountDisplayName(a.account),
           })),
         )
         .sort((a, b) => b.message.date - a.message.date)
@@ -175,6 +184,7 @@ export function TrayPopoverView() {
       message,
       accountId: activeAccount.account.id,
       accountColor: getAccountColor(activeAccount.account),
+      accountName: getAccountDisplayName(activeAccount.account),
     }));
   }, [effectiveTab, activeAccount, accounts]);
 
@@ -234,12 +244,13 @@ export function TrayPopoverView() {
             </span>
           </div>
         ) : (
-          rows.map(({ message, accountId, accountColor }) => (
+          rows.map(({ message, accountId, accountColor, accountName }) => (
             <InboxRow
               key={`${accountId}:${message.id}`}
               message={message}
               accountColor={accountColor}
-              showAccountColor={effectiveTab === ALL_TAB}
+              accountName={accountName}
+              showAccountLabel={effectiveTab === ALL_TAB}
               onOpen={() => void trayApi.openThread(accountId, message.id)}
             />
           ))
