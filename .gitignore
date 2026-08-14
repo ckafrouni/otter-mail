@@ -16,3 +16,6 @@ Thumbs.db
 
 # Glaze agent temporary files
 tmp/*
+
+# Glaze agent debug artifacts (DOM snapshots, etc. — may contain personal data)
+.glaze-tool-output/
