@@ -163,6 +163,44 @@ blockquote { border-left: 3px solid #d6d6d6; padding-left: 12px; margin: 4px 0; 
 </style>`;
 
 /**
+ * The email canvas is always white, but the reader's WebView carries the app's
+ * dark appearance, so `prefers-color-scheme` evaluates to `dark` INSIDE the
+ * iframe (a CSS `color-scheme: light` on :root doesn't change that). Emails that
+ * ship a `@media (prefers-color-scheme: dark)` variant then flip their text to
+ * white on our white card and become unreadable. Disable only those dark-scheme
+ * media rules so the email's light/default styling (dark text) always wins.
+ */
+function neutralizeDarkScheme(doc: Document | null | undefined) {
+  if (!doc) return;
+  const isDark = (m: MediaList) => /prefers-color-scheme\s*:\s*dark/i.test(m.mediaText);
+  const walk = (rules: CSSRuleList | undefined) => {
+    if (!rules) return;
+    for (const rule of Array.from(rules)) {
+      if (rule instanceof CSSMediaRule) {
+        if (isDark(rule.media)) {
+          try {
+            rule.media.mediaText = "not all";
+          } catch {
+            /* some engines reject reassigning mediaText — ignore */
+          }
+        } else {
+          walk(rule.cssRules);
+        }
+      }
+    }
+  };
+  for (const sheet of Array.from(doc.styleSheets)) {
+    try {
+      // Whole-sheet media (from `<style media=…>` / `<link media=…>`).
+      if (sheet.media && isDark(sheet.media)) sheet.media.mediaText = "not all";
+      walk(sheet.cssRules); // throws for cross-origin sheets — caught below
+    } catch {
+      /* cross-origin or unreadable stylesheet: skip */
+    }
+  }
+}
+
+/**
  * HTML mail in an auto-height iframe. The height watchers must NOT hang off the
  * iframe's `load` event: that only fires once every subresource has settled, and
  * marketing mail is full of remote images and tracking pixels that routinely
@@ -209,6 +247,7 @@ function HtmlBody({
       ro?.disconnect();
       ro = new ResizeObserver(fit);
       ro.observe(doc.body);
+      neutralizeDarkScheme(doc);
       // Some remote images won't load in the iframe — anything served with
       // `Cross-Origin-Resource-Policy: same-origin` (Anthropic/Cloudflare, …) is
       // blocked by WebKit since the frame's origin isn't the image's. Re-fetch
@@ -299,6 +338,7 @@ function HtmlBody({
     let ticks = 0;
     const poll = setInterval(() => {
       wire();
+      if (ticks < 8) neutralizeDarkScheme(iframe.contentDocument);
       fit();
       if (++ticks >= 40) clearInterval(poll);
     }, 250);
