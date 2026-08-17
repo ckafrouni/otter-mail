@@ -200,6 +200,64 @@ function neutralizeDarkScheme(doc: Document | null | undefined) {
   }
 }
 
+function relativeLuminance(r: number, g: number, b: number): number {
+  const s = (c: number) => {
+    const v = c / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * s(r) + 0.7152 * s(g) + 0.0722 * s(b);
+}
+
+function parseRgb(value: string): { r: number; g: number; b: number; a: number } | null {
+  const m = value.match(/rgba?\(([^)]+)\)/);
+  if (!m) return null;
+  const [r, g, b, a = 1] = m[1].split(",").map((s) => parseFloat(s.trim()));
+  if ([r, g, b].some(Number.isNaN)) return null;
+  return { r, g, b, a };
+}
+
+/**
+ * Some templates set white text via a mechanism `neutralizeDarkScheme` can't
+ * reach — a CSS custom-property fallback baked into the declaration itself
+ * (`color: var(--text, #fff)`), or plain unconditional white with no light
+ * variant at all. Rather than chase every authoring pattern, directly measure
+ * each text-owning element's rendered contrast and force a readable color
+ * only where it's actually near-white on a near-white (our forced canvas)
+ * background — untouched otherwise, so intentional design colors survive.
+ */
+function fixWhiteOnWhiteText(doc: Document | null | undefined) {
+  if (!doc?.body) return;
+  const effectiveBgLuminance = (start: Element): number => {
+    let node: Element | null = start;
+    while (node && node !== doc.documentElement) {
+      const style = getComputedStyle(node);
+      // A background image (hero banner, etc.) could be dark under white text
+      // legitimately — we can't sample its pixels, so leave the text alone
+      // rather than risk turning readable white-on-photo into unreadable
+      // dark-on-photo.
+      if (style.backgroundImage !== "none") return 0;
+      const bg = parseRgb(style.backgroundColor);
+      if (bg && bg.a > 0.05) return relativeLuminance(bg.r, bg.g, bg.b);
+      node = node.parentElement;
+    }
+    return 1; // falls through to our forced-white canvas
+  };
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_ELEMENT);
+  let el: Node | null;
+  while ((el = walker.nextNode())) {
+    const element = el as HTMLElement;
+    const hasOwnText = Array.from(element.childNodes).some(
+      (n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").trim().length > 0,
+    );
+    if (!hasOwnText) continue;
+    const color = parseRgb(getComputedStyle(element).color);
+    if (!color) continue;
+    if (relativeLuminance(color.r, color.g, color.b) < 0.85) continue; // not light text
+    if (effectiveBgLuminance(element) < 0.85) continue; // has a dark-enough backdrop
+    element.style.setProperty("color", "#1f1f1f", "important");
+  }
+}
+
 /**
  * HTML mail in an auto-height iframe. The height watchers must NOT hang off the
  * iframe's `load` event: that only fires once every subresource has settled, and
@@ -248,6 +306,7 @@ function HtmlBody({
       ro = new ResizeObserver(fit);
       ro.observe(doc.body);
       neutralizeDarkScheme(doc);
+      fixWhiteOnWhiteText(doc);
       // Some remote images won't load in the iframe — anything served with
       // `Cross-Origin-Resource-Policy: same-origin` (Anthropic/Cloudflare, …) is
       // blocked by WebKit since the frame's origin isn't the image's. Re-fetch
@@ -338,7 +397,10 @@ function HtmlBody({
     let ticks = 0;
     const poll = setInterval(() => {
       wire();
-      if (ticks < 8) neutralizeDarkScheme(iframe.contentDocument);
+      if (ticks < 8) {
+        neutralizeDarkScheme(iframe.contentDocument);
+        fixWhiteOnWhiteText(iframe.contentDocument);
+      }
       fit();
       if (++ticks >= 40) clearInterval(poll);
     }, 250);
