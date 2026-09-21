@@ -121,7 +121,7 @@ export function CommandPalette({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogHeader className="sr-only">
-        <DialogTitle>Command Palette</DialogTitle>
+        <DialogTitle variant="large-strong">Command Palette</DialogTitle>
         <DialogDescription>Search mail or run a command</DialogDescription>
       </DialogHeader>
       <DialogContent size="large" className="p-0 overflow-hidden" showCloseButton={false}>
@@ -171,7 +171,8 @@ export function CommandPalette({
                         style={account ? { backgroundColor: getAccountColor(account) } : undefined}
                       />
                       <span className="truncate">
-                        {message.fromName || message.fromEmail} — {message.subject || "(no subject)"}
+                        {message.fromName || message.fromEmail} —{" "}
+                        {message.subject || "(no subject)"}
                       </span>
                       <CommandAccessory className="shrink-0 tabular-nums">
                         {formatResultDate(message.date)}

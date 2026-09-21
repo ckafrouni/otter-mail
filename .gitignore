@@ -19,3 +19,10 @@ tmp/*
 
 # Glaze agent debug artifacts (DOM snapshots, etc. — may contain personal data)
 .glaze-tool-output/
+
+# Glaze-managed external-agent resources
+.claude/rules/
+.cursor/rules/
+GLAZE-APP-GUIDE.md
+GLAZE-AGENT-INSTRUCTIONS.md
+.glaze-runtime-context.md

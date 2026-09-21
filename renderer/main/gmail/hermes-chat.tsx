@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { MessageScroller } from "@shadcn/react/message-scroller";
 import {
   ArrowDownIcon,
@@ -17,7 +18,13 @@ import {
   XIcon,
 } from "lucide-react";
 import { IconBtn, HintTooltip } from "./te-ui";
-import { gmailApi, type ChatEvent, type Skill } from "./api";
+import {
+  gmailApi,
+  type ChatEvent,
+  type ChatSession,
+  type ChatSessionMessage,
+  type Skill,
+} from "./api";
 import {
   buildHandoffText,
   contextFromMessages,
@@ -110,7 +117,9 @@ function SkillBadge({
 /** Chip recap of the context sent with a user turn. */
 function ContextRecap({ context }: { context: ContextMeta }) {
   const label =
-    context.count > 1 ? `${context.count} conversations` : context.subjects[0] ?? "1 conversation";
+    context.count > 1
+      ? `${context.count} conversations`
+      : (context.subjects[0] ?? "1 conversation");
   return (
     <div className="mb-1 flex justify-end">
       <span className="te-label flex max-w-full items-center gap-1.5 rounded-[4px] border border-(--te-border) px-2 py-0.5 text-(--te-faint)">
@@ -121,11 +130,18 @@ function ContextRecap({ context }: { context: ContextMeta }) {
   );
 }
 
-/** A saved chat session. `lastResponseId` chains the next turn server-side. */
+/**
+ * A saved chat. `sessionId` binds it to a persistent Hermes session (native
+ * Sessions API); pre-migration chats have none and keep chaining the next turn
+ * via `lastResponseId` (Responses API) so their thread isn't lost.
+ */
 type Conversation = {
   id: string;
   title: string;
   turns: ChatTurn[];
+  sessionId: string | null;
+  /** Created by this app (deleting the chat deletes the session) vs. opened from Hermes. */
+  sessionOwned: boolean;
   lastResponseId: string | null;
   updatedAt: number;
 };
@@ -152,9 +168,54 @@ function newConversation(): Conversation {
     id: crypto.randomUUID(),
     title: "New chat",
     turns: [],
+    sessionId: null,
+    sessionOwned: false,
     lastResponseId: null,
     updatedAt: Date.now(),
   };
+}
+
+/** Human label for a session's origin (WebUI, CLI, this API, …). */
+function sourceLabel(source: string): string {
+  switch (source) {
+    case "hermes_browser":
+      return "WebUI";
+    case "api_server":
+      return "API";
+    case "cli":
+      return "CLI";
+    default:
+      return source.charAt(0).toUpperCase() + source.slice(1);
+  }
+}
+
+/**
+ * Rebuilds transcript turns from a session's stored messages: tool-call
+ * assistant rows + tool rows fold into one assistant turn, closed by the final
+ * answer, mirroring how a live stream renders.
+ */
+function turnsFromMessages(messages: ChatSessionMessage[]): ChatTurn[] {
+  const turns: ChatTurn[] = [];
+  let open: ChatTurn | null = null;
+  for (let i = 0; i < messages.length; i += 1) {
+    const m = messages[i];
+    if (m.role === "user") {
+      open = null;
+      turns.push({ id: `h-${i}`, role: "user", text: m.text, tools: [] });
+    } else if (m.role === "assistant") {
+      if (!open) {
+        open = { id: `h-${i}`, role: "assistant", text: "", tools: [] };
+        turns.push(open);
+      }
+      for (const name of m.toolCalls ?? []) open.tools.push({ name });
+      if (m.text) open.text = open.text ? `${open.text}\n\n${m.text}` : m.text;
+      if (!m.toolCalls?.length) open = null;
+    } else if (m.role === "tool" && open) {
+      const pending = open.tools.find((t) => t.output === undefined);
+      if (pending) pending.output = m.text.slice(0, 400) || "(done)";
+    }
+  }
+  return turns.filter((t) => t.role === "user" || t.text || t.tools.length > 0);
 }
 
 function loadStore(): Store {
@@ -163,7 +224,12 @@ function loadStore(): Store {
   try {
     const v2 = JSON.parse(localStorage.getItem(STORE_KEY) ?? "") as Partial<Store>;
     if (Array.isArray(v2.conversations)) {
-      conversations = v2.conversations;
+      // Chats saved before the Sessions migration carry no session fields.
+      conversations = v2.conversations.map((c) => ({
+        ...c,
+        sessionId: c.sessionId ?? null,
+        sessionOwned: c.sessionOwned ?? false,
+      }));
       activeId = v2.activeId ?? null;
     }
   } catch {
@@ -181,6 +247,8 @@ function loadStore(): Store {
             id: crypto.randomUUID(),
             title: deriveTitle(v1.turns),
             turns: v1.turns,
+            sessionId: null,
+            sessionOwned: false,
             lastResponseId: v1.lastResponseId ?? null,
             updatedAt: Date.now(),
           },
@@ -222,6 +290,7 @@ const ERROR_TEXT: Record<string, string> = {
   unreachable: "Can't reach Hermes — are you on Tailscale?",
   timeout: "Hermes went quiet for too long — the run was stopped.",
   cancelled: "Stopped.",
+  session_not_found: "This chat's Hermes session no longer exists — send again to start a new one.",
 };
 
 function friendlyError(code: string): string {
@@ -253,19 +322,30 @@ function ToolStep({ name, output }: { name: string; output?: string }) {
   );
 }
 
-/** Dropdown sheet of past conversations; Escape/backdrop-click closes it. */
+/**
+ * Dropdown sheet of past conversations plus, when the server supports it, the
+ * other sessions persisted on Hermes (WebUI, CLI, …) that can be resumed here.
+ * Escape/backdrop-click closes it.
+ */
 function HistoryList({
   conversations,
   activeId,
   onPick,
   onDelete,
   onClose,
+  serverSessions,
+  serverLoading,
+  onPickServer,
 }: {
   conversations: Conversation[];
   activeId: string;
   onPick: (id: string) => void;
   onDelete: (id: string) => void;
   onClose: () => void;
+  /** Undefined when the server has no Sessions API (section hidden). */
+  serverSessions?: ChatSession[];
+  serverLoading: boolean;
+  onPickServer: (session: ChatSession) => void;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -279,12 +359,19 @@ function HistoryList({
   }, [onClose]);
 
   const items = conversations.filter((c) => c.turns.length > 0);
+  const showServer = serverSessions !== undefined || serverLoading;
+  const server = serverSessions ?? [];
   return (
     <>
       <div className="absolute inset-x-0 bottom-0 top-[52px] z-10" onClick={onClose} aria-hidden />
       <div className="te-scroll absolute right-2 top-[54px] z-20 max-h-[70%] w-[calc(100%-1rem)] overflow-y-auto rounded-[8px] border border-(--te-outline) bg-(--te-panel) p-1 shadow-lg">
+        {showServer ? (
+          <div className="te-label px-2 pb-1 pt-0.5 text-(--te-faint)">Recent</div>
+        ) : null}
         {items.length === 0 ? (
-          <div className="px-2 py-3 text-center text-[12px] text-(--te-muted)">No past chats yet</div>
+          <div className="px-2 py-3 text-center text-[12px] text-(--te-muted)">
+            No past chats yet
+          </div>
         ) : (
           items.map((c) => (
             <div
@@ -313,15 +400,47 @@ function HistoryList({
             </div>
           ))
         )}
+        {showServer ? (
+          <>
+            <div className="te-label px-2 pb-1 pt-2 text-(--te-faint)">On Hermes</div>
+            {server.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => onPickServer(s)}
+                className="flex w-full min-w-0 flex-col items-start rounded-[5px] px-2.5 py-1.5 text-left hover:bg-(--te-hover)"
+              >
+                <span className="w-full truncate text-[13px] text-(--te-text)">
+                  {s.title || s.preview || s.id}
+                </span>
+                <span className="te-label text-(--te-faint)">
+                  {sourceLabel(s.source)} · {formatAgo(s.lastActive)}
+                </span>
+              </button>
+            ))}
+            {serverLoading && server.length === 0 ? (
+              <div className="px-2 py-2 text-center text-[12px] text-(--te-faint)">
+                Loading sessions…
+              </div>
+            ) : null}
+            {!serverLoading && server.length === 0 ? (
+              <div className="px-2 py-2 text-center text-[12px] text-(--te-faint)">
+                No other sessions
+              </div>
+            ) : null}
+          </>
+        ) : null}
       </div>
     </>
   );
 }
 
 /**
- * Right-side Hermes chat: streams over the backend Responses-API bridge,
- * server-side continuity via previous_response_id. Multiple conversations are
- * kept in localStorage (history dropdown); "attach" adds pointer-only context.
+ * Right-side Hermes chat: streams over the backend bridge to Hermes' built-in
+ * API server. New chats live in native server sessions (persistent transcript,
+ * resumable from any client); pre-migration chats keep chaining via
+ * previous_response_id. The local store mirrors transcripts for instant paint
+ * (history dropdown); "attach" adds pointer-only context.
  */
 export function HermesChatPanel({
   accountId,
@@ -352,7 +471,11 @@ export function HermesChatPanel({
   const [streaming, setStreaming] = useState<{ requestId: string; convoId: string } | null>(null);
   const [attach, setAttach] = useState(true);
   const [configured, setConfigured] = useState<boolean | null>(null);
+  // Native Sessions API available: new chats get a persistent server session.
+  const [sessionsAvailable, setSessionsAvailable] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Conversation whose transcript is being pulled from the server.
+  const [hydrating, setHydrating] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -361,10 +484,21 @@ export function HermesChatPanel({
 
   useEffect(() => {
     gmailApi.chatStatus().then(
-      (s) => setConfigured(s.configured),
+      (s) => {
+        setConfigured(s.configured);
+        setSessionsAvailable(s.configured && s.sessions);
+      },
       () => setConfigured(false),
     );
   }, []);
+
+  // Other sessions persisted on Hermes (WebUI, CLI, …), fetched when history opens.
+  const serverSessionsQuery = useQuery<ChatSession[]>({
+    queryKey: ["hermes-sessions"],
+    queryFn: () => gmailApi.chatSessionList({ limit: 40 }),
+    enabled: historyOpen && sessionsAvailable,
+    staleTime: 15_000,
+  });
 
   // Skills for the "/" picker (gateway /commands aren't exposed by the API,
   // but skills are, and the agent loads them via its skill_view tool).
@@ -484,7 +618,10 @@ export function HermesChatPanel({
             nextTurns[nextTurns.length - 1] = updated;
             const lastResponseId =
               event.type === "done" && event.responseId ? event.responseId : c.lastResponseId;
-            return { ...c, turns: nextTurns, lastResponseId, updatedAt: Date.now() };
+            // A session deleted elsewhere: unbind so the next send starts a fresh one.
+            const sessionId =
+              event.type === "error" && event.message === "session_not_found" ? null : c.sessionId;
+            return { ...c, turns: nextTurns, lastResponseId, sessionId, updatedAt: Date.now() };
           }),
         }));
         if (event.type === "done" || event.type === "error") setStreaming(null);
@@ -494,7 +631,10 @@ export function HermesChatPanel({
   }, []);
 
   const patchConversation = (id: string, fn: (c: Conversation) => Conversation) => {
-    setStore((s) => ({ ...s, conversations: s.conversations.map((c) => (c.id === id ? fn(c) : c)) }));
+    setStore((s) => ({
+      ...s,
+      conversations: s.conversations.map((c) => (c.id === id ? fn(c) : c)),
+    }));
   };
 
   const send = () => {
@@ -513,12 +653,19 @@ export function HermesChatPanel({
       : question;
     const input = attached ? buildHandoffText(baseInput, attached) : baseInput;
     const prevResponseId = active.lastResponseId ?? undefined;
-    console.log("[HermesChat:send]", { requestId, attached: Boolean(attached), skill: skill?.name });
+    const firstTurn = active.turns.length === 0;
+    const title = clampTitle(skill ? `/${skill.name} ${question}` : question);
+    console.log("[HermesChat:send]", {
+      requestId,
+      attached: Boolean(attached),
+      skill: skill?.name,
+      session: active.sessionId ?? (sessionsAvailable && !prevResponseId ? "new" : "legacy"),
+    });
     setDraft("");
     setActiveSkill(null);
     patchConversation(convoId, (c) => ({
       ...c,
-      title: c.turns.length === 0 ? clampTitle(skill ? `/${skill.name} ${question}` : question) : c.title,
+      title: c.turns.length === 0 ? title : c.title,
       updatedAt: Date.now(),
       turns: [
         ...c.turns,
@@ -542,12 +689,74 @@ export function HermesChatPanel({
     setStreaming({ requestId, convoId });
     // A quote is one-shot — release it once it's been sent.
     if (attached && quote) onClearQuote?.();
-    void gmailApi
-      .chatSend({ requestId, input, previousResponseId: prevResponseId })
-      .catch(() => {
+    void (async () => {
+      let sessionId = active.sessionId;
+      // A new chat gets a persistent server session; a pre-migration chat keeps
+      // its response chain. If the session can't be created, fall back to chaining.
+      if (!sessionId && !prevResponseId && sessionsAvailable) {
+        try {
+          const session = await gmailApi.chatSessionCreate(firstTurn ? { title } : {});
+          sessionId = session.id;
+          patchConversation(convoId, (c) => ({ ...c, sessionId: session.id, sessionOwned: true }));
+        } catch (error) {
+          console.log("[HermesChat:sessionCreate] failed, chaining instead", {
+            error: String(error),
+          });
+        }
+      }
+      try {
+        await gmailApi.chatSend({
+          requestId,
+          input,
+          sessionId: sessionId ?? undefined,
+          previousResponseId: sessionId ? undefined : prevResponseId,
+        });
+      } catch {
         // Failure events also arrive via the broadcast; this is a backstop.
         setStreaming((cur) => (cur?.requestId === requestId ? null : cur));
-      });
+      }
+    })();
+  };
+
+  /** Resumes a session persisted on Hermes (e.g. started in the WebUI) in the panel. */
+  const openServerSession = (session: ChatSession) => {
+    setHistoryOpen(false);
+    const existing = conversations.find((c) => c.sessionId === session.id);
+    if (existing) {
+      switchTo(existing.id);
+      return;
+    }
+    console.log("[HermesChat:openServerSession]", {
+      sessionId: session.id,
+      source: session.source,
+    });
+    const convo: Conversation = {
+      id: crypto.randomUUID(),
+      title: clampTitle(session.title || session.preview || "Hermes session"),
+      turns: [],
+      sessionId: session.id,
+      sessionOwned: false,
+      lastResponseId: null,
+      updatedAt: session.lastActive || Date.now(),
+    };
+    setStore((s) => ({
+      conversations: [convo, ...s.conversations.filter((c) => c.turns.length > 0)],
+      activeId: convo.id,
+    }));
+    setHydrating(convo.id);
+    gmailApi
+      .chatSessionMessages(session.id)
+      .then(
+        (messages) => {
+          const hydrated = turnsFromMessages(messages);
+          patchConversation(convo.id, (c) =>
+            c.turns.length > 0 ? c : { ...c, turns: hydrated, updatedAt: Date.now() },
+          );
+        },
+        (error) => console.log("[HermesChat:hydrate] failed", { error: String(error) }),
+      )
+      .finally(() => setHydrating((cur) => (cur === convo.id ? null : cur)));
+    inputRef.current?.focus();
   };
 
   const stop = () => {
@@ -584,6 +793,11 @@ export function HermesChatPanel({
       void gmailApi.chatCancel(streaming.requestId);
       setStreaming(null);
     }
+    // Sessions this app created go with the chat; ones opened from Hermes only unlink.
+    const target = conversations.find((c) => c.id === id);
+    if (target?.sessionId && target.sessionOwned) {
+      void gmailApi.chatSessionDelete(target.sessionId).catch(() => {});
+    }
     setStore((s) => {
       const remaining = s.conversations.filter((c) => c.id !== id);
       if (s.activeId !== id) return { ...s, conversations: remaining };
@@ -611,7 +825,11 @@ export function HermesChatPanel({
           </div>
         </div>
         <HintTooltip label="Chat history">
-          <IconBtn label="Chat history" active={historyOpen} onClick={() => setHistoryOpen((o) => !o)}>
+          <IconBtn
+            label="Chat history"
+            active={historyOpen}
+            onClick={() => setHistoryOpen((o) => !o)}
+          >
             <HistoryIcon className="size-3.5" />
           </IconBtn>
         </HintTooltip>
@@ -634,6 +852,15 @@ export function HermesChatPanel({
           onPick={switchTo}
           onDelete={deleteConversation}
           onClose={() => setHistoryOpen(false)}
+          serverSessions={
+            sessionsAvailable && serverSessionsQuery.data
+              ? serverSessionsQuery.data.filter(
+                  (s) => s.messageCount > 0 && !conversations.some((c) => c.sessionId === s.id),
+                )
+              : undefined
+          }
+          serverLoading={sessionsAvailable && serverSessionsQuery.isPending}
+          onPickServer={openServerSession}
         />
       ) : null}
 
@@ -658,8 +885,9 @@ export function HermesChatPanel({
               <MessageScroller.Content className="flex flex-col gap-3">
                 {turns.length === 0 ? (
                   <div className="px-2 pt-6 text-center text-[13px] text-(--te-muted)">
-                    Ask about the open conversation, your inbox, or anything Hermes can do
-                    with its tools.
+                    {hydrating === activeId
+                      ? "Loading this session from Hermes…"
+                      : "Ask about the open conversation, your inbox, or anything Hermes can do with its tools."}
                   </div>
                 ) : null}
                 {turns.map((turn) => (
@@ -683,7 +911,9 @@ export function HermesChatPanel({
                         ))}
                         {turn.text ? (
                           <ChatMarkdown text={turn.text} />
-                        ) : !turn.error && streamingActive && turn.id === turns[turns.length - 1]?.id ? (
+                        ) : !turn.error &&
+                          streamingActive &&
+                          turn.id === turns[turns.length - 1]?.id ? (
                           <span className="te-label text-(--te-faint)">thinking…</span>
                         ) : null}
                         {turn.error ? (
@@ -773,12 +1003,7 @@ export function HermesChatPanel({
                 value={draft}
                 onChange={(e) => handleDraftChange(e.target.value)}
                 onKeyDown={(e) => {
-                  if (
-                    e.key === "Backspace" &&
-                    draft === "" &&
-                    activeSkill &&
-                    !slashOpen
-                  ) {
+                  if (e.key === "Backspace" && draft === "" && activeSkill && !slashOpen) {
                     e.preventDefault();
                     setActiveSkill(null);
                     return;

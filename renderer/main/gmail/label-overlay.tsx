@@ -75,7 +75,7 @@ export function LabelOverlay({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogHeader className="sr-only">
-        <DialogTitle>{title}</DialogTitle>
+        <DialogTitle variant="large-strong">{title}</DialogTitle>
         <DialogDescription>Pick a label</DialogDescription>
       </DialogHeader>
       <DialogContent size="large" className="p-0 overflow-hidden" showCloseButton={false}>

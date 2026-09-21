@@ -8,12 +8,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node glaze.ts build",
-    "dev": "node glaze.ts dev",
-    "dev:renderer": "node glaze.ts dev:renderer",
-    "lint": "node glaze.ts lint",
-    "type-check": "node glaze.ts type-check",
-    "format": "node glaze.ts format"
+    "build": "sh ./glaze-node.sh build",
+    "dev": "sh ./glaze-node.sh dev",
+    "dev:renderer": "sh ./glaze-node.sh dev:renderer",
+    "lint": "sh ./glaze-node.sh lint",
+    "type-check": "sh ./glaze-node.sh type-check",
+    "format": "sh ./glaze-node.sh format",
+    "verify": "sh ./glaze-node.sh verify --json",
+    "launch": "sh ./glaze-node.sh launch --wait --json",
+    "update-bundle": "sh ./glaze-node.sh update-bundle --wait --json",
+    "repackage": "sh ./glaze-node.sh repackage --wait --json"
   },
   "dependencies": {
     "@radix-ui/colors": "^3.0.0",
@@ -58,12 +62,14 @@
   "packageManager": "npm@11.11.0+sha512-82gRxKrh/eY5UnNorkTFcdBQAGpgjWehkfGVqAGlJjejEtJZGGJUqjo3mbBTNbc5BTnPKGVtGPBZGhElujX5cw==",
   "glaze": {
     "capabilities": {},
-    "sdkVersion": "0.13.0.0",
+    "sdkVersion": "0.14.2.0",
     "createdAt": "2026-07-01T12:05:07.615Z",
     "lastMigration": "tray-retina-icons",
     "host": {
-      "minVersion": "0.13.0.0"
+      "minVersion": "0.14.2.0"
     },
-    "updatedAt": 1786955466336
+    "updatedAt": 1789996645420,
+    "appId": "gmail-inbox-local-2fv8ixle",
+    "variant": "local"
   }
 }

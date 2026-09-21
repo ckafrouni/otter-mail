@@ -64,10 +64,7 @@ import {
 import { useMailViews } from "../main/gmail/custom-views";
 import { RichTextArea, type RichTextRef } from "../main/gmail/rich-text";
 import { ViewEditorForm } from "../main/gmail/view-editor-form";
-import {
-  getAccountColor,
-  getAccountDisplayName,
-} from "../main/gmail/account-style";
+import { getAccountColor, getAccountDisplayName } from "../main/gmail/account-style";
 import type { GmailAccount, MailView } from "../main/gmail/types";
 import {
   getAdvanceDirection,
@@ -171,7 +168,9 @@ function AccountRow({ account }: { account: GmailAccount }) {
         </div>
         <ColorWell
           value={color}
-          onChange={(swatch) => void updateAccount.mutateAsync({ accountId: account.id, color: swatch })}
+          onChange={(swatch) =>
+            void updateAccount.mutateAsync({ accountId: account.id, color: swatch })
+          }
           size="small"
           aria-label={`Set color for ${account.email}`}
           className="shrink-0 mt-0.5"
@@ -938,15 +937,19 @@ export function SettingsView() {
                   label="Hermes chat"
                   description={
                     chatStatus?.configured
-                      ? `Chat panel connected to ${chatStatus.baseUrl} (${chatStatus.model}).`
-                      : "The chat panel talks to Hermes' OpenAI-compatible API server over Tailscale. Paste the /v1 base URL and the API_SERVER_KEY."
+                      ? `Chat panel connected to ${chatStatus.baseUrl} (${chatStatus.model}) — ${
+                          chatStatus.sessions
+                            ? "native sessions: chats persist on Hermes."
+                            : "this server has no Sessions API; chats chain by response id."
+                        }`
+                      : "The chat panel talks to Hermes' built-in API server (port 8642) over Tailscale. Paste the server URL and the API_SERVER_KEY."
                   }
                 >
                   <div className="flex flex-col items-end gap-1.5">
                     <Input
                       value={chatBaseUrl}
                       onChange={(e) => setChatBaseUrl(e.target.value)}
-                      placeholder={chatStatus?.baseUrl ?? "https://<host>:8642/v1"}
+                      placeholder={chatStatus?.baseUrl ?? "https://<host>:8642"}
                       aria-label="Hermes API base URL"
                       className="w-56"
                     />

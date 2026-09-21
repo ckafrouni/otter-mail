@@ -14,7 +14,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const candidates = [
   resolve(__dirname, "../glaze-core/cli/glaze.js"),
-  resolve(__dirname, "../../../sdk/current/@glaze/core/cli/glaze.js"),
+  resolve(__dirname, "../../.sdk/@glaze/core/cli/glaze.js"),
 ];
 
 const cli = candidates.find(existsSync);

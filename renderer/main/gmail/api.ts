@@ -65,11 +65,13 @@ export type AssistantStatus = {
   teamName: string | null;
 };
 
-/** Hermes chat panel (Responses API) state and stream events. */
+/** Hermes chat panel (built-in API server) state and stream events. */
 export type ChatStatus = {
   configured: boolean;
   baseUrl: string | null;
   model: string | null;
+  /** The server exposes the native Sessions API (/api/sessions). */
+  sessions: boolean;
 };
 export type ChatEvent =
   | { requestId: string; type: "delta"; text: string }
@@ -80,6 +82,25 @@ export type ChatEvent =
 
 /** An installed Hermes skill, for the composer's "/" picker. */
 export type Skill = { name: string; description: string; category: string | null };
+
+/** A persisted Hermes session (native Sessions API). */
+export type ChatSession = {
+  id: string;
+  title: string | null;
+  source: string;
+  /** Epoch ms. */
+  lastActive: number;
+  messageCount: number;
+  preview: string | null;
+};
+
+/** One stored session message, flattened for the transcript. */
+export type ChatSessionMessage = {
+  role: "user" | "assistant" | "tool" | "system";
+  text: string;
+  toolName?: string;
+  toolCalls?: string[];
+};
 
 export type ModifyMessageParams = {
   accountId: string;
@@ -335,10 +356,15 @@ export const gmailApi = {
   chatConfigure: (params: { baseUrl: string; apiKey: string }): Promise<ChatStatus> =>
     ipc("assistant:chatConfigure", params),
 
-  /** Streams via the assistant:chatEvent broadcast; resolves when the turn ends. */
+  /**
+   * Streams via the assistant:chatEvent broadcast; resolves when the turn ends.
+   * With `sessionId` the turn runs in that native session; otherwise it chains
+   * the legacy Responses API via `previousResponseId`.
+   */
   chatSend: (params: {
     requestId: string;
     input: string;
+    sessionId?: string;
     previousResponseId?: string;
   }): Promise<{ ok: boolean }> => ipc("assistant:chatSend", params),
 
@@ -346,4 +372,19 @@ export const gmailApi = {
     ipc("assistant:chatCancel", { requestId }),
 
   chatSkills: (): Promise<Skill[]> => ipc("assistant:chatSkills"),
+
+  chatSessionCreate: (params: { title?: string }): Promise<ChatSession> =>
+    ipc("assistant:chatSessionCreate", params),
+
+  chatSessionDelete: (sessionId: string): Promise<{ ok: boolean }> =>
+    ipc("assistant:chatSessionDelete", { sessionId }),
+
+  chatSessionRename: (sessionId: string, title: string): Promise<{ ok: boolean }> =>
+    ipc("assistant:chatSessionRename", { sessionId, title }),
+
+  chatSessionList: (params: { limit?: number } = {}): Promise<ChatSession[]> =>
+    ipc("assistant:chatSessionList", params),
+
+  chatSessionMessages: (sessionId: string): Promise<ChatSessionMessage[]> =>
+    ipc("assistant:chatSessionMessages", { sessionId }),
 };

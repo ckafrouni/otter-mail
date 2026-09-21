@@ -112,7 +112,8 @@ export function registerHandlers(): void {
     const p = params as Record<string, unknown>;
     const token = typeof p?.token === "string" ? p.token.trim() : "";
     const botUserId = typeof p?.botUserId === "string" ? p.botUserId.trim() : "";
-    if (!token || !botUserId) throw new Error("Both the Slack token and the bot member ID are required.");
+    if (!token || !botUserId)
+      throw new Error("Both the Slack token and the bot member ID are required.");
     logger.info("handlers", "assistant:configure", { botUserId });
     return assistant.configure(token, botUserId);
   });
@@ -125,8 +126,9 @@ export function registerHandlers(): void {
     return assistant.send(text);
   });
 
-  // Hermes chat panel: streaming Responses API bridge. Events flow back via
-  // the assistant:chatEvent broadcast; the key never leaves the backend.
+  // Hermes chat panel: streaming bridge to Hermes' built-in API server (native
+  // Sessions API, Responses API for legacy chats). Events flow back via the
+  // assistant:chatEvent broadcast; the key never leaves the backend.
   ipcMain.handle("assistant:chatStatus", async () => assistantChat.chatStatus());
 
   ipcMain.handle("assistant:chatConfigure", async (_event, params: unknown) => {
@@ -145,6 +147,7 @@ export function registerHandlers(): void {
     return assistantChat.chatSend({
       requestId,
       input,
+      sessionId: typeof p?.sessionId === "string" && p.sessionId ? p.sessionId : undefined,
       previousResponseId:
         typeof p?.previousResponseId === "string" && p.previousResponseId
           ? p.previousResponseId
@@ -159,6 +162,41 @@ export function registerHandlers(): void {
   });
 
   ipcMain.handle("assistant:chatSkills", async () => assistantChat.listSkills());
+
+  // Native Sessions API: one persistent server-side session per conversation.
+  ipcMain.handle("assistant:chatSessionCreate", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown> | undefined;
+    const title = typeof p?.title === "string" ? p.title.trim() : "";
+    return assistantChat.sessionCreate(title ? { title } : {});
+  });
+
+  ipcMain.handle("assistant:chatSessionDelete", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    const sessionId = typeof p?.sessionId === "string" ? p.sessionId.trim() : "";
+    if (!sessionId) throw new Error("A session id is required.");
+    return assistantChat.sessionDelete(sessionId);
+  });
+
+  ipcMain.handle("assistant:chatSessionRename", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    const sessionId = typeof p?.sessionId === "string" ? p.sessionId.trim() : "";
+    const title = typeof p?.title === "string" ? p.title.trim() : "";
+    if (!sessionId || !title) throw new Error("A session id and title are required.");
+    return assistantChat.sessionRename(sessionId, title);
+  });
+
+  ipcMain.handle("assistant:chatSessionList", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown> | undefined;
+    const limit = typeof p?.limit === "number" && Number.isFinite(p.limit) ? p.limit : undefined;
+    return assistantChat.sessionList(limit ? { limit } : {});
+  });
+
+  ipcMain.handle("assistant:chatSessionMessages", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    const sessionId = typeof p?.sessionId === "string" ? p.sessionId.trim() : "";
+    if (!sessionId) throw new Error("A session id is required.");
+    return assistantChat.sessionMessages(sessionId);
+  });
 
   // Register Gmail handlers
   registerGmailHandlers();
