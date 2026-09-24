@@ -1,13 +1,17 @@
 import { useMemo, useState } from "react";
-import { Button, Field, FieldSet, Input, Text, EmptyState } from "@glaze/core/components";
+import { Dialog, Text } from "@glaze/core/components";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "./menu";
-import { BanIcon, PlusIcon, XIcon } from "lucide-react";
+import { BanIcon, ChevronLeftIcon, PlusIcon, Trash2Icon, XIcon } from "lucide-react";
+import { LabelChip } from "./label-chip";
+import { Btn, cn } from "./ui";
+import { SettingsRow, SettingsSection, TextInput } from "../settings/settings-ui";
 import { useAllAccountLabels, useCombinedCounts } from "./hooks";
 import { defaultRulesFor } from "./custom-views";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
@@ -16,14 +20,16 @@ import type { GmailAccount, GmailLabel, MailView, ViewRule } from "./types";
 
 /**
  * Smart Mailbox-style view editor (Settings → Views). Each account is one
- * compact rule card with "Must have" / "Must not have" chip rows; labels are
- * added from a native menu. Mount with a `key` per view — initial state
+ * row of the rules card with "Must have" / "Must not have" chip rows; labels
+ * are added from a menu. Mount with a `key` per view — initial state
  * derives from props at mount.
  */
 type ViewEditorFormProps = {
   /** The view being edited; null when creating a new custom view. */
   view: MailView | null;
   accounts: GmailAccount[];
+  /** The owning mailbox's name, for the header ("All mailboxes" or an account). */
+  mailboxName: string;
   onSave: (input: { id?: string; name: string; rules: ViewRule[] }) => Promise<unknown>;
   onDelete: (id: string) => Promise<unknown>;
   onReset: (id: string) => Promise<unknown>;
@@ -62,10 +68,10 @@ function chipName(label: GmailLabel | undefined, labelId: string): string {
   return label.type === "user" ? (display.split("/").pop() ?? display) : display;
 }
 
-const PILL =
-  "inline-flex w-fit shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-pill text-small-strong px-1.5 py-0.5";
+const EXCLUDED_CHIP =
+  "group relative inline-flex h-4.5 w-fit max-w-40 shrink-0 items-center gap-1 whitespace-nowrap rounded-sm border border-dashed border-destructive/50 px-1 text-2xs font-medium leading-none text-destructive-foreground";
 
-function LabelChipButton({
+function RuleChip({
   label,
   labelId,
   excluded,
@@ -77,27 +83,20 @@ function LabelChipButton({
   onRemove: () => void;
 }) {
   const name = chipName(label, labelId);
-  const style =
-    !excluded && label?.color
-      ? { backgroundColor: label.color.backgroundColor, color: label.color.textColor }
-      : undefined;
+  if (!excluded) {
+    return <LabelChip label={label ?? { id: labelId, name, type: "system" }} onRemove={onRemove} />;
+  }
   return (
-    <span
-      className={[
-        PILL,
-        excluded ? "bg-support-red/15 text-support-red" : label?.color ? "" : "bg-control",
-      ].join(" ")}
-      style={style}
-    >
-      {excluded ? <BanIcon className="size-3" /> : null}
-      {name}
+    <span className={EXCLUDED_CHIP}>
+      <BanIcon className="size-2.5" />
+      <span className="min-w-0 truncate">{name}</span>
       <button
         type="button"
         aria-label={`Remove ${name}`}
         onClick={onRemove}
-        className="opacity-60 hover:opacity-100 cursor-pointer"
+        className="cursor-pointer opacity-60 hover:opacity-100"
       >
-        <XIcon className="size-3" />
+        <XIcon className="size-2.5" />
       </button>
     </span>
   );
@@ -120,18 +119,21 @@ function AddLabelMenu({
         <button
           type="button"
           aria-label="Add label"
-          className="flex size-5 shrink-0 items-center justify-center rounded-full bg-control text-secondary hover:text-primary cursor-pointer"
+          className="inline-flex h-4.5 cursor-pointer items-center gap-0.5 rounded-sm border border-dashed border-input px-1 text-2xs font-medium leading-none text-muted-foreground outline-none transition-colors hover:border-foreground/30 hover:text-foreground focus-visible:ring-2 focus-visible:ring-focus-ring"
         >
-          <PlusIcon className="size-3" />
+          <PlusIcon className="size-2.5" />
+          Label
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
+      <DropdownMenuContent align="start" className="max-h-80">
+        {user.length > 0 ? <DropdownMenuLabel>Labels</DropdownMenuLabel> : null}
         {user.map((label) => (
           <DropdownMenuItem key={label.id} onSelect={() => onPick(label.id)}>
             {labelDisplayName(label)}
           </DropdownMenuItem>
         ))}
         {user.length > 0 && system.length > 0 ? <DropdownMenuSeparator /> : null}
+        {system.length > 0 ? <DropdownMenuLabel>Mailboxes</DropdownMenuLabel> : null}
         {system.map((label) => (
           <DropdownMenuItem key={label.id} onSelect={() => onPick(label.id)}>
             {labelDisplayName(label)}
@@ -163,13 +165,11 @@ function ChipRow({
 }) {
   const byId = new Map(labels.map((l) => [l.id, l]));
   return (
-    <div className="flex items-start gap-2">
-      <Text variant="mini" color="secondary" className="w-28 shrink-0 pt-[3px]">
-        {title}
-      </Text>
-      <div className="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
+    <div className="flex items-start gap-3">
+      <span className="w-24 shrink-0 pt-0.5 text-xs text-muted-foreground">{title}</span>
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
         {labelIds.map((id) => (
-          <LabelChipButton
+          <RuleChip
             key={id}
             label={byId.get(id)}
             labelId={id}
@@ -178,9 +178,7 @@ function ChipRow({
           />
         ))}
         {labelIds.length === 0 && emptyHint ? (
-          <Text variant="mini" color="tertiary" className="pt-[3px]">
-            {emptyHint}
-          </Text>
+          <span className="pe-1 text-xs text-muted-foreground/60">{emptyHint}</span>
         ) : null}
         <AddLabelMenu labels={labels} usedIds={usedIds} onPick={onAdd} />
       </div>
@@ -191,6 +189,7 @@ function ChipRow({
 export function ViewEditorForm({
   view,
   accounts,
+  mailboxName,
   onSave,
   onDelete,
   onReset,
@@ -204,6 +203,7 @@ export function ViewEditorForm({
 
   const [name, setName] = useState(view?.name ?? "");
   const [picks, setPicks] = useState<Picks>(() => rulesToPicks(initialRules));
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const isDefault = view != null && view.kind !== "custom";
 
@@ -228,148 +228,191 @@ export function ViewEditorForm({
 
   if (accounts.length === 0) {
     return (
-      <EmptyState
-        placement="inline"
-        title="No accounts"
-        description="Connect an account to build views."
-      />
+      <SettingsSection title="Views">
+        <SettingsRow title="No accounts" description="Connect an account to build views." />
+      </SettingsSection>
     );
   }
 
+  const matchLine =
+    rules.length === 0
+      ? "Add a label to at least one account"
+      : draftCounts.data
+        ? `${draftCounts.data.total.toLocaleString()} message${draftCounts.data.total === 1 ? "" : "s"}${
+            draftCounts.data.unread > 0
+              ? ` · ${draftCounts.data.unread.toLocaleString()} unread`
+              : ""
+          }`
+        : "Counting…";
+
   return (
-    <div className="flex flex-col gap-4">
-      <FieldSet>
-        <Field label="Name">
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Action Required"
-            autoFocus={view == null}
-            className="w-64"
-          />
-        </Field>
-      </FieldSet>
-
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-baseline justify-between gap-2 px-1">
-          <Text variant="small-strong">Show emails that match</Text>
-          {rules.length > 0 && draftCounts.data ? (
-            <Text variant="mini" color="secondary" className="shrink-0 tabular-nums">
-              {draftCounts.data.total.toLocaleString()} messages
-              {draftCounts.data.unread > 0
-                ? `, ${draftCounts.data.unread.toLocaleString()} unread`
-                : ""}
-            </Text>
-          ) : null}
-        </div>
-
-        <div className="flex flex-col gap-2">
-          {accounts.map((account) => {
-            const entry = accountLabels.find((a) => a.accountId === account.id);
-            const labels = entry?.labels ?? [];
-            const p = picks[account.id] ?? { allOf: [], noneOf: [] };
-            const usedIds = new Set([...p.allOf, ...p.noneOf]);
-            return (
-              <div
-                key={account.id}
-                className="flex flex-col gap-2 rounded-control bg-control-subtle px-3 py-2.5"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <span
-                    className="size-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: getAccountColor(account) }}
-                  />
-                  <Text variant="small-strong" className="shrink-0">
-                    {getAccountDisplayName(account)}
-                  </Text>
-                  <Text variant="mini" color="tertiary" truncate>
-                    {account.email}
-                  </Text>
-                </div>
-                {labels.length === 0 && anyLoading ? (
-                  <Text variant="mini" color="tertiary">
-                    Loading labels…
-                  </Text>
-                ) : (
-                  <>
-                    <ChipRow
-                      title="Must have"
-                      labelIds={p.allOf}
-                      emptyHint={p.noneOf.length > 0 ? "All mail" : "Not included — add a label"}
-                      labels={labels}
-                      usedIds={usedIds}
-                      onAdd={(id) =>
-                        update(account.id, (cur) => ({ ...cur, allOf: [...cur.allOf, id] }))
-                      }
-                      onRemove={(id) =>
-                        update(account.id, (cur) => ({
-                          ...cur,
-                          allOf: cur.allOf.filter((x) => x !== id),
-                        }))
-                      }
-                    />
-                    <ChipRow
-                      title="Must not have"
-                      labelIds={p.noneOf}
-                      excluded
-                      labels={labels}
-                      usedIds={usedIds}
-                      onAdd={(id) =>
-                        update(account.id, (cur) => ({ ...cur, noneOf: [...cur.noneOf, id] }))
-                      }
-                      onRemove={(id) =>
-                        update(account.id, (cur) => ({
-                          ...cur,
-                          noneOf: cur.noneOf.filter((x) => x !== id),
-                        }))
-                      }
-                    />
-                  </>
-                )}
-              </div>
-            );
-          })}
-        </div>
-        <Text variant="mini" color="tertiary" className="px-1">
-          A message must carry every "must have" label and none of the "must not have" ones;
-          accounts add together.
-        </Text>
+    <div className="space-y-6">
+      <div className="space-y-1 px-3 sm:px-4">
+        <button
+          type="button"
+          onClick={onDone}
+          className="-ms-1 inline-flex cursor-pointer items-center gap-1 rounded-sm px-1 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          <ChevronLeftIcon className="size-3.5" />
+          Views
+        </button>
+        <h2 className="text-base font-medium text-foreground">
+          {view ? `Edit “${view.name}”` : "New view"}
+        </h2>
+        <p className="text-xs text-muted-foreground">
+          {mailboxName === "All mailboxes"
+            ? "Shown under Views in All mailboxes."
+            : `Shown under Views in ${mailboxName}.`}
+        </p>
       </div>
 
-      <div className="flex items-center gap-2 pt-1">
-        {view && view.kind === "custom" ? (
-          <Button
-            variant="filled"
-            size="small"
-            className="text-support-red"
-            onClick={() => {
-              void onDelete(view.id);
-              onDone();
+      <SettingsSection title="Name">
+        <div className="px-3 py-3 sm:px-4">
+          <TextInput
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) handleSave();
             }}
+            placeholder="e.g. Action Required"
+            autoFocus={view == null}
+            className="max-w-72"
+          />
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title="Show mail that matches"
+        headerAction={
+          <span
+            className={cn(
+              "text-xs tabular-nums",
+              rules.length === 0 ? "text-muted-foreground/60" : "text-muted-foreground",
+            )}
           >
-            Delete
-          </Button>
+            {matchLine}
+          </span>
+        }
+      >
+        {accounts.map((account) => {
+          const entry = accountLabels.find((a) => a.accountId === account.id);
+          const labels = entry?.labels ?? [];
+          const p = picks[account.id] ?? { allOf: [], noneOf: [] };
+          const usedIds = new Set([...p.allOf, ...p.noneOf]);
+          const included = p.allOf.length > 0 || p.noneOf.length > 0;
+          return (
+            <div key={account.id} className="space-y-2.5 px-3 py-3 sm:px-4">
+              <div className="flex min-w-0 items-center gap-2">
+                <span
+                  className="size-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: getAccountColor(account) }}
+                />
+                <span className="shrink-0 text-sm font-medium text-foreground">
+                  {getAccountDisplayName(account)}
+                </span>
+                <span className="truncate text-xs text-muted-foreground/70">{account.email}</span>
+                {!included ? (
+                  <span className="ms-auto shrink-0 text-2xs text-muted-foreground/60">
+                    Not included
+                  </span>
+                ) : null}
+              </div>
+              {labels.length === 0 && anyLoading ? (
+                <p className="text-xs text-muted-foreground/70">Loading labels…</p>
+              ) : (
+                <div className="space-y-2">
+                  <ChipRow
+                    title="Must have"
+                    labelIds={p.allOf}
+                    emptyHint={p.noneOf.length > 0 ? "Any mail" : undefined}
+                    labels={labels}
+                    usedIds={usedIds}
+                    onAdd={(id) =>
+                      update(account.id, (cur) => ({ ...cur, allOf: [...cur.allOf, id] }))
+                    }
+                    onRemove={(id) =>
+                      update(account.id, (cur) => ({
+                        ...cur,
+                        allOf: cur.allOf.filter((x) => x !== id),
+                      }))
+                    }
+                  />
+                  <ChipRow
+                    title="Must not have"
+                    labelIds={p.noneOf}
+                    excluded
+                    labels={labels}
+                    usedIds={usedIds}
+                    onAdd={(id) =>
+                      update(account.id, (cur) => ({ ...cur, noneOf: [...cur.noneOf, id] }))
+                    }
+                    onRemove={(id) =>
+                      update(account.id, (cur) => ({
+                        ...cur,
+                        noneOf: cur.noneOf.filter((x) => x !== id),
+                      }))
+                    }
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </SettingsSection>
+      <p className="-mt-3 px-3 text-xs text-muted-foreground/80 sm:px-4">
+        Mail must carry every “must have” label and none of the “must not have” ones. Results from
+        each account are combined.
+      </p>
+
+      <div className="flex items-center gap-2 px-3 sm:px-4">
+        {view && view.kind === "custom" ? (
+          <Btn
+            size="sm"
+            variant="ghost"
+            className="text-destructive-foreground hover:bg-destructive/10"
+            onClick={() => setConfirmDelete(true)}
+          >
+            <Trash2Icon className="size-3.5" />
+            Delete view
+          </Btn>
         ) : null}
         {view && isDefault ? (
-          <Button
-            variant="filled"
-            size="small"
+          <Btn
+            size="sm"
+            variant="ghost"
             onClick={() => {
               void onReset(view.id);
               onDone();
             }}
           >
             Reset to default
-          </Button>
+          </Btn>
         ) : null}
         <div className="flex-1" />
-        <Button variant="filled" size="small" onClick={onDone}>
+        <Btn size="sm" variant="ghost" onClick={onDone}>
           Cancel
-        </Button>
-        <Button variant="accent" size="small" disabled={!canSave} onClick={handleSave}>
-          {view ? "Save" : "Create"}
-        </Button>
+        </Btn>
+        <Btn size="sm" variant="primary" disabled={!canSave} onClick={handleSave}>
+          {view ? "Save" : "Create view"}
+        </Btn>
       </div>
+
+      <Dialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={`Delete “${view?.name ?? ""}”?`}
+        confirmLabel="Delete view"
+        confirmVariant="accent"
+        onConfirm={() => {
+          if (view) void onDelete(view.id);
+          setConfirmDelete(false);
+          onDone();
+        }}
+      >
+        <Text variant="small">
+          The view leaves the sidebar. Your mail and labels aren't touched.
+        </Text>
+      </Dialog>
     </div>
   );
 }

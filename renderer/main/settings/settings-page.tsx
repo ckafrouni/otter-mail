@@ -1,26 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-  ColorWell,
-  Switch,
-  toast,
-} from "@glaze/core/components";
+import { useEffect, useState } from "react";
+import { Switch, toast } from "@glaze/core/components";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../gmail/select";
-import {
-  ArchiveXIcon,
-  BookmarkIcon,
-  ChevronRightIcon,
-  FileIcon,
-  InboxIcon,
-  LayersIcon,
-  PenLineIcon,
-  PlusIcon,
-  SendIcon,
-  StarIcon,
-  Trash2Icon,
-} from "lucide-react";
 import {
   gmailApi,
   type ChatStatus,
@@ -28,20 +8,16 @@ import {
   type NotificationsMode,
   type SettingsPane,
 } from "../gmail/api";
-import { useAccounts, useAddAccount, useRemoveAccount, useUpdateAccount } from "../gmail/hooks";
-import { useMailViews } from "../gmail/custom-views";
-import { RichTextArea, type RichTextRef } from "../gmail/rich-text";
-import { ViewEditorForm } from "../gmail/view-editor-form";
-import { getAccountColor, getAccountDisplayName } from "../gmail/account-style";
-import type { GmailAccount, MailView } from "../gmail/types";
 import {
   getAdvanceDirection,
   setAdvanceDirection as persistAdvanceDirection,
   type AdvanceDirection,
 } from "../gmail/advance-direction";
-import { Btn, IconBtn, cn } from "../gmail/ui";
+import { Btn, cn } from "../gmail/ui";
 import { AppearancePane } from "./appearance-pane";
 import { KeybindingsPane } from "./keybindings-pane";
+import { AccountsPane } from "./accounts-pane";
+import { ViewsPane } from "./views-pane";
 import { SettingsPageContainer, SettingsRow, SettingsSection, TextInput } from "./settings-ui";
 
 /** Where the settings page is. */
@@ -74,8 +50,6 @@ const ADVANCE_DIRECTION_OPTIONS: { value: AdvanceDirection; label: string }[] = 
   { value: "previous", label: "Previous message" },
   { value: "none", label: "Don't select another message" },
 ];
-
-const COMBINED_MAILBOX = "__combined__";
 
 /** Compact select in the control slot of a row. */
 function RowSelect({
@@ -306,313 +280,6 @@ function GeneralPane() {
           }
         />
       </SettingsSection>
-    </SettingsPageContainer>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Accounts
-// ---------------------------------------------------------------------------
-
-function AccountRow({ account }: { account: GmailAccount }) {
-  const updateAccount = useUpdateAccount();
-  const removeAccount = useRemoveAccount();
-  const [confirmingRemove, setConfirmingRemove] = useState(false);
-  const [name, setName] = useState(getAccountDisplayName(account));
-  const [signatureOpen, setSignatureOpen] = useState(false);
-  const signatureRef = useRef<RichTextRef>(null);
-
-  useEffect(() => {
-    setName(getAccountDisplayName(account));
-  }, [account.id, account.displayName, account.name]);
-
-  const commitName = () => {
-    const trimmed = name.trim();
-    if (!trimmed || trimmed === getAccountDisplayName(account)) return;
-    console.log("[Settings:renameAccount]", { accountId: account.id, name: trimmed });
-    void updateAccount.mutateAsync({ accountId: account.id, displayName: trimmed });
-  };
-
-  const commitSignature = () => {
-    const editor = signatureRef.current;
-    if (!editor) return;
-    const html = editor.getText().trim().length === 0 ? "" : editor.getHTML();
-    if (html === (account.signature ?? "")) return;
-    console.log("[Settings:updateSignature]", { accountId: account.id });
-    void updateAccount.mutateAsync({ accountId: account.id, signature: html });
-  };
-
-  const color = getAccountColor(account);
-
-  return (
-    <SettingsRow
-      title={
-        <span className="flex min-w-0 items-center gap-2.5">
-          <Avatar size="small">
-            {account.picture ? <AvatarImage src={account.picture} alt={name} /> : null}
-            <AvatarFallback>{(name[0] ?? "?").toUpperCase()}</AvatarFallback>
-          </Avatar>
-          <span className="flex min-w-0 flex-col">
-            <span className="truncate">{getAccountDisplayName(account)}</span>
-            <span className="truncate text-xs font-normal text-muted-foreground/80">
-              {account.email}
-            </span>
-          </span>
-        </span>
-      }
-      control={
-        <div className="flex items-center gap-2">
-          <TextInput
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onBlur={commitName}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                (e.target as HTMLInputElement).blur();
-              }
-            }}
-            aria-label={`Display name for ${account.email}`}
-            className="w-44"
-          />
-          <ColorWell
-            value={color}
-            onChange={(swatch) =>
-              void updateAccount.mutateAsync({ accountId: account.id, color: swatch })
-            }
-            size="small"
-            aria-label={`Set color for ${account.email}`}
-            className="shrink-0"
-          />
-          {confirmingRemove ? (
-            <>
-              <Btn size="sm" variant="outline" onClick={() => setConfirmingRemove(false)}>
-                Cancel
-              </Btn>
-              <Btn
-                size="sm"
-                variant="destructive"
-                disabled={removeAccount.isPending}
-                onClick={() => void removeAccount.mutateAsync(account.id)}
-              >
-                {removeAccount.isPending ? "Removing…" : "Remove"}
-              </Btn>
-            </>
-          ) : (
-            <IconBtn
-              label={`Remove ${account.email}`}
-              className="hover:text-destructive"
-              onClick={() => setConfirmingRemove(true)}
-            >
-              <Trash2Icon className="size-4" />
-            </IconBtn>
-          )}
-        </div>
-      }
-    >
-      <div className="pb-2">
-        <button
-          type="button"
-          onClick={() => setSignatureOpen((v) => !v)}
-          className="inline-flex cursor-pointer items-center gap-1.5 rounded-sm text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-focus-ring"
-        >
-          <PenLineIcon className="size-3" />
-          {account.signature ? "Edit signature" : "Add signature"}
-          <ChevronRightIcon
-            className={cn("size-3 transition-transform", signatureOpen && "rotate-90")}
-          />
-        </button>
-        {signatureOpen ? (
-          <div className="mt-2 rounded-lg border border-input bg-canvas dark:bg-input/32">
-            <RichTextArea
-              ref={signatureRef}
-              placeholder="Your signature…"
-              ariaLabel={`Signature for ${account.email}`}
-              minHeightClass="min-h-[70px]"
-              initialHTML={account.signature}
-              onBlur={commitSignature}
-            />
-          </div>
-        ) : null}
-      </div>
-    </SettingsRow>
-  );
-}
-
-function AccountsPane() {
-  const accountsQuery = useAccounts();
-  const accounts = accountsQuery.data ?? [];
-  const addAccount = useAddAccount();
-  return (
-    <SettingsPageContainer>
-      <SettingsSection
-        title="Gmail accounts"
-        headerAction={
-          <Btn
-            size="xs"
-            variant="outline"
-            disabled={addAccount.isPending}
-            onClick={() => void addAccount.mutateAsync().catch(() => {})}
-          >
-            <PlusIcon className="size-3.5" />
-            {addAccount.isPending ? "Waiting for Google…" : "Add account"}
-          </Btn>
-        }
-      >
-        {accounts.length > 0 ? (
-          accounts.map((account) => <AccountRow key={account.id} account={account} />)
-        ) : (
-          <SettingsRow
-            title="No accounts yet"
-            description="Add a Gmail account to start syncing mail."
-          />
-        )}
-      </SettingsSection>
-    </SettingsPageContainer>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Views
-// ---------------------------------------------------------------------------
-
-function viewIcon(view: MailView) {
-  const cls = "size-4 text-muted-foreground";
-  if (view.kind === "inbox") return <InboxIcon className={cls} />;
-  if (view.kind === "starred") return <StarIcon className={cls} />;
-  if (view.kind === "sent") return <SendIcon className={cls} />;
-  if (view.kind === "drafts") return <FileIcon className={cls} />;
-  if (view.kind === "important") return <BookmarkIcon className={cls} />;
-  if (view.kind === "junk") return <ArchiveXIcon className={cls} />;
-  if (view.kind === "trash") return <Trash2Icon className={cls} />;
-  return <LayersIcon className={cls} />;
-}
-
-const BUILTIN_SUMMARY: Record<string, string> = {
-  inbox: "Default — every account's Inbox",
-  starred: "Default — every account's Starred",
-  sent: "Default — every account's Sent",
-  drafts: "Default — every account's Drafts",
-  important: "Default — every account's Important",
-  junk: "Default — every account's Junk",
-  trash: "Default — every account's Trash",
-};
-
-function viewSummary(view: MailView): string {
-  if (view.rules === null) return BUILTIN_SUMMARY[view.kind] ?? "Default";
-  const labels = view.rules.reduce((n, r) => n + r.allOf.length + r.noneOf.length, 0);
-  const accounts = view.rules.length;
-  return `${labels} filter${labels === 1 ? "" : "s"} across ${accounts} account${accounts === 1 ? "" : "s"}`;
-}
-
-function ViewsPane({
-  editingId,
-  editingMailbox,
-  onOpenView,
-  onDone,
-}: {
-  editingId: string | null;
-  editingMailbox: string | null;
-  onOpenView: (viewId: string, mailbox: string) => void;
-  onDone: () => void;
-}) {
-  const { views, saveView, deleteView, resetView } = useMailViews();
-  const accountsQuery = useAccounts();
-  const accounts = accountsQuery.data ?? [];
-
-  if (editingId) {
-    if (!accountsQuery.data) {
-      return (
-        <SettingsPageContainer>
-          <p className="text-sm text-muted-foreground">Loading accounts…</p>
-        </SettingsPageContainer>
-      );
-    }
-    const editingView =
-      editingId === "new" ? null : (views.find((v) => v.id === editingId) ?? null);
-    const mailbox = editingView
-      ? (editingView.mailbox ?? COMBINED_MAILBOX)
-      : (editingMailbox ?? COMBINED_MAILBOX);
-    // Account-owned views edit against that account's labels only.
-    const scopedAccounts =
-      mailbox === COMBINED_MAILBOX ? accounts : accounts.filter((a) => a.id === mailbox);
-    return (
-      <SettingsPageContainer>
-        <ViewEditorForm
-          key={editingId}
-          view={editingView}
-          accounts={scopedAccounts}
-          onSave={(input) => saveView({ ...input, mailbox })}
-          onDelete={deleteView}
-          onReset={resetView}
-          onDone={onDone}
-        />
-      </SettingsPageContainer>
-    );
-  }
-
-  // One section per mailbox: Combined first (it's a mailbox too), then
-  // accounts. Built-ins are fixed system mailboxes — only custom views list.
-  const sections: { id: string; title: string; subtitle: string; views: MailView[] }[] = [
-    ...(accounts.length > 1
-      ? [
-          {
-            id: COMBINED_MAILBOX,
-            title: "All mailboxes",
-            subtitle: "Views across every account",
-            views: views.filter(
-              (v) => v.kind === "custom" && (v.mailbox ?? COMBINED_MAILBOX) === COMBINED_MAILBOX,
-            ),
-          },
-        ]
-      : []),
-    ...accounts.map((a) => ({
-      id: a.id,
-      title: getAccountDisplayName(a),
-      subtitle: a.email,
-      views: views.filter((v) => v.kind === "custom" && v.mailbox === a.id),
-    })),
-  ];
-
-  return (
-    <SettingsPageContainer>
-      {sections.map((section) => (
-        <SettingsSection
-          key={section.id}
-          title={section.title}
-          headerAction={
-            <Btn size="xs" variant="outline" onClick={() => onOpenView("new", section.id)}>
-              <PlusIcon className="size-3.5" />
-              New view
-            </Btn>
-          }
-        >
-          {section.views.length > 0 ? (
-            section.views.map((view) => (
-              <button
-                key={view.id}
-                type="button"
-                onClick={() => onOpenView(view.id, section.id)}
-                className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-left outline-none transition-colors first:rounded-t-xl last:rounded-b-xl hover:bg-accent-surface/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring sm:px-4"
-              >
-                <span className="flex size-6 shrink-0 items-center justify-center">
-                  {viewIcon(view)}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-foreground">
-                    {view.name}
-                  </span>
-                  <span className="block truncate text-xs text-muted-foreground/80">
-                    {viewSummary(view)}
-                  </span>
-                </span>
-                <ChevronRightIcon className="size-4 shrink-0 text-icon-muted" />
-              </button>
-            ))
-          ) : (
-            <SettingsRow title="No views yet" description={section.subtitle} />
-          )}
-        </SettingsSection>
-      ))}
     </SettingsPageContainer>
   );
 }
