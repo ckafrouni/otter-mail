@@ -8,7 +8,6 @@ import {
   toast,
 } from "@glaze/core/components";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../gmail/select";
-import type { NativeThemeInfo } from "@glaze/core/ipc";
 import {
   ArchiveXIcon,
   BookmarkIcon,
@@ -41,6 +40,7 @@ import {
   type AdvanceDirection,
 } from "../gmail/advance-direction";
 import { Btn, IconBtn, cn } from "../gmail/ui";
+import { AppearancePane } from "./appearance-pane";
 import { SettingsPageContainer, SettingsRow, SettingsSection, TextInput } from "./settings-ui";
 
 /** Where the settings page is. */
@@ -72,12 +72,6 @@ const ADVANCE_DIRECTION_OPTIONS: { value: AdvanceDirection; label: string }[] = 
   { value: "next", label: "Next message" },
   { value: "previous", label: "Previous message" },
   { value: "none", label: "Don't select another message" },
-];
-
-const THEME_OPTIONS: { value: "system" | "light" | "dark"; label: string }[] = [
-  { value: "system", label: "System" },
-  { value: "light", label: "Light" },
-  { value: "dark", label: "Dark" },
 ];
 
 const COMBINED_MAILBOX = "__combined__";
@@ -123,7 +117,6 @@ function RowSelect({
 // ---------------------------------------------------------------------------
 
 function GeneralPane() {
-  const [themeInfo, setThemeInfo] = useState<NativeThemeInfo | null>(null);
   const [syncInterval, setSyncInterval] = useState<number | null>(null);
   const [notificationsMode, setNotificationsMode] = useState<NotificationsMode | null>(null);
   const [advanceDirection, setAdvanceDirectionState] = useState<AdvanceDirection>(() =>
@@ -133,14 +126,6 @@ function GeneralPane() {
   const [trayEnabled, setTrayEnabled] = useState(true);
   const [mailApps, setMailApps] = useState<MailApp[]>([]);
   const [defaultMailBundleId, setDefaultMailBundleId] = useState<string | null>(null);
-
-  const refreshThemeInfo = async () => {
-    try {
-      setThemeInfo(await window.glazeAPI.nativeTheme.getInfo());
-    } catch (error) {
-      toast.error(`Failed to get theme info: ${error}`);
-    }
-  };
 
   const loadSyncSettings = async () => {
     console.log("[Settings:loadSyncSettings]");
@@ -166,20 +151,9 @@ function GeneralPane() {
   };
 
   useEffect(() => {
-    void refreshThemeInfo();
     void loadSyncSettings();
     void loadMailApps();
   }, []);
-
-  const handleThemeChange = async (value: string) => {
-    const source = value as "system" | "light" | "dark";
-    try {
-      await window.glazeAPI.nativeTheme.setThemeSource(source);
-      await refreshThemeInfo();
-    } catch (error) {
-      toast.error(`Failed to set theme: ${error}`);
-    }
-  };
 
   const handleSyncIntervalChange = async (value: string) => {
     const seconds = Number(value);
@@ -249,22 +223,6 @@ function GeneralPane() {
 
   return (
     <SettingsPageContainer>
-      <SettingsSection title="Appearance">
-        <SettingsRow
-          title="Theme"
-          description="Follow the system appearance, or pin light or dark."
-          control={
-            <RowSelect
-              value={themeInfo?.themeSource ?? "system"}
-              onValueChange={(v) => void handleThemeChange(v)}
-              options={THEME_OPTIONS}
-              ariaLabel="Theme"
-              className="sm:w-36"
-            />
-          }
-        />
-      </SettingsSection>
-
       <SettingsSection title="Startup & menu bar">
         <SettingsRow
           title="Launch at login"
@@ -782,6 +740,7 @@ export function SettingsPage({
   route: SettingsRoute;
   onNavigate: (route: SettingsRoute) => void;
 }) {
+  if (route.pane === "appearance") return <AppearancePane />;
   if (route.pane === "accounts") return <AccountsPane />;
   if (route.pane === "assistant") return <AssistantPane />;
   if (route.pane === "views") {

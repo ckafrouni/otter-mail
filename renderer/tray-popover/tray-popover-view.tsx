@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { injectActiveTheme } from "@glaze/core/components";
 import {
   ArchiveIcon,
   PowerIcon,
@@ -14,16 +13,12 @@ import { decodeEntities } from "../main/gmail/text";
 import { HintTooltip, IconBtn, buttonClass, cn } from "../main/gmail/ui";
 import { MailboxSwitcher } from "../main/gmail/top-bar";
 import { COMBINED_ACCOUNT_ID } from "../main/gmail/custom-views";
-import { APP_DARK_THEME, APP_LIGHT_THEME } from "../main/gmail/app-theme";
+import { applyAppTheme, startAppTheme } from "../main/theme/apply-theme";
 import { gmailApi } from "../main/gmail/api";
 import { trayApi } from "./api";
 import type { GmailMessageSummary } from "../main/gmail/types";
 
-// Same Otter palette as the main and message windows, following the system appearance.
-function applyAppTheme() {
-  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  injectActiveTheme(dark ? APP_DARK_THEME : APP_LIGHT_THEME);
-}
+// Color theme (Settings → Appearance), applied before first paint.
 applyAppTheme();
 
 function formatRelativeDate(timestamp: number): string {
@@ -157,12 +152,8 @@ export function TrayPopoverView() {
     queryFn: () => trayApi.getSnapshot(unreadOnly),
   });
 
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => applyAppTheme();
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
+  // Re-theme on appearance switches and on theme picks from any window.
+  useEffect(() => startAppTheme(), []);
 
   // Reopening the popover re-activates its window, and WebKit restores focus
   // to the last-clicked control drawn as keyboard focus (a ring around the

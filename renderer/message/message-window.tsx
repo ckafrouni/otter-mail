@@ -1,17 +1,12 @@
 import { useEffect, useState } from "react";
-import { injectActiveTheme } from "@glaze/core/components";
 import { MessageReader } from "../main/gmail/message-reader";
 import { HermesChatPanel } from "../main/gmail/hermes-chat";
 import { isTypingTarget } from "../main/gmail/keyboard";
-import { APP_DARK_THEME, APP_LIGHT_THEME } from "../main/gmail/app-theme";
+import { applyAppTheme, startAppTheme } from "../main/theme/apply-theme";
 import type { QuoteContext } from "../main/gmail/chat-context";
 
-// Same TE glass skin as the main window, following the system appearance.
-function applyTeTheme() {
-  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  injectActiveTheme(dark ? APP_DARK_THEME : APP_LIGHT_THEME);
-}
-applyTeTheme();
+// Color theme (Settings → Appearance), applied before first paint.
+applyAppTheme();
 
 /**
  * Standalone single-message window: just the reader for one conversation and
@@ -19,12 +14,8 @@ applyTeTheme();
  * the target rides in the URL query.
  */
 export function MessageWindow() {
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => applyTeTheme();
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
+  // Re-theme on appearance switches and on theme picks from any window.
+  useEffect(() => startAppTheme(), []);
 
   const params = new URLSearchParams(window.location.search);
   const accountId = params.get("account") ?? "";

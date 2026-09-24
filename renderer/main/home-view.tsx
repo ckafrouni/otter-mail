@@ -91,15 +91,18 @@ function useStoredWidth(key: string, def: number, min: number, max: number, dir:
   return { width, start, paneRef };
 }
 
-/** The 4px gap between panel cards doubles as the resize handle. */
 function PaneResizer({ onPointerDown }: { onPointerDown: (e: ReactPointerEvent) => void }) {
+  // Zero-width in the layout so panes meet on their own single hairline; the
+  // grab area is an invisible strip centered on that line (no-drag, so it
+  // resizes instead of moving the window inside the title band).
   return (
-    <div
-      onPointerDown={onPointerDown}
-      className="group flex w-1 shrink-0 cursor-col-resize justify-center"
-      aria-hidden
-    >
-      <div className="w-px transition-colors group-hover:bg-input" />
+    <div className="relative z-20 w-0 shrink-0" aria-hidden>
+      <div
+        onPointerDown={onPointerDown}
+        className="no-drag group absolute inset-y-0 -left-[3px] flex w-1.5 cursor-col-resize justify-center"
+      >
+        <div className="w-px transition-colors group-hover:bg-input" />
+      </div>
     </div>
   );
 }
@@ -901,9 +904,22 @@ export function HomeView() {
           onOpenChange={setPaletteOpen}
           accounts={accounts}
           views={views}
+          selectedAccountId={effectiveAccountId}
           onOpenMessage={handlePaletteOpenMessage}
           onGoToView={handlePaletteGoToView}
+          onSelectAccount={handleSelectAccount}
           onCompose={() => setComposeOpen(true)}
+          onOpenSettings={() => setSettingsRoute({ pane: "general", viewId: null, mailbox: null })}
+          onNewView={() =>
+            setSettingsRoute({
+              pane: "views",
+              viewId: "new",
+              mailbox: isCombined ? COMBINED_ACCOUNT_ID : effectiveAccountId,
+            })
+          }
+          onToggleChat={toggleChat}
+          onToggleSidebar={toggleSidebar}
+          onSync={syncNow}
         />
       ) : null}
     </>

@@ -1,30 +1,21 @@
 import { Outlet } from "@tanstack/react-router";
 import * as React from "react";
-import { Status, injectActiveTheme } from "@glaze/core/components";
+import { Status } from "@glaze/core/components";
 import { useConnection, useEnvironment } from "@glaze/core/hooks";
-import { APP_DARK_THEME, APP_LIGHT_THEME } from "./gmail/app-theme";
+import { applyAppTheme, startAppTheme } from "./theme/apply-theme";
 
-// Follow the system appearance with the matching TE skin. Replaces
-// useTheme(): its accent sync would let the macOS accent override the
-// theme's, and the theme injection owns the `dark` class instead.
-function applyTeTheme() {
-  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  injectActiveTheme(dark ? APP_DARK_THEME : APP_LIGHT_THEME);
-}
-applyTeTheme();
+// Color theme (Settings → Appearance) for the current appearance, applied
+// before first paint. Replaces useTheme(): its accent sync would let the macOS
+// accent override the theme's, and the theme injection owns the `dark` class.
+applyAppTheme();
 
 export function RootView() {
   // IPC connection and environment
   const connectionQuery = useConnection();
   const environmentQuery = useEnvironment();
 
-  // Re-skin live when macOS switches appearance (auto light/dark).
-  React.useEffect(() => {
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => applyTeTheme();
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
+  // Re-theme live on appearance switches and theme picks from any window.
+  React.useEffect(() => startAppTheme(), []);
 
   // Cleanup IPC connection on unmount
   React.useEffect(() => {

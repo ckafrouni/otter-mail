@@ -45,6 +45,7 @@ export function registerHandlers(): void {
     const p = params as { pane?: unknown; viewId?: unknown; mailbox?: unknown } | undefined;
     const pane =
       p?.pane === "general" ||
+      p?.pane === "appearance" ||
       p?.pane === "accounts" ||
       p?.pane === "views" ||
       p?.pane === "assistant"

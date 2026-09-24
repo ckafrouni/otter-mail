@@ -980,12 +980,10 @@ function AttachmentList({
 // renders the same conversation above its composer.
 export function DayDivider({ timestamp }: { timestamp: number }) {
   return (
-    <div className="flex items-center gap-3 px-5 pb-1.5 pt-4">
-      <span className="h-px flex-1 bg-border/60" aria-hidden />
-      <span className="text-xs font-medium text-muted-foreground/70">
+    <div className="flex justify-center px-5 pb-1.5 pt-4">
+      <span className="rounded-full border border-border/60 bg-card/40 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
         {formatDayLabel(timestamp)}
       </span>
-      <span className="h-px flex-1 bg-border/60" aria-hidden />
     </div>
   );
 }
