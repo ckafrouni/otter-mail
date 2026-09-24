@@ -22,6 +22,18 @@ const REOPEN_GUARD_MS = 200;
 let popover: BrowserWindow | null = null;
 let lastHiddenAt = 0;
 
+// Told whenever the popover opens or closes, so the menu-bar icon can show
+// its selected (highlighted) state while the popover is up.
+let visibilityListener: ((open: boolean) => void) | null = null;
+
+export function setTrayPopoverVisibilityListener(listener: (open: boolean) => void): void {
+  visibilityListener = listener;
+}
+
+function notifyVisibility(open: boolean): void {
+  visibilityListener?.(open);
+}
+
 async function ensurePopover(): Promise<BrowserWindow> {
   if (popover && !popover.isDestroyed()) return popover;
 
@@ -55,6 +67,7 @@ async function ensurePopover(): Promise<BrowserWindow> {
   popover.on("blur", () => {
     lastHiddenAt = Date.now();
     popover?.hide();
+    notifyVisibility(false);
   });
 
   const url = await getWindowUrl("tray-popover-window.html");
@@ -79,7 +92,10 @@ function displayForX(centerX: number) {
   );
 }
 
-function positionPopover(win: BrowserWindow, bounds: { x: number; y: number; width: number; height: number }): void {
+function positionPopover(
+  win: BrowserWindow,
+  bounds: { x: number; y: number; width: number; height: number },
+): void {
   const centerX = Math.round(bounds.x + bounds.width / 2);
   const { workArea } = displayForX(centerX);
   const minX = workArea.x + 8;
@@ -99,12 +115,14 @@ export async function toggleTrayPopover(bounds: {
   const win = await ensurePopover();
   if (win.isVisible()) {
     win.hide();
+    notifyVisibility(false);
     return;
   }
   if (Date.now() - lastHiddenAt < REOPEN_GUARD_MS) return;
 
   positionPopover(win, bounds);
   win.show();
+  notifyVisibility(true);
   // Focus just this window — app.focus({steal:true}) would raise every
   // window in the app, including the (possibly hidden) main window.
   win.focus();
@@ -112,6 +130,7 @@ export async function toggleTrayPopover(bounds: {
 
 export function hideTrayPopover(): void {
   popover?.hide();
+  notifyVisibility(false);
 }
 
 export function isTrayPopoverOpen(): boolean {
@@ -121,4 +140,5 @@ export function isTrayPopoverOpen(): boolean {
 export function destroyTrayPopover(): void {
   popover?.destroy();
   popover = null;
+  notifyVisibility(false);
 }

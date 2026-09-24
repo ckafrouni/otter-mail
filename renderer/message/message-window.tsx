@@ -3,13 +3,13 @@ import { injectActiveTheme } from "@glaze/core/components";
 import { MessageReader } from "../main/gmail/message-reader";
 import { HermesChatPanel } from "../main/gmail/hermes-chat";
 import { isTypingTarget } from "../main/gmail/keyboard";
-import { TE_DARK_THEME, TE_LIGHT_THEME } from "../main/gmail/te-theme";
+import { APP_DARK_THEME, APP_LIGHT_THEME } from "../main/gmail/app-theme";
 import type { QuoteContext } from "../main/gmail/ask-assistant";
 
 // Same TE glass skin as the main window, following the system appearance.
 function applyTeTheme() {
   const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  injectActiveTheme(dark ? TE_DARK_THEME : TE_LIGHT_THEME);
+  injectActiveTheme(dark ? APP_DARK_THEME : APP_LIGHT_THEME);
 }
 applyTeTheme();
 
@@ -47,22 +47,18 @@ export function MessageWindow() {
 
   if (!accountId || !messageId) {
     return (
-      <div className="flex h-full items-center justify-center bg-(--te-frame) text-[13px] text-(--te-muted)">
+      <div className="flex h-full items-center justify-center bg-canvas text-sm text-muted-foreground">
         No message to show.
       </div>
     );
   }
 
   return (
-    <div className="flex h-full flex-col bg-(--te-frame) text-(--te-text)">
+    <div className="flex h-full flex-col bg-canvas text-foreground">
       {/* Drag strip + native traffic-light clearance (matches the main TopBar). */}
       <div className="drag-region h-11 shrink-0" />
-      <div className="flex min-h-0 flex-1 gap-1 px-1 pb-1">
-        <div
-          className={`min-w-0 flex-1 overflow-hidden rounded-[10px] rounded-bl-[16px] border border-(--te-border) bg-(--te-card-glass) ${
-            chatOpen ? "" : "rounded-br-[16px]"
-          }`}
-        >
+      <div className="flex min-h-0 flex-1">
+        <div className="min-w-0 flex-1 overflow-hidden bg-canvas">
           <MessageReader
             accountId={accountId}
             messageId={messageId}
@@ -73,7 +69,7 @@ export function MessageWindow() {
           />
         </div>
         {chatOpen ? (
-          <div className="w-[360px] shrink-0 overflow-hidden rounded-[10px] rounded-br-[16px] border border-(--te-border) bg-(--te-card)">
+          <div className="w-[360px] shrink-0 overflow-hidden border-l border-border bg-card">
             <HermesChatPanel
               accountId={accountId}
               messageId={messageId}

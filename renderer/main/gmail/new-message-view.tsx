@@ -1,11 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  toast,
-} from "@glaze/core/components";
+import { toast } from "@glaze/core/components";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "./menu";
 import {
   ChevronDownIcon,
   PaperclipIcon,
@@ -17,7 +12,7 @@ import {
 import { useSendMessage } from "./hooks";
 import { parseAddressEntry, splitAddressList } from "./address";
 import { getAccountColor } from "./account-style";
-import { IconBtn, HintTooltip } from "./te-ui";
+import { IconBtn, HintTooltip } from "./ui";
 import { RichTextArea, textToHtml, type RichTextRef } from "./rich-text";
 import {
   AttachmentChips,
@@ -71,7 +66,15 @@ export function NewMessageView({
 
   const draft = useDraftAutosave({
     accountId: fromAccount?.id ?? null,
-    signal: JSON.stringify({ fromId, to, cc, bcc, subject, text, att: attachmentSignature(attachments) }),
+    signal: JSON.stringify({
+      fromId,
+      to,
+      cc,
+      bcc,
+      subject,
+      text,
+      att: attachmentSignature(attachments),
+    }),
     getPayload: () => {
       if (!to.trim() && !subject.trim() && !text.trim() && attachments.length === 0) return null;
       const plain = editorRef.current?.getText() ?? text;
@@ -145,12 +148,12 @@ export function NewMessageView({
   return (
     <div className="relative flex h-full min-w-0 flex-col" {...dropProps}>
       <ComposeDropOverlay visible={isDragging} />
-      <div className="drag-region flex h-11 shrink-0 items-center gap-2 border-b border-(--te-border) px-4">
+      <div className="drag-region flex h-11 shrink-0 items-center gap-2 border-b border-border px-4">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[15px] font-bold leading-tight tracking-tight text-(--te-strong)">
+          <div className="truncate text-sm font-medium leading-tight text-foreground">
             New message
           </div>
-          <div className="te-label truncate leading-tight text-(--te-muted)">
+          <div className="truncate text-xs leading-tight text-muted-foreground">
             {draft.saveState === "saving"
               ? "Draft · saving…"
               : draft.saveState === "saved"
@@ -168,18 +171,18 @@ export function NewMessageView({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1.5 overflow-hidden px-6 text-center">
-        <span className="flex size-11 items-center justify-center rounded-full border border-(--te-outline)">
-          <PenLineIcon className="size-5 text-(--te-muted)" />
+        <span className="flex size-11 items-center justify-center rounded-full border border-input">
+          <PenLineIcon className="size-5 text-muted-foreground" />
         </span>
-        <span className="pt-1 text-[15px] font-bold text-(--te-text)">Start a new conversation</span>
-        <span className="text-[13px] text-(--te-muted)">
+        <span className="pt-1 text-sm font-medium text-foreground">Start a new conversation</span>
+        <span className="text-sm text-muted-foreground">
           Add recipients and a subject, then say hi.
         </span>
       </div>
 
       <div className="shrink-0 px-5 pb-4 pt-1" data-inline-compose="">
         <div
-          className="rounded-[6px] border border-(--te-outline) bg-(--te-panel) focus-within:border-(--te-outline-hover)"
+          className="rounded-2xl border border-(--chat-composer-outline) bg-(--chat-composer-surface) shadow-composer transition-colors focus-within:border-input dark:shadow-none dark:inset-shadow-2xs dark:inset-shadow-(color:--chat-composer-highlight)"
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();
@@ -188,33 +191,37 @@ export function NewMessageView({
           }}
         >
           {accounts.length > 1 && fromAccount ? (
-            <div className="flex items-center gap-2 border-b border-(--te-border) px-3 py-1.5">
-              <span className="te-label shrink-0 text-(--te-faint)">From</span>
+            <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
+              <span className="shrink-0 text-xs font-medium text-muted-foreground">From</span>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
                     aria-label="Send from"
-                    className="flex min-w-0 items-center gap-1.5 rounded px-1 py-0.5 text-[13px] text-(--te-text) hover:bg-(--te-hover)"
+                    className="flex min-w-0 items-center gap-1.5 rounded px-1 py-0.5 text-sm text-foreground/90 hover:bg-accent-surface"
                   >
                     <span
                       className="size-2 shrink-0 rounded-full"
                       style={{ backgroundColor: getAccountColor(fromAccount) }}
                     />
                     <span className="truncate">{fromAccount.email}</span>
-                    <ChevronDownIcon className="size-3 shrink-0 text-(--te-faint)" />
+                    <ChevronDownIcon className="size-3 shrink-0 text-muted-foreground/70" />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
                   {accounts.map((account) => (
-                    <DropdownMenuItem key={account.id} onSelect={() => setFromId(account.id)}>
-                      <span className="flex min-w-0 items-center gap-2">
+                    <DropdownMenuItem
+                      key={account.id}
+                      icon={
                         <span
                           className="size-2 shrink-0 rounded-full"
                           style={{ backgroundColor: getAccountColor(account) }}
+                          aria-hidden
                         />
-                        <span className="truncate">{account.email}</span>
-                      </span>
+                      }
+                      onSelect={() => setFromId(account.id)}
+                    >
+                      {account.email}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
@@ -222,8 +229,8 @@ export function NewMessageView({
             </div>
           ) : null}
 
-          <div className="flex items-center gap-2 border-b border-(--te-border) px-3 py-1.5">
-            <span className="te-label shrink-0 text-(--te-faint)">To</span>
+          <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
+            <span className="shrink-0 text-xs font-medium text-muted-foreground">To</span>
             <RecipientInput
               ref={toRef}
               value={to}
@@ -235,7 +242,7 @@ export function NewMessageView({
               <button
                 type="button"
                 onClick={() => setCcVisible(true)}
-                className="shrink-0 text-[11px] text-(--te-faint) hover:text-(--te-strong)"
+                className="shrink-0 text-2xs text-muted-foreground/70 hover:text-foreground"
               >
                 Cc
               </button>
@@ -244,32 +251,32 @@ export function NewMessageView({
               <button
                 type="button"
                 onClick={() => setBccVisible(true)}
-                className="shrink-0 text-[11px] text-(--te-faint) hover:text-(--te-strong)"
+                className="shrink-0 text-2xs text-muted-foreground/70 hover:text-foreground"
               >
                 Bcc
               </button>
             ) : null}
           </div>
           {ccVisible ? (
-            <div className="flex items-center gap-2 border-b border-(--te-border) px-3 py-1.5">
-              <span className="te-label shrink-0 text-(--te-faint)">Cc</span>
+            <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
+              <span className="shrink-0 text-xs font-medium text-muted-foreground">Cc</span>
               <RecipientInput value={cc} onChange={setCc} ariaLabel="Cc" />
             </div>
           ) : null}
           {bccVisible ? (
-            <div className="flex items-center gap-2 border-b border-(--te-border) px-3 py-1.5">
-              <span className="te-label shrink-0 text-(--te-faint)">Bcc</span>
+            <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
+              <span className="shrink-0 text-xs font-medium text-muted-foreground">Bcc</span>
               <RecipientInput value={bcc} onChange={setBcc} ariaLabel="Bcc" />
             </div>
           ) : null}
-          <div className="flex items-center gap-2 border-b border-(--te-border) px-3 py-1.5">
-            <span className="te-label shrink-0 text-(--te-faint)">Subject</span>
+          <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
+            <span className="shrink-0 text-xs font-medium text-muted-foreground">Subject</span>
             <input
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               placeholder="What's this about?"
               aria-label="Subject"
-              className="min-w-0 flex-1 bg-transparent text-[13px] text-(--te-strong) outline-none placeholder:text-(--te-faint)"
+              className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-placeholder"
             />
           </div>
 
@@ -313,13 +320,13 @@ export function NewMessageView({
               </IconBtn>
             </HintTooltip>
             <span className="flex-1" />
-            {canSend ? <span className="te-label pr-1 text-(--te-faint)">⌘↩ send</span> : null}
+            {canSend ? <span className="pr-1 text-xs text-muted-foreground">⌘↩ send</span> : null}
             <button
               type="button"
               onClick={handleSend}
               disabled={!canSend}
               aria-label="Send"
-              className="flex h-7 w-9 items-center justify-center rounded-[5px] bg-(--te-accent) text-white hover:brightness-110 disabled:bg-(--te-ctl) disabled:text-(--te-faint)"
+              className="inline-flex h-7 w-9 items-center justify-center rounded-[var(--control-radius)] border border-primary bg-primary text-primary-foreground shadow-xs shadow-primary/24 transition-[box-shadow,scale] not-disabled:inset-shadow-[0_1px_rgb(255_255_255/16%)] hover:bg-primary/90 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-64"
             >
               <SendHorizontalIcon className="size-3.5" />
             </button>

@@ -85,7 +85,12 @@ export function useAccounts() {
 export function useUpdateAccount() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (params: { accountId: string; displayName?: string; color?: string; signature?: string }) => {
+    mutationFn: (params: {
+      accountId: string;
+      displayName?: string;
+      color?: string;
+      signature?: string;
+    }) => {
       console.log("[hooks:useUpdateAccount] updating account", params);
       return gmailApi.updateAccount(params);
     },

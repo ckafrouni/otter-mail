@@ -90,8 +90,7 @@ export function useComposeFileDrop(
 ): { isDragging: boolean; dropProps: Record<string, (e: DragEvent) => void> } {
   const [isDragging, setIsDragging] = useState(false);
   const depth = useRef(0);
-  const carriesFiles = (e: DragEvent) =>
-    Array.from(e.dataTransfer?.types ?? []).includes("Files");
+  const carriesFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files");
   return {
     isDragging,
     dropProps: {
@@ -132,9 +131,9 @@ export function useComposeFileDrop(
 export function ComposeDropOverlay({ visible }: { visible: boolean }) {
   if (!visible) return null;
   return (
-    <div className="pointer-events-none absolute inset-0 z-30 m-1 flex flex-col items-center justify-center gap-2 rounded-[8px] border-2 border-dashed border-(--te-accent) bg-(--te-panel) text-(--te-strong)">
-      <PaperclipIcon className="size-6 text-(--te-accent)" />
-      <span className="text-[13px] font-semibold">Drop files to attach</span>
+    <div className="pointer-events-none absolute inset-2 z-30 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-primary/60 bg-primary/[0.035] text-foreground backdrop-blur-sm">
+      <PaperclipIcon className="size-6 text-primary" />
+      <span className="text-sm font-semibold">Drop files to attach</span>
     </div>
   );
 }
@@ -153,11 +152,11 @@ export function AttachmentChips({
 }) {
   if (!attachments || attachments.length === 0) return null;
   return (
-    <div className="flex flex-wrap items-center gap-1.5 border-t border-(--te-border) px-3 py-2">
+    <div className="flex flex-wrap items-center gap-1.5 border-t border-border px-3 py-2">
       {attachments.map((att, i) => (
         <span
           key={`${att.name}:${i}`}
-          className="flex max-w-64 items-center gap-1.5 rounded-[4px] border border-(--te-border) bg-(--te-ctl) px-2 py-1 text-[12px] text-(--te-text)"
+          className="flex h-6 max-w-64 items-center gap-1.5 rounded-md border border-border bg-secondary px-2 text-xs text-foreground"
         >
           <button
             type="button"
@@ -168,17 +167,17 @@ export function AttachmentChips({
                 .openComposeAttachment({ name: att.name, base64: att.base64 })
                 .catch(() => toast.error("Could not open attachment"));
             }}
-            className="flex min-w-0 items-center gap-1.5 hover:text-(--te-strong)"
+            className="flex min-w-0 items-center gap-1.5 hover:text-foreground"
           >
-            <PaperclipIcon className="size-3 shrink-0 text-(--te-faint)" />
+            <PaperclipIcon className="size-3 shrink-0 text-muted-foreground/70" />
             <span className="min-w-0 truncate">{att.name}</span>
           </button>
-          <span className="shrink-0 text-(--te-faint)">{formatBytes(att.size)}</span>
+          <span className="shrink-0 text-muted-foreground/70">{formatBytes(att.size)}</span>
           <button
             type="button"
             aria-label={`Remove ${att.name}`}
             onClick={() => onRemove(i)}
-            className="shrink-0 text-(--te-faint) hover:text-(--te-strong)"
+            className="shrink-0 text-muted-foreground/70 hover:text-foreground"
           >
             <XIcon className="size-3" />
           </button>

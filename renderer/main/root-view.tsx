@@ -2,14 +2,14 @@ import { Outlet } from "@tanstack/react-router";
 import * as React from "react";
 import { Status, injectActiveTheme } from "@glaze/core/components";
 import { useConnection, useEnvironment } from "@glaze/core/hooks";
-import { TE_DARK_THEME, TE_LIGHT_THEME } from "./gmail/te-theme";
+import { APP_DARK_THEME, APP_LIGHT_THEME } from "./gmail/app-theme";
 
 // Follow the system appearance with the matching TE skin. Replaces
 // useTheme(): its accent sync would let the macOS accent override the
 // theme's, and the theme injection owns the `dark` class instead.
 function applyTeTheme() {
   const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  injectActiveTheme(dark ? TE_DARK_THEME : TE_LIGHT_THEME);
+  injectActiveTheme(dark ? APP_DARK_THEME : APP_LIGHT_THEME);
 }
 applyTeTheme();
 

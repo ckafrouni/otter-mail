@@ -2,22 +2,33 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { MessageScroller } from "@shadcn/react/message-scroller";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "./menu";
+import {
   ArrowDownIcon,
-  BotMessageSquareIcon,
-  CircleStopIcon,
+  BotIcon,
+  PanelRightIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  CircleAlertIcon,
   FilePenLineIcon,
   HistoryIcon,
   LayersIcon,
   MailIcon,
-  SendHorizontalIcon,
   SendIcon,
+  SettingsIcon,
   SquarePlusIcon,
+  TerminalIcon,
   TextQuoteIcon,
   Trash2Icon,
   WrenchIcon,
   XIcon,
 } from "lucide-react";
-import { IconBtn, HintTooltip } from "./te-ui";
+import { IconBtn, HintTooltip, buttonClass, cn } from "./ui";
 import {
   gmailApi,
   type ChatEvent,
@@ -79,6 +90,9 @@ type ChatTurn = {
   /** Invoked skill, rendered as a badge on the user's message. */
   skill?: string;
   error?: string;
+  /** Assistant turns: when the run started / settled, for the "Worked for" fold. */
+  startedAt?: number;
+  finishedAt?: number;
 };
 
 /** Command-style badge for an invoked skill (composer + user message). */
@@ -94,8 +108,8 @@ function SkillBadge({
   return (
     <span
       className={[
-        "inline-flex shrink-0 items-center gap-1 rounded-[4px] px-1.5 py-0.5 text-[12px] font-semibold",
-        onAccent ? "bg-(--te-sel-fg)/20 text-(--te-sel-fg)" : "bg-(--te-ctl) text-(--te-text)",
+        "inline-flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs font-semibold",
+        onAccent ? "bg-foreground/8 text-foreground" : "bg-primary/10 text-primary",
       ].join(" ")}
     >
       <span className="opacity-50">/</span>
@@ -122,7 +136,7 @@ function ContextRecap({ context }: { context: ContextMeta }) {
       : (context.subjects[0] ?? "1 conversation");
   return (
     <div className="mb-1 flex justify-end">
-      <span className="te-label flex max-w-full items-center gap-1.5 rounded-[4px] border border-(--te-border) px-2 py-0.5 text-(--te-faint)">
+      <span className="flex max-w-full items-center gap-1.5 rounded-sm border border-border px-2 py-0.5 text-2xs font-medium text-muted-foreground">
         <ContextKindIcon kind={context.kind} className="size-3 shrink-0" />
         <span className="min-w-0 truncate">{label}</span>
       </span>
@@ -297,27 +311,149 @@ function friendlyError(code: string): string {
   return ERROR_TEXT[code] ?? `Hermes answered with an error (${code}).`;
 }
 
-function ToolStep({ name, output }: { name: string; output?: string }) {
-  const [open, setOpen] = useState(false);
+function formatDuration(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  if (total < 60) return `${total}s`;
+  const mins = Math.floor(total / 60);
+  if (mins < 60) return `${mins}m ${total % 60}s`;
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
+
+/** Live elapsed time for the "Working for" row. */
+function WorkingTimer({ startedAt }: { startedAt: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return <>{formatDuration(now - startedAt)}</>;
+}
+
+/** Bottom-of-turn activity row while Hermes is still running. */
+function WorkingRow({ startedAt }: { startedAt?: number }) {
   return (
-    <div className="my-1">
+    <div className="border-b border-border/60 pb-2 pt-1">
+      <div className="flex h-6 min-w-0 items-baseline gap-2 px-1 text-sm leading-relaxed text-muted-foreground tabular-nums">
+        <span className="relative shrink-0 whitespace-nowrap animate-status-pulse">
+          {startedAt ? (
+            <>
+              Working for <WorkingTimer startedAt={startedAt} />
+            </>
+          ) : (
+            "Working…"
+          )}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** Collapsed summary of a finished run; toggles the tool rows underneath. */
+function WorkFoldRow({
+  label,
+  expanded,
+  onToggle,
+}: {
+  label: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const Icon = expanded ? ChevronDownIcon : ChevronRightIcon;
+  return (
+    <div className="relative flex items-center gap-1 border-b border-border/60 pb-2 pe-0.5 pt-1">
       <button
         type="button"
-        onClick={() => output && setOpen((o) => !o)}
-        className={[
-          "te-label flex items-center gap-1.5 rounded-[4px] border border-(--te-border) bg-(--te-ctl) px-2 py-1 text-(--te-muted)",
-          output ? "hover:text-(--te-strong)" : "",
-        ].join(" ")}
+        aria-expanded={expanded}
+        onClick={onToggle}
+        className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-sm leading-relaxed text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring/70"
       >
-        <WrenchIcon className="size-3" />
-        {name}
-        {!output ? <span className="te-blink size-1 bg-(--te-accent)" aria-hidden /> : null}
+        <span>{label}</span>
+        <Icon className="size-3.5" />
       </button>
+    </div>
+  );
+}
+
+/** One tool call: icon, name, chevron; expands to the captured output. */
+function ToolRow({ name, output }: { name: string; output?: string }) {
+  const [open, setOpen] = useState(false);
+  const canExpand = Boolean(output);
+  const pending = output === undefined;
+  const Icon = /term|shell|bash|command|exec/i.test(name) ? TerminalIcon : WrenchIcon;
+  const toggle = () => setOpen((o) => !o);
+  return (
+    <div
+      role={canExpand ? "button" : undefined}
+      tabIndex={canExpand ? 0 : undefined}
+      aria-expanded={canExpand ? open : undefined}
+      onClick={canExpand ? toggle : undefined}
+      onKeyDown={
+        canExpand
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                toggle();
+              }
+            }
+          : undefined
+      }
+      className={cn(
+        "group/timeline-row relative flex flex-col rounded-md px-0.5 py-0.5 transition-colors",
+        open && "mb-1",
+        canExpand &&
+          "cursor-pointer hover:bg-accent-surface/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring/70",
+      )}
+    >
+      <div className="flex select-none items-center gap-1.5">
+        <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
+          <Icon className="block size-4 shrink-0 stroke-2" aria-hidden />
+        </span>
+        <p
+          className={cn(
+            "min-w-0 flex-1 truncate text-sm leading-relaxed text-secondary-label",
+            pending && "animate-status-pulse",
+          )}
+        >
+          {name}
+        </p>
+        <span
+          className={cn(
+            "flex size-4 shrink-0 items-center justify-center",
+            !canExpand && "invisible",
+          )}
+          aria-hidden
+        >
+          <ChevronRightIcon
+            className={cn(
+              "size-3 shrink-0 text-icon-muted opacity-70 transition-transform duration-200",
+              open && "rotate-90",
+            )}
+          />
+        </span>
+      </div>
       {open && output ? (
-        <pre className="te-scroll mt-1 max-h-40 overflow-auto rounded-[4px] border border-(--te-border) bg-(--te-panel) px-2 py-1.5 text-[11px] leading-relaxed text-(--te-muted)">
+        <pre
+          onClick={(e) => e.stopPropagation()}
+          className="ms-7 mt-1 max-h-64 select-text overflow-auto rounded-lg border border-border bg-code px-3 py-2 font-mono text-2xs leading-relaxed text-muted-foreground"
+        >
           {output}
         </pre>
       ) : null}
+    </div>
+  );
+}
+
+/** Failed turn: red heading row plus the explanation underneath. */
+function ErrorRow({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col px-0.5 py-1">
+      <div className="flex items-center gap-1.5">
+        <span className="flex size-6 shrink-0 items-center justify-center text-destructive">
+          <CircleAlertIcon className="size-4 stroke-2" aria-hidden />
+        </span>
+        <span className="text-sm font-medium leading-relaxed text-destructive">Hermes error</span>
+      </div>
+      <p className="ms-7 text-sm leading-relaxed text-foreground/80">{message}</p>
     </div>
   );
 }
@@ -363,13 +499,17 @@ function HistoryList({
   const server = serverSessions ?? [];
   return (
     <>
-      <div className="absolute inset-x-0 bottom-0 top-[52px] z-10" onClick={onClose} aria-hidden />
-      <div className="te-scroll absolute right-2 top-[54px] z-20 max-h-[70%] w-[calc(100%-1rem)] overflow-y-auto rounded-[8px] border border-(--te-outline) bg-(--te-panel) p-1 shadow-lg">
+      <div
+        className="absolute inset-x-0 bottom-0 top-(--workspace-topbar-height) z-10"
+        onClick={onClose}
+        aria-hidden
+      />
+      <div className="dropdown-glass absolute left-2 top-[calc(var(--workspace-topbar-height)+2px)] z-20 max-h-[70%] w-[calc(100%-1rem)] overflow-y-auto rounded-lg p-1 shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]">
         {showServer ? (
-          <div className="te-label px-2 pb-1 pt-0.5 text-(--te-faint)">Recent</div>
+          <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Recent</div>
         ) : null}
         {items.length === 0 ? (
-          <div className="px-2 py-3 text-center text-[12px] text-(--te-muted)">
+          <div className="px-2 py-3 text-center text-xs text-muted-foreground">
             No past chats yet
           </div>
         ) : (
@@ -377,8 +517,8 @@ function HistoryList({
             <div
               key={c.id}
               className={[
-                "group flex items-center gap-1 rounded-[5px] px-1",
-                c.id === activeId ? "bg-(--te-hover)" : "hover:bg-(--te-hover)",
+                "group flex items-center gap-1 rounded-md px-1",
+                c.id === activeId ? "bg-accent-surface" : "hover:bg-accent-surface",
               ].join(" ")}
             >
               <button
@@ -386,14 +526,14 @@ function HistoryList({
                 onClick={() => onPick(c.id)}
                 className="flex min-w-0 flex-1 flex-col items-start py-1.5 pl-1.5 text-left"
               >
-                <span className="w-full truncate text-[13px] text-(--te-text)">{c.title}</span>
-                <span className="te-label text-(--te-faint)">{formatAgo(c.updatedAt)}</span>
+                <span className="w-full truncate text-sm text-foreground/90">{c.title}</span>
+                <span className="text-xs text-muted-foreground">{formatAgo(c.updatedAt)}</span>
               </button>
               <button
                 type="button"
                 onClick={() => onDelete(c.id)}
                 aria-label="Delete chat"
-                className="shrink-0 rounded-[4px] p-1 text-(--te-faint) opacity-0 hover:text-(--red) group-hover:opacity-100"
+                className="shrink-0 rounded-sm p-1 text-muted-foreground/70 opacity-0 hover:text-(--red) group-hover:opacity-100"
               >
                 <Trash2Icon className="size-3.5" />
               </button>
@@ -402,29 +542,31 @@ function HistoryList({
         )}
         {showServer ? (
           <>
-            <div className="te-label px-2 pb-1 pt-2 text-(--te-faint)">On Hermes</div>
+            <div className="px-2 pb-1.5 pt-2 text-xs font-medium text-muted-foreground">
+              On Hermes
+            </div>
             {server.map((s) => (
               <button
                 key={s.id}
                 type="button"
                 onClick={() => onPickServer(s)}
-                className="flex w-full min-w-0 flex-col items-start rounded-[5px] px-2.5 py-1.5 text-left hover:bg-(--te-hover)"
+                className="flex w-full min-w-0 flex-col items-start rounded-md px-2.5 py-1.5 text-left hover:bg-accent-surface"
               >
-                <span className="w-full truncate text-[13px] text-(--te-text)">
+                <span className="w-full truncate text-sm text-foreground/90">
                   {s.title || s.preview || s.id}
                 </span>
-                <span className="te-label text-(--te-faint)">
+                <span className="text-xs text-muted-foreground">
                   {sourceLabel(s.source)} · {formatAgo(s.lastActive)}
                 </span>
               </button>
             ))}
             {serverLoading && server.length === 0 ? (
-              <div className="px-2 py-2 text-center text-[12px] text-(--te-faint)">
+              <div className="px-2 py-2 text-center text-xs text-muted-foreground/70">
                 Loading sessions…
               </div>
             ) : null}
             {!serverLoading && server.length === 0 ? (
-              <div className="px-2 py-2 text-center text-[12px] text-(--te-faint)">
+              <div className="px-2 py-2 text-center text-xs text-muted-foreground/70">
                 No other sessions
               </div>
             ) : null}
@@ -471,9 +613,19 @@ export function HermesChatPanel({
   const [streaming, setStreaming] = useState<{ requestId: string; convoId: string } | null>(null);
   const [attach, setAttach] = useState(true);
   const [configured, setConfigured] = useState<boolean | null>(null);
+  const [serverModel, setServerModel] = useState<string | null>(null);
   // Native Sessions API available: new chats get a persistent server session.
   const [sessionsAvailable, setSessionsAvailable] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Finished runs fold their tool rows behind a "Worked for …" summary.
+  const [expandedFolds, setExpandedFolds] = useState<Set<string>>(() => new Set());
+  const toggleFold = (id: string) =>
+    setExpandedFolds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   // Conversation whose transcript is being pulled from the server.
   const [hydrating, setHydrating] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -487,6 +639,7 @@ export function HermesChatPanel({
       (s) => {
         setConfigured(s.configured);
         setSessionsAvailable(s.configured && s.sessions);
+        setServerModel(s.model);
       },
       () => setConfigured(false),
     );
@@ -615,6 +768,7 @@ export function HermesChatPanel({
             } else if (event.type === "error") {
               updated.error = friendlyError(event.message);
             }
+            if (event.type === "done" || event.type === "error") updated.finishedAt = Date.now();
             nextTurns[nextTurns.length - 1] = updated;
             const lastResponseId =
               event.type === "done" && event.responseId ? event.responseId : c.lastResponseId;
@@ -683,7 +837,7 @@ export function HermesChatPanel({
               }
             : undefined,
         },
-        { id: `a-${requestId}`, role: "assistant", text: "", tools: [] },
+        { id: `a-${requestId}`, role: "assistant", text: "", tools: [], startedAt: Date.now() },
       ],
     }));
     setStreaming({ requestId, convoId });
@@ -814,33 +968,27 @@ export function HermesChatPanel({
 
   return (
     <div className="relative flex h-full min-w-0 flex-col">
-      <div className="drag-region flex h-11 shrink-0 items-center gap-2 border-b border-(--te-border) px-4">
-        <BotMessageSquareIcon className="size-4 shrink-0 text-(--te-muted)" />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[15px] font-bold leading-tight tracking-tight text-(--te-strong)">
-            Hermes
-          </div>
-          <div className="te-label truncate leading-tight text-(--te-muted)">
-            {streamingActive ? "working…" : "agent chat"}
-          </div>
-        </div>
-        <HintTooltip label="Chat history">
+      {/* Header: chat actions on the left; the panel toggle stays at the
+          window's top-right, exactly where it sits while the panel is closed. */}
+      <div className="drag-region flex h-(--workspace-topbar-height) shrink-0 items-center gap-1 border-b border-border px-4">
+        <HintTooltip label="Chat history" side="bottom">
           <IconBtn
             label="Chat history"
             active={historyOpen}
             onClick={() => setHistoryOpen((o) => !o)}
           >
-            <HistoryIcon className="size-3.5" />
+            <HistoryIcon className="size-4" />
           </IconBtn>
         </HintTooltip>
-        <HintTooltip label="New chat">
+        <HintTooltip label="New chat" side="bottom">
           <IconBtn label="New chat" onClick={newChat}>
-            <SquarePlusIcon className="size-3.5" />
+            <SquarePlusIcon className="size-4" />
           </IconBtn>
         </HintTooltip>
-        <HintTooltip label="Close">
-          <IconBtn label="Close chat" onClick={onClose}>
-            <XIcon className="size-3.5" />
+        <span className="min-w-0 flex-1" />
+        <HintTooltip label="Hide Hermes panel" hint="⌘I" side="bottom">
+          <IconBtn label="Toggle Hermes panel" active onClick={onClose}>
+            <PanelRightIcon className="size-4" />
           </IconBtn>
         </HintTooltip>
       </div>
@@ -866,14 +1014,14 @@ export function HermesChatPanel({
 
       {configured === false ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-          <span className="text-[14px] font-bold text-(--te-text)">Connect Hermes chat</span>
-          <span className="text-[13px] text-(--te-muted)">
+          <span className="text-sm font-medium text-foreground">Connect Hermes chat</span>
+          <span className="text-sm text-muted-foreground">
             Add the API server URL and key in Settings → Assistant.
           </span>
           <button
             type="button"
-            onClick={() => void gmailApi.openSettings({ pane: "general" })}
-            className="te-label mt-1 h-7 rounded-[4px] border border-(--te-outline) px-2 text-(--te-text) hover:border-(--te-outline-hover) hover:text-(--te-strong)"
+            onClick={() => void gmailApi.openSettings({ pane: "assistant" })}
+            className={buttonClass("outline", "sm", "mt-1")}
           >
             Open Settings
           </button>
@@ -881,50 +1029,70 @@ export function HermesChatPanel({
       ) : (
         <MessageScroller.Provider autoScroll defaultScrollPosition="end">
           <MessageScroller.Root className="relative min-h-0 flex-1">
-            <MessageScroller.Viewport className="te-scroll h-full overflow-y-auto px-4 py-3">
-              <MessageScroller.Content className="flex flex-col gap-3">
+            <MessageScroller.Viewport className="h-full overflow-y-auto px-3 py-3">
+              <MessageScroller.Content className="flex flex-col gap-1">
                 {turns.length === 0 ? (
-                  <div className="px-2 pt-6 text-center text-[13px] text-(--te-muted)">
+                  <div className="px-2 pt-6 text-center text-sm text-muted-foreground">
                     {hydrating === activeId
                       ? "Loading this session from Hermes…"
                       : "Ask about the open conversation, your inbox, or anything Hermes can do with its tools."}
                   </div>
                 ) : null}
-                {turns.map((turn) => (
-                  <MessageScroller.Item key={turn.id} messageId={turn.id} scrollAnchor>
-                    {turn.role === "user" ? (
-                      <div>
-                        {turn.context ? <ContextRecap context={turn.context} /> : null}
-                        <div className="ml-6 rounded-[8px] rounded-br-[2px] bg-(--te-sel) px-3 py-2 text-[13px] leading-relaxed text-(--te-sel-fg)">
-                          {turn.skill ? (
-                            <span className="mb-1 mr-1.5 inline-flex align-middle">
-                              <SkillBadge name={turn.skill} onAccent />
-                            </span>
-                          ) : null}
-                          {turn.text}
+                {turns.map((turn) => {
+                  if (turn.role === "user") {
+                    return (
+                      <MessageScroller.Item key={turn.id} messageId={turn.id} scrollAnchor>
+                        <div className="group flex flex-col items-end gap-1 py-2">
+                          {turn.context ? <ContextRecap context={turn.context} /> : null}
+                          <div className="relative max-w-[80%] whitespace-pre-wrap rounded-2xl bg-message p-3 text-sm leading-relaxed text-message-foreground">
+                            {turn.skill ? (
+                              <span className="mb-1 mr-1.5 inline-flex align-middle">
+                                <SkillBadge name={turn.skill} onAccent />
+                              </span>
+                            ) : null}
+                            {turn.text}
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="mr-2">
-                        {turn.tools.map((t, i) => (
-                          <ToolStep key={i} name={t.name} output={t.output} />
-                        ))}
-                        {turn.text ? (
-                          <ChatMarkdown text={turn.text} />
-                        ) : !turn.error &&
-                          streamingActive &&
-                          turn.id === turns[turns.length - 1]?.id ? (
-                          <span className="te-label text-(--te-faint)">thinking…</span>
+                      </MessageScroller.Item>
+                    );
+                  }
+                  const isLast = turn.id === turns[turns.length - 1]?.id;
+                  const live = streamingActive && isLast && !turn.finishedAt && !turn.error;
+                  const hasTools = turn.tools.length > 0;
+                  const folded = hasTools && !live;
+                  const showTools = hasTools && (live || expandedFolds.has(turn.id));
+                  const foldLabel =
+                    turn.startedAt && turn.finishedAt
+                      ? `Worked for ${formatDuration(turn.finishedAt - turn.startedAt)}`
+                      : `Ran ${turn.tools.length} tool${turn.tools.length === 1 ? "" : "s"}`;
+                  return (
+                    <MessageScroller.Item key={turn.id} messageId={turn.id} scrollAnchor>
+                      <div className="flex flex-col">
+                        {folded ? (
+                          <WorkFoldRow
+                            label={foldLabel}
+                            expanded={expandedFolds.has(turn.id)}
+                            onToggle={() => toggleFold(turn.id)}
+                          />
                         ) : null}
-                        {turn.error ? (
-                          <div className="mt-1 rounded-[5px] border border-(--te-outline) bg-(--te-ctl) px-2.5 py-1.5 text-[12px] text-(--red)">
-                            {turn.error}
+                        {showTools ? (
+                          <div className="flex flex-col py-1">
+                            {turn.tools.map((t, i) => (
+                              <ToolRow key={i} name={t.name} output={t.output} />
+                            ))}
                           </div>
                         ) : null}
+                        {turn.text ? (
+                          <div className="min-w-0 px-1 py-1">
+                            <ChatMarkdown text={turn.text} />
+                          </div>
+                        ) : null}
+                        {live ? <WorkingRow startedAt={turn.startedAt} /> : null}
+                        {turn.error ? <ErrorRow message={turn.error} /> : null}
                       </div>
-                    )}
-                  </MessageScroller.Item>
-                ))}
+                    </MessageScroller.Item>
+                  );
+                })}
               </MessageScroller.Content>
             </MessageScroller.Viewport>
             <MessageScroller.Button
@@ -935,7 +1103,7 @@ export function HermesChatPanel({
                     {...props}
                     type="button"
                     aria-label="Jump to latest"
-                    className="absolute bottom-3 left-1/2 flex size-7 -translate-x-1/2 items-center justify-center rounded-full border border-(--te-outline) bg-(--te-panel) text-(--te-muted) shadow-sm hover:text-(--te-strong)"
+                    className="surface-glass absolute bottom-3 left-1/2 flex size-7 -translate-x-1/2 items-center justify-center rounded-full border border-border/60 text-muted-foreground shadow-sm hover:border-border hover:text-foreground"
                   >
                     <ArrowDownIcon className="size-3.5" />
                   </button>
@@ -944,10 +1112,11 @@ export function HermesChatPanel({
             />
           </MessageScroller.Root>
 
+          {/* Composer: glass card with the prompt on top and controls below. */}
           <div className="relative shrink-0 px-3 pb-3 pt-1">
             {slashOpen ? (
-              <div className="te-scroll absolute inset-x-3 bottom-full z-20 mb-1 max-h-64 overflow-y-auto rounded-[8px] border border-(--te-outline) bg-(--te-panel) p-1 shadow-lg">
-                <div className="te-label px-2 pb-1 pt-0.5 text-(--te-faint)">Skills</div>
+              <div className="dropdown-glass absolute inset-x-3 bottom-full z-20 mb-1 max-h-64 overflow-y-auto rounded-lg p-1 shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]">
+                <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Skills</div>
                 {slashSkills.map((s, i) => (
                   <button
                     key={s.name}
@@ -958,43 +1127,22 @@ export function HermesChatPanel({
                       pickSkill(s);
                     }}
                     onMouseEnter={() => setSlashIndex(i)}
-                    className={[
-                      "flex w-full flex-col items-start rounded-[5px] px-2 py-1.5 text-left",
-                      i === slashIndex ? "bg-(--te-hover)" : "",
-                    ].join(" ")}
+                    className={cn(
+                      "flex w-full flex-col items-start rounded-md px-2 py-1.5 text-left",
+                      i === slashIndex && "bg-accent-surface",
+                    )}
                   >
-                    <span className="text-[12px] font-semibold text-(--te-text)">/{s.name}</span>
-                    <span className="w-full truncate text-[11px] text-(--te-faint)">
+                    <span className="text-xs font-semibold text-foreground">/{s.name}</span>
+                    <span className="w-full truncate text-2xs text-muted-foreground">
                       {s.description}
                     </span>
                   </button>
                 ))}
               </div>
             ) : null}
-            {context ? (
-              <button
-                type="button"
-                onClick={() => setAttach((a) => !a)}
-                className={[
-                  "te-label mb-1.5 flex max-w-full items-center gap-1.5 rounded-[4px] border px-2 py-1",
-                  attach
-                    ? "border-(--te-outline-hover) text-(--te-text)"
-                    : "border-(--te-outline) text-(--te-faint) line-through",
-                ].join(" ")}
-              >
-                <ContextKindIcon kind={attachKind} className="size-3 shrink-0" />
-                <span className="min-w-0 truncate">
-                  {quote
-                    ? `“${quote.text}”`
-                    : context.conversations.length > 1
-                      ? `${context.conversations.length} conversations`
-                      : context.conversations[0].subject}
-                </span>
-              </button>
-            ) : null}
-            <div className="rounded-[6px] border border-(--te-outline) bg-(--te-panel) focus-within:border-(--te-outline-hover)">
+            <div className="relative rounded-3xl border border-(--chat-composer-outline) bg-(--chat-composer-surface) shadow-composer transition-colors focus-within:border-input dark:shadow-none dark:inset-shadow-2xs dark:inset-shadow-(color:--chat-composer-highlight)">
               {activeSkill ? (
-                <div className="px-2.5 pt-2">
+                <div className="px-4 pt-3">
                   <SkillBadge name={activeSkill.name} onRemove={() => setActiveSkill(null)} />
                 </div>
               ) : null}
@@ -1030,35 +1178,110 @@ export function HermesChatPanel({
                       return;
                     }
                   }
-                  if (e.key === "Enter" && !e.shiftKey) {
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault();
                     send();
                   }
                 }}
-                placeholder="Message Hermes…  (/ for skills)"
+                placeholder="Ask anything, / for skills"
                 aria-label="Message Hermes"
                 rows={2}
-                className="w-full resize-none bg-transparent px-3 pt-2 text-[13px] text-(--te-strong) outline-none placeholder:text-(--te-faint)"
+                className="w-full resize-none bg-transparent px-4 pb-1 pt-3.5 text-sm leading-relaxed text-foreground outline-none placeholder:text-placeholder"
               />
-              <div className="flex items-center gap-1 px-2 pb-1.5">
-                <span className="flex-1" />
-                {busy ? (
-                  <HintTooltip label="Stop">
-                    <IconBtn label="Stop" className="size-7" onClick={stop}>
-                      <CircleStopIcon className="size-4 text-(--red)" />
-                    </IconBtn>
-                  </HintTooltip>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={send}
-                    disabled={!draft.trim() && !activeSkill}
-                    aria-label="Send"
-                    className="flex h-7 w-9 items-center justify-center rounded-[5px] bg-(--te-accent) text-white hover:brightness-110 disabled:bg-(--te-ctl) disabled:text-(--te-faint)"
-                  >
-                    <SendHorizontalIcon className="size-3.5" />
-                  </button>
-                )}
+              <div className="flex min-w-0 items-center justify-between gap-2 px-3 pb-3">
+                <div className="-ms-1 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label="Hermes"
+                        className="relative inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[var(--control-radius)] border border-transparent px-2 text-sm font-medium text-secondary-label outline-none transition-colors hover:bg-accent-surface hover:text-foreground focus-visible:ring-2 focus-visible:ring-focus-ring [&_svg]:shrink-0"
+                      >
+                        <BotIcon className="size-4 text-[#e0a526]" aria-hidden />
+                        <span>Hermes</span>
+                        <ChevronDownIcon
+                          className="-me-0.5 size-3.5 text-muted-foreground"
+                          aria-hidden
+                        />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" side="top">
+                      <DropdownMenuLabel>
+                        {serverModel ? `Hermes · ${serverModel}` : "Hermes agent"}
+                      </DropdownMenuLabel>
+                      <DropdownMenuItem
+                        icon={<SettingsIcon />}
+                        onSelect={() => void gmailApi.openSettings({ pane: "assistant" })}
+                      >
+                        Hermes settings…
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  {context ? (
+                    <span className="mx-0.5 h-4 w-px shrink-0 bg-border" aria-hidden />
+                  ) : null}
+                  {context ? (
+                    <button
+                      type="button"
+                      aria-pressed={attach}
+                      onClick={() => setAttach((a) => !a)}
+                      title={attach ? "Attached to this message" : "Not attached"}
+                      className={cn(
+                        "relative inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-[var(--control-radius)] border border-transparent px-1.75 text-xs outline-none transition-colors hover:bg-accent-surface focus-visible:ring-2 focus-visible:ring-focus-ring [&_svg]:shrink-0",
+                        attach
+                          ? "bg-accent-surface text-foreground"
+                          : "text-muted-foreground/70 line-through hover:text-foreground/80",
+                      )}
+                    >
+                      <ContextKindIcon kind={attachKind} className="size-3.5" />
+                      <span className="max-w-48 truncate">
+                        {quote
+                          ? `“${quote.text}”`
+                          : context.conversations.length > 1
+                            ? `${context.conversations.length} conversations`
+                            : context.conversations[0].subject}
+                      </span>
+                    </button>
+                  ) : null}
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {busy ? (
+                    <button
+                      type="button"
+                      onClick={stop}
+                      aria-label="Stop generation"
+                      className="flex size-8 cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-2xs inset-shadow-white/16 transition-all duration-150 hover:scale-105 hover:bg-destructive active:shadow-none active:inset-shadow-black/8"
+                    >
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 12 12"
+                        fill="currentColor"
+                        aria-hidden
+                      >
+                        <rect x="2" y="2" width="8" height="8" rx="1.5" />
+                      </svg>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={send}
+                      disabled={!draft.trim() && !activeSkill}
+                      aria-label="Send message"
+                      className="relative isolate flex size-8 items-center justify-center overflow-hidden rounded-full bg-primary text-primary-foreground shadow-xs transition-all duration-150 enabled:cursor-pointer enabled:shadow-primary/24 enabled:inset-shadow-2xs enabled:inset-shadow-white/16 hover:scale-105 hover:bg-primary/90 active:shadow-none active:inset-shadow-black/8 disabled:pointer-events-none disabled:opacity-30 disabled:shadow-none"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+                        <path
+                          d="M7 11.5V2.5M7 2.5L3 6.5M7 2.5L11 6.5"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>

@@ -14,7 +14,12 @@
 
 import { app, BrowserWindow, Tray, ipcMain, logger } from "@glaze/core/backend";
 import { countInboxUnreadAll } from "./mail-store.js";
-import { toggleTrayPopover, destroyTrayPopover } from "../windows/tray-popover-window.js";
+import {
+  toggleTrayPopover,
+  destroyTrayPopover,
+  setTrayPopoverVisibilityListener,
+} from "../windows/tray-popover-window.js";
+import { trayIcons } from "./tray-icons.js";
 
 // Stable app-specific identifier for the status item; must not change across runs.
 const TRAY_UUID = "b8b6e6b0-2b2d-4c7a-9b7a-5c6a6b6b0f3d";
@@ -48,7 +53,11 @@ export async function refreshTray(): Promise<void> {
 
 export async function createTray(): Promise<void> {
   if (tray) return;
-  tray = new Tray("envelope.fill", TRAY_UUID);
+  tray = new Tray(trayIcons().normal, TRAY_UUID);
+  // Selected look while the popover is open, like a native status-item menu.
+  setTrayPopoverVisibilityListener((open) => {
+    tray?.setImage(open ? trayIcons().selected : trayIcons().normal);
+  });
   tray.on("click", (_event, bounds) => {
     void toggleTrayPopover(bounds);
   });

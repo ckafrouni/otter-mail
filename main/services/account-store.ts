@@ -69,7 +69,8 @@ export async function updateAccount(
   const current = accounts[index];
   const updated: GmailAccount = {
     ...current,
-    displayName: patch.displayName !== undefined ? patch.displayName || undefined : current.displayName,
+    displayName:
+      patch.displayName !== undefined ? patch.displayName || undefined : current.displayName,
     color: patch.color !== undefined ? patch.color : current.color,
     signature: patch.signature !== undefined ? patch.signature || undefined : current.signature,
   };

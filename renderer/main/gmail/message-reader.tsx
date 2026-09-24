@@ -54,7 +54,7 @@ import { decodeEntities } from "./text";
 import { LabelPickerMenu } from "./label-picker-menu";
 import { parseAddressEntry, splitAddressList } from "./address";
 import { isTypingTarget } from "./keyboard";
-import { IconBtn, HintTooltip } from "./te-ui";
+import { IconBtn, HintTooltip, buttonClass } from "./ui";
 import { RichTextArea, textToHtml, type RichTextRef } from "./rich-text";
 import { RecipientInput } from "./recipient-input";
 import {
@@ -267,13 +267,7 @@ function fixWhiteOnWhiteText(doc: Document | null | undefined) {
  * for the srcdoc document as soon as it is PARSED and fit from there; `load` and
  * the per-image listeners are then just later refinements for late-arriving art.
  */
-function HtmlBody({
-  html,
-  onQuoteText,
-}: {
-  html: string;
-  onQuoteText?: (text: string) => void;
-}) {
+function HtmlBody({ html, onQuoteText }: { html: string; onQuoteText?: (text: string) => void }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const quoteRef = useRef(onQuoteText);
   quoteRef.current = onQuoteText;
@@ -293,7 +287,10 @@ function HtmlBody({
       iframe.style.height = h + "px";
       if (!sized) {
         sized = true;
-        console.log("[MessageBody:sized]", { ms: Math.round(performance.now() - mountedAt), height: h });
+        console.log("[MessageBody:sized]", {
+          ms: Math.round(performance.now() - mountedAt),
+          height: h,
+        });
       }
     };
 
@@ -331,7 +328,8 @@ function HtmlBody({
         const img = el as HTMLImageElement;
         if (img.complete) {
           // Already settled: a broken load (naturalWidth 0) is our cue to proxy.
-          if (img.naturalWidth === 0 && (img.getAttribute("src") ?? "").length > 0) proxyBrokenImage(img);
+          if (img.naturalWidth === 0 && (img.getAttribute("src") ?? "").length > 0)
+            proxyBrokenImage(img);
           return;
         }
         img.addEventListener("load", fit, { once: true });
@@ -426,7 +424,7 @@ function HtmlBody({
       ref={frameRef}
       sandbox="allow-same-origin"
       srcDoc={MESSAGE_BODY_PRELUDE + html}
-      className="w-full rounded-[6px] border border-(--te-border) bg-white"
+      className="w-full rounded-lg border border-border bg-white"
       title="Message body"
     />
   );
@@ -448,12 +446,12 @@ function MessageBody({
   if (bodyText) {
     // Flush inside the message card (the card is the surface now).
     return (
-      <pre className="whitespace-pre-wrap font-sans text-[15px] leading-relaxed text-(--te-text)">
+      <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground/90">
         {bodyText}
       </pre>
     );
   }
-  return <span className="text-[13px] text-(--te-muted)">(No message body)</span>;
+  return <span className="text-sm text-muted-foreground">(No message body)</span>;
 }
 
 type MessageAttachment = GmailMessageDetail["attachments"][number];
@@ -475,11 +473,7 @@ async function withThumbnailSlot<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-function useAttachmentActions(
-  accountId: string,
-  messageId: string,
-  attachment: MessageAttachment,
-) {
+function useAttachmentActions(accountId: string, messageId: string, attachment: MessageAttachment) {
   const [opening, setOpening] = useState(false);
   const pressRef = useRef<{ x: number; y: number } | null>(null);
   const draggedRef = useRef(false);
@@ -551,11 +545,7 @@ function ImageAttachmentTile({
   attachment: MessageAttachment;
   onDownload: DownloadAttachment;
 }) {
-  const { handleOpen, dragProps, opening } = useAttachmentActions(
-    accountId,
-    messageId,
-    attachment,
-  );
+  const { handleOpen, dragProps, opening } = useAttachmentActions(accountId, messageId, attachment);
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -596,7 +586,7 @@ function ImageAttachmentTile({
             aria-label={`Open ${attachment.filename}`}
             onClick={handleOpen}
             {...dragProps}
-            className={`h-28 w-36 cursor-pointer overflow-hidden rounded-[6px] border border-(--te-border) bg-(--te-ctl)${opening ? " opacity-60" : ""}`}
+            className={`h-28 w-36 cursor-pointer overflow-hidden rounded-lg border border-border bg-secondary${opening ? " opacity-60" : ""}`}
           >
             {url ? (
               <img
@@ -607,10 +597,10 @@ function ImageAttachmentTile({
               />
             ) : failed ? (
               <div className="flex h-full items-center justify-center">
-                <ImageIcon className="size-6 text-(--te-faint)" />
+                <ImageIcon className="size-6 text-muted-foreground/70" />
               </div>
             ) : (
-              <div className="h-full w-full animate-pulse bg-(--te-ctl)" />
+              <div className="h-full w-full animate-skeleton bg-secondary" />
             )}
           </div>
           <button
@@ -623,7 +613,7 @@ function ImageAttachmentTile({
           >
             <DownloadIcon className="size-3.5" />
           </button>
-          <div className="mt-1 truncate text-[11px] text-(--te-muted)">{attachment.filename}</div>
+          <div className="mt-1 truncate text-2xs text-muted-foreground">{attachment.filename}</div>
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
@@ -654,11 +644,7 @@ function FileAttachmentRow({
   attachment: MessageAttachment;
   onDownload: DownloadAttachment;
 }) {
-  const { handleOpen, dragProps, opening } = useAttachmentActions(
-    accountId,
-    messageId,
-    attachment,
-  );
+  const { handleOpen, dragProps, opening } = useAttachmentActions(accountId, messageId, attachment);
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -667,11 +653,11 @@ function FileAttachmentRow({
           aria-label={`Open ${attachment.filename}`}
           onClick={handleOpen}
           {...dragProps}
-          className={`flex cursor-pointer select-none items-center justify-between gap-3 rounded-[6px] border border-(--te-border) bg-(--te-ctl) px-3 py-2 hover:bg-(--te-ctl-hover)${opening ? " opacity-60" : ""}`}
+          className={`flex cursor-pointer select-none items-center justify-between gap-3 rounded-lg border border-border bg-secondary px-3 py-2 hover:bg-accent-surface${opening ? " opacity-60" : ""}`}
         >
           <div className="flex min-w-0 flex-col">
-            <span className="truncate text-[13px] text-(--te-text)">{attachment.filename}</span>
-            <span className="text-[11px] text-(--te-faint)">
+            <span className="truncate text-sm text-foreground/90">{attachment.filename}</span>
+            <span className="text-2xs text-muted-foreground/70">
               {attachment.mimeType} · {formatBytes(attachment.size)}
             </span>
           </div>
@@ -683,7 +669,7 @@ function FileAttachmentRow({
               onDownload(messageId, attachment.id, attachment.filename, attachment.mimeType);
             }}
             aria-label={`Download ${attachment.filename}`}
-            className="flex size-7 shrink-0 items-center justify-center rounded-md text-(--te-muted) hover:bg-(--te-hover) hover:text-(--te-strong)"
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent-surface hover:text-foreground"
           >
             <DownloadIcon className="size-3.5" />
           </button>
@@ -722,7 +708,7 @@ function AttachmentList({
   const files = attachments.filter((a) => !a.mimeType.startsWith("image/"));
   return (
     <div className="mt-2 flex flex-col gap-2">
-      <span className="te-label text-(--te-muted)">
+      <span className="te-label text-muted-foreground">
         {attachments.length} attachment{attachments.length === 1 ? "" : "s"}
       </span>
       {images.length > 0 ? (
@@ -760,8 +746,8 @@ function AttachmentList({
 export function DayDivider({ timestamp }: { timestamp: number }) {
   return (
     <div className="relative flex items-center justify-center py-3">
-      <div className="absolute inset-x-0 top-1/2 h-px bg-(--te-border)" />
-      <span className="te-label relative rounded-[4px] border border-(--te-border) bg-(--te-card) px-2.5 py-1 text-(--te-text)">
+      <div className="absolute inset-x-0 top-1/2 h-px bg-border" />
+      <span className="relative rounded-sm border border-border bg-card px-2 py-0.5 text-2xs font-medium text-muted-foreground">
         {formatDayLabel(timestamp)}
       </span>
     </div>
@@ -783,24 +769,29 @@ export function CollapsedRow({
         type="button"
         onClick={onExpand}
         aria-label="Expand message"
-        className="flex w-full items-center gap-2.5 rounded-[10px] border border-(--te-border) bg-(--te-card) px-3.5 py-2.5 text-left hover:bg-(--te-panel)"
+        className="flex w-full items-center gap-2.5 rounded-xl border border-border bg-card px-3.5 py-2.5 text-left transition-colors hover:bg-accent-surface"
       >
-        <SenderAvatar name={summary.fromName} email={summary.fromEmail} accountId={accountId} size="sm" />
+        <SenderAvatar
+          name={summary.fromName}
+          email={summary.fromEmail}
+          accountId={accountId}
+          size="sm"
+        />
         <span
           className={[
-            "shrink-0 text-[13px] leading-snug",
-            summary.unread ? "font-bold text-(--te-strong)" : "font-semibold text-(--te-text)",
+            "shrink-0 text-sm leading-snug",
+            summary.unread ? "font-semibold text-foreground" : "font-semibold text-foreground/90",
           ].join(" ")}
         >
           {summary.fromName || summary.fromEmail}
         </span>
-        <span className="min-w-0 flex-1 truncate text-[13px] text-(--te-faint)">
+        <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground/70">
           {decodeEntities(summary.snippet)}
         </span>
-        <span className="te-num shrink-0 text-[10px] text-(--te-faint)">
+        <span className="te-num shrink-0 text-3xs text-muted-foreground/70">
           {formatTime(summary.date)}
         </span>
-        <ChevronDownIcon className="size-3.5 shrink-0 -rotate-90 text-(--te-faint)" />
+        <ChevronDownIcon className="size-3.5 shrink-0 -rotate-90 text-muted-foreground/70" />
       </button>
     </div>
   );
@@ -854,7 +845,7 @@ export function ExpandedRow({
 
   return (
     <div className="px-4 py-1">
-      <div className="group rounded-[10px] border border-(--te-border) bg-(--te-card) px-4 py-3.5">
+      <div className="group rounded-xl border border-border bg-card px-4 py-3.5">
         {/* Post-style header: avatar + sender + time */}
         <div className="flex items-start gap-2.5">
           <SenderHoverCard
@@ -886,21 +877,21 @@ export function ExpandedRow({
                 onCompose={onComposeTo}
                 onSearch={onSearchSender}
               >
-                <span className="truncate text-[15px] font-bold leading-snug text-(--te-strong)">
+                <span className="truncate text-sm font-semibold leading-snug text-foreground">
                   {summary.fromName || summary.fromEmail}
                 </span>
               </SenderHoverCard>
               <span
-                className="te-num shrink-0 text-[10px] text-(--te-faint)"
+                className="te-num shrink-0 text-3xs text-muted-foreground/70"
                 title={formatFullDate(summary.date)}
               >
                 {formatTime(summary.date)}
               </span>
               {onCollapse ? (
-                <ChevronDownIcon className="size-3.5 shrink-0 rotate-180 self-center text-(--te-faint) opacity-0 group-hover:opacity-100" />
+                <ChevronDownIcon className="size-3.5 shrink-0 rotate-180 self-center text-muted-foreground/70 opacity-0 group-hover:opacity-100" />
               ) : null}
             </button>
-            <div className="truncate text-[12px] text-(--te-faint)" title={`to ${summary.to}`}>
+            <div className="truncate text-xs text-muted-foreground/70" title={`to ${summary.to}`}>
               to {summary.to}
               {detail?.cc ? ` · cc ${detail.cc}` : ""}
             </div>
@@ -911,8 +902,8 @@ export function ExpandedRow({
         <div className="mt-3">
           {detailQuery.isLoading ? (
             <div className="flex flex-col gap-2">
-              <div className="h-4 w-3/4 animate-pulse rounded-[3px] bg-(--te-ctl)" />
-              <div className="h-4 w-1/2 animate-pulse rounded-[3px] bg-(--te-hover)" />
+              <div className="h-4 w-3/4 animate-skeleton rounded-sm bg-secondary" />
+              <div className="h-4 w-1/2 animate-skeleton rounded-sm bg-accent-surface" />
             </div>
           ) : detail ? (
             <>
@@ -929,7 +920,7 @@ export function ExpandedRow({
               />
             </>
           ) : (
-            <span className="text-[13px] text-(--te-muted)">Could not load this message.</span>
+            <span className="text-sm text-muted-foreground">Could not load this message.</span>
           )}
         </div>
       </div>
@@ -1073,7 +1064,12 @@ function InlineComposer({
             messageId: lastMessage.id,
             attachmentId: att.id,
           });
-          out.push({ name: att.filename, mimeType: att.mimeType, size: data.size, base64: data.base64 });
+          out.push({
+            name: att.filename,
+            mimeType: att.mimeType,
+            size: data.size,
+            base64: data.base64,
+          });
         }
         if (!cancelled) setAttachments(out);
       } catch {
@@ -1166,8 +1162,7 @@ function InlineComposer({
     });
   }, attachments == null);
 
-  const senderFirstName =
-    (lastMessage.fromName || lastMessage.fromEmail).split(" ")[0] || "thread";
+  const senderFirstName = (lastMessage.fromName || lastMessage.fromEmail).split(" ")[0] || "thread";
   const placeholder =
     mode === "reply"
       ? `Reply to ${senderFirstName}…`
@@ -1179,7 +1174,7 @@ function InlineComposer({
     <div className="relative shrink-0 px-5 pb-4 pt-1" data-inline-compose="" {...dropProps}>
       <ComposeDropOverlay visible={isDragging} />
       <div
-        className="rounded-[6px] border border-(--te-outline) bg-(--te-panel) focus-within:border-(--te-outline-hover)"
+        className="rounded-2xl border border-(--chat-composer-outline) bg-(--chat-composer-surface) shadow-composer transition-colors focus-within:border-input dark:shadow-none dark:inset-shadow-2xs dark:inset-shadow-(color:--chat-composer-highlight)"
         onKeyDown={(e) => {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
@@ -1187,11 +1182,11 @@ function InlineComposer({
           }
         }}
       >
-        <div className="flex items-center gap-2 border-b border-(--te-border) px-3 py-1.5">
-          <span className="te-label shrink-0 rounded-[3px] bg-(--te-strong) px-1.5 py-1 text-(--te-card)">
+        <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
+          <span className="inline-flex h-5 shrink-0 items-center rounded-sm border border-primary/40 bg-primary/10 px-1.5 text-2xs font-medium text-primary">
             {INLINE_MODE_LABEL[mode]}
           </span>
-          <span className="te-label shrink-0 text-(--te-faint)">To</span>
+          <span className="shrink-0 text-xs font-medium text-muted-foreground">To</span>
           <RecipientInput
             ref={toRef}
             value={to}
@@ -1206,7 +1201,7 @@ function InlineComposer({
             <button
               type="button"
               onClick={() => setCcVisible(true)}
-              className="shrink-0 text-[11px] text-(--te-faint) hover:text-(--te-strong)"
+              className="shrink-0 text-2xs text-muted-foreground/70 hover:text-foreground"
             >
               Cc
             </button>
@@ -1215,7 +1210,7 @@ function InlineComposer({
             <button
               type="button"
               onClick={() => setBccVisible(true)}
-              className="shrink-0 text-[11px] text-(--te-faint) hover:text-(--te-strong)"
+              className="shrink-0 text-2xs text-muted-foreground/70 hover:text-foreground"
             >
               Bcc
             </button>
@@ -1232,8 +1227,8 @@ function InlineComposer({
           </IconBtn>
         </div>
         {ccVisible ? (
-          <div className="flex items-center gap-2 border-b border-(--te-border) px-3 py-1.5">
-            <span className="te-label shrink-0 text-(--te-faint)">Cc</span>
+          <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
+            <span className="shrink-0 text-xs font-medium text-muted-foreground">Cc</span>
             <RecipientInput
               value={cc}
               onChange={(v) => {
@@ -1245,8 +1240,8 @@ function InlineComposer({
           </div>
         ) : null}
         {bccVisible ? (
-          <div className="flex items-center gap-2 border-b border-(--te-border) px-3 py-1.5">
-            <span className="te-label shrink-0 text-(--te-faint)">Bcc</span>
+          <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
+            <span className="shrink-0 text-xs font-medium text-muted-foreground">Bcc</span>
             <RecipientInput value={bcc} onChange={setBcc} ariaLabel="Bcc" />
           </div>
         ) : null}
@@ -1277,23 +1272,23 @@ function InlineComposer({
             </IconBtn>
           </HintTooltip>
           {mode === "forward" && attachments == null ? (
-            <span className="te-label pl-1 text-(--te-faint)">Loading attachments…</span>
+            <span className="pl-1 text-xs text-muted-foreground">Loading attachments…</span>
           ) : null}
           {draft.saveState === "saving" ? (
-            <span className="te-label pl-1 text-(--te-faint)">Saving draft…</span>
+            <span className="pl-1 text-xs text-muted-foreground">Saving draft…</span>
           ) : draft.saveState === "saved" ? (
-            <span className="te-label pl-1 text-(--te-faint)">Draft saved</span>
+            <span className="pl-1 text-xs text-muted-foreground">Draft saved</span>
           ) : draft.saveState === "error" ? (
-            <span className="te-label pl-1 text-(--red)">Couldn't save draft</span>
+            <span className="pl-1 text-xs text-destructive-foreground">Couldn't save draft</span>
           ) : null}
           <span className="flex-1" />
-          {canSend ? <span className="te-label pr-1 text-(--te-faint)">⌘↩ send</span> : null}
+          {canSend ? <span className="pr-1 text-xs text-muted-foreground">⌘↩ send</span> : null}
           <button
             type="button"
             onClick={handleSend}
             disabled={!canSend}
             aria-label="Send"
-            className="flex h-7 w-9 items-center justify-center rounded-[5px] bg-(--te-accent) text-white hover:brightness-110 disabled:bg-(--te-ctl) disabled:text-(--te-faint)"
+            className="inline-flex h-7 w-9 items-center justify-center rounded-[var(--control-radius)] border border-primary bg-primary text-primary-foreground shadow-xs shadow-primary/24 transition-[box-shadow,scale] not-disabled:inset-shadow-[0_1px_rgb(255_255_255/16%)] hover:bg-primary/90 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-64"
           >
             <SendHorizontalIcon className="size-3.5" />
           </button>
@@ -1304,12 +1299,7 @@ function InlineComposer({
 }
 
 function ReaderShell({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex h-full min-w-0 flex-col">
-      <div className="drag-region h-11 shrink-0 border-b border-(--te-border)" />
-      {children}
-    </div>
-  );
+  return <div className="flex h-full min-w-0 flex-col">{children}</div>;
 }
 
 export function MessageReader({
@@ -1453,8 +1443,8 @@ export function MessageReader({
     return (
       <ReaderShell>
         <div className="flex flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
-          <span className="text-[15px] font-bold text-(--te-text)">Select a conversation</span>
-          <span className="text-[13px] text-(--te-muted)">
+          <span className="text-sm font-medium text-foreground">Select a conversation</span>
+          <span className="text-sm text-muted-foreground">
             Choose a message from the list to read it here.
           </span>
         </div>
@@ -1466,9 +1456,9 @@ export function MessageReader({
     return (
       <ReaderShell>
         <div className="flex flex-col gap-3 p-5">
-          <div className="h-5 w-64 animate-pulse rounded-[3px] bg-(--te-ctl)" />
-          <div className="h-4 w-48 animate-pulse rounded-[3px] bg-(--te-hover)" />
-          <div className="h-4 w-40 animate-pulse rounded-[3px] bg-(--te-hover)" />
+          <div className="h-5 w-64 animate-skeleton rounded-sm bg-secondary" />
+          <div className="h-4 w-48 animate-skeleton rounded-sm bg-accent-surface" />
+          <div className="h-4 w-40 animate-skeleton rounded-sm bg-accent-surface" />
         </div>
       </ReaderShell>
     );
@@ -1478,8 +1468,8 @@ export function MessageReader({
     return (
       <ReaderShell>
         <div className="flex flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
-          <span className="text-[15px] font-bold text-(--te-text)">Could not load message</span>
-          <span className="text-[13px] text-(--te-muted)">
+          <span className="text-sm font-medium text-foreground">Could not load message</span>
+          <span className="text-sm text-muted-foreground">
             The message could not be retrieved. Try again.
           </span>
         </div>
@@ -1681,16 +1671,16 @@ export function MessageReader({
     });
   };
 
-  const groupDivider = <span className="mx-1 h-5 w-px shrink-0 bg-(--te-border)" aria-hidden />;
+  const groupDivider = <span className="mx-1 h-5 w-px shrink-0 bg-border" aria-hidden />;
 
   return (
     <>
       <div className="flex h-full min-w-0 flex-col">
         {/* Conversation header */}
-        <div className="drag-region flex h-11 shrink-0 items-center gap-1 border-b border-(--te-border) px-4">
+        <div className="drag-region flex h-11 shrink-0 items-center gap-1 border-b border-border px-4">
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
-              <span className="truncate text-[15px] font-bold leading-tight tracking-tight text-(--te-strong)">
+              <span className="truncate text-sm font-medium leading-tight text-foreground">
                 {message.subject || "(no subject)"}
               </span>
               {message.labelIds.includes("INBOX") ||
@@ -1720,7 +1710,7 @@ export function MessageReader({
                 </span>
               ) : null}
             </div>
-            <div className="te-label truncate leading-tight text-(--te-muted)">
+            <div className="truncate text-xs leading-tight text-muted-foreground">
               {isThread ? `${rows.length} messages` : formatFullDate(message.date)}
             </div>
           </div>
@@ -1743,7 +1733,11 @@ export function MessageReader({
 
           {groupDivider}
 
-          {isTrashed ? null : (isThread ? rows.some((m) => m.labelIds.includes("INBOX")) : message.labelIds.includes("INBOX")) ? (
+          {isTrashed ? null : (
+              isThread
+                ? rows.some((m) => m.labelIds.includes("INBOX"))
+                : message.labelIds.includes("INBOX")
+            ) ? (
             <HintTooltip label="Archive" hint="E">
               <IconBtn
                 label="Archive"
@@ -1852,21 +1846,19 @@ export function MessageReader({
         </div>
 
         {isTrashed ? (
-          <div className="mx-5 mt-3 flex shrink-0 items-center gap-2 rounded-[6px] border border-(--te-outline) bg-(--te-ctl) px-3 py-2">
-            <Trash2Icon className="size-3.5 shrink-0 text-(--te-muted)" />
-            <span className="te-label text-(--te-muted)">This conversation is in the Trash</span>
+          <div className="mx-5 mt-3 flex shrink-0 items-center gap-2 rounded-lg border border-warning/32 bg-warning-surface px-3 py-2">
+            <Trash2Icon className="size-3.5 shrink-0 text-warning-foreground" />
+            <span className="text-xs text-warning-foreground">
+              This conversation is in the Trash
+            </span>
             <span className="flex-1" />
-            <button
-              type="button"
-              onClick={handleUntrash}
-              className="te-label h-6 shrink-0 rounded-[4px] border border-(--te-outline) px-2 text-(--te-text) hover:border-(--te-outline-hover) hover:text-(--te-strong)"
-            >
+            <button type="button" onClick={handleUntrash} className={buttonClass("outline", "xs")}>
               Restore
             </button>
             <button
               type="button"
               onClick={() => setConfirmDeleteOpen(true)}
-              className="te-label h-6 shrink-0 rounded-[4px] border border-(--te-outline) px-2 text-(--red) hover:border-(--te-outline-hover)"
+              className={buttonClass("outline", "xs", "text-destructive-foreground")}
             >
               Delete forever
             </button>
@@ -1874,7 +1866,7 @@ export function MessageReader({
         ) : null}
 
         {/* Conversation */}
-        <div className="te-scroll min-h-0 flex-1 overflow-y-auto pb-2" onMouseUp={onParentMouseUp}>
+        <div className="min-h-0 flex-1 overflow-y-auto pb-2" onMouseUp={onParentMouseUp}>
           {rows.map((m, i) => {
             const prev = rows[i - 1];
             const newDay = !prev || dayKey(prev.date) !== dayKey(m.date);
@@ -1893,13 +1885,16 @@ export function MessageReader({
                     onSearchSender={onSearchSender}
                   />
                 ) : (
-                  <CollapsedRow accountId={accountId} summary={m} onExpand={() => toggleExpanded(m.id)} />
+                  <CollapsedRow
+                    accountId={accountId}
+                    summary={m}
+                    onExpand={() => toggleExpanded(m.id)}
+                  />
                 )}
               </div>
             );
           })}
         </div>
-
 
         {/* In-thread composer, hidden until replying/forwarding */}
         {lastRow && inline ? (
@@ -1930,9 +1925,7 @@ export function MessageReader({
         confirmVariant="accent"
         onConfirm={handleDeleteForever}
       >
-        <Text variant="small">
-          Permanently delete this conversation? This cannot be undone.
-        </Text>
+        <Text variant="small">Permanently delete this conversation? This cannot be undone.</Text>
       </Dialog>
     </>
   );

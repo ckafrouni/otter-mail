@@ -35,7 +35,9 @@ export async function getCachedAttachment(
   attachmentId: string,
 ): Promise<Buffer | null> {
   try {
-    const buf = await fs.readFile(path.join(await getDir(), keyFor(accountId, messageId, attachmentId)));
+    const buf = await fs.readFile(
+      path.join(await getDir(), keyFor(accountId, messageId, attachmentId)),
+    );
     return buf.length > 0 ? buf : null;
   } catch {
     return null;
@@ -62,7 +64,10 @@ export async function putCachedAttachment(
   bytes: Buffer,
 ): Promise<void> {
   try {
-    await fs.writeFile(path.join(await getDir(), keyFor(accountId, messageId, attachmentId)), bytes);
+    await fs.writeFile(
+      path.join(await getDir(), keyFor(accountId, messageId, attachmentId)),
+      bytes,
+    );
   } catch {
     // best-effort
   }

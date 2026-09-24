@@ -66,7 +66,10 @@ const READ_TRIGGER_COOLDOWN_MS = 20_000;
     Non-forced calls (read-path triggers) are skipped during the post-sync cooldown. */
 export function syncAccount(accountId: string, opts?: { force?: boolean }): void {
   if (running.has(accountId)) return;
-  if (!opts?.force && Date.now() - (lastFinishedAt.get(accountId) ?? 0) < READ_TRIGGER_COOLDOWN_MS) {
+  if (
+    !opts?.force &&
+    Date.now() - (lastFinishedAt.get(accountId) ?? 0) < READ_TRIGGER_COOLDOWN_MS
+  ) {
     return;
   }
   running.add(accountId);
@@ -97,9 +100,15 @@ export function configureAutoSync(intervalSeconds: number): void {
     autoSyncTimer = null;
   }
   if (intervalSeconds > 0) {
-    autoSyncTimer = setInterval(() => void syncAllAccounts({ force: true }), intervalSeconds * 1000);
+    autoSyncTimer = setInterval(
+      () => void syncAllAccounts({ force: true }),
+      intervalSeconds * 1000,
+    );
   }
-  logger.info("mail-sync", `auto-sync ${intervalSeconds > 0 ? `every ${intervalSeconds}s` : "disabled"}`);
+  logger.info(
+    "mail-sync",
+    `auto-sync ${intervalSeconds > 0 ? `every ${intervalSeconds}s` : "disabled"}`,
+  );
 }
 
 async function runSync(accountId: string): Promise<void> {

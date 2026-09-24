@@ -7,7 +7,9 @@ import { NewMessageView } from "./gmail/new-message-view";
 import { CommandPalette } from "./gmail/command-palette";
 import { HermesChatPanel } from "./gmail/hermes-chat";
 import { ShortcutsHelpDialog } from "./gmail/shortcuts-help-dialog";
-import { TopBar } from "./gmail/top-bar";
+import { TitleControls, WindowTitle } from "./gmail/top-bar";
+import { SettingsPage, type SettingsRoute } from "./settings/settings-page";
+import { SettingsNav, settingsSectionLabel } from "./settings/settings-nav";
 import { isTypingTarget } from "./gmail/keyboard";
 import {
   useAccounts,
@@ -97,16 +99,18 @@ function PaneResizer({ onPointerDown }: { onPointerDown: (e: ReactPointerEvent) 
       className="group flex w-1 shrink-0 cursor-col-resize justify-center"
       aria-hidden
     >
-      <div className="w-px group-hover:bg-(--te-outline)" />
+      <div className="w-px transition-colors group-hover:bg-input" />
     </div>
   );
 }
 
-/** Panel card on the device-body frame; the list stays opaque, sidebar and
-    reader are glass (message bodies pop as opaque cards on the material). */
-const PANEL_FRAME = "overflow-hidden rounded-[8px] border border-(--te-border)";
-const PANEL_CARD = `${PANEL_FRAME} bg-(--te-card)`;
-const PANEL_CARD_GLASS = `${PANEL_FRAME} bg-(--te-card-glass)`;
+/** Flush panes separated by hairlines: grained sidebar, canvas list and
+    reader, card-toned chat column. */
+const PANE = "min-h-0 overflow-hidden";
+const PANE_SIDEBAR = `${PANE} surface-grain border-r border-sidebar-line bg-sidebar-surface text-sidebar-foreground`;
+const PANE_LIST = `${PANE} border-r border-border bg-canvas`;
+const PANE_MAIN = `${PANE} bg-canvas`;
+const PANE_CHAT = `${PANE} border-l border-border bg-card`;
 
 export function HomeView() {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
@@ -122,6 +126,43 @@ export function HomeView() {
   const [mailtoSeq, setMailtoSeq] = useState(0);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  // In-app settings page; null = mail. Opened from the sidebar footer, ⌘,
+  // (menu accelerator → backend broadcast), or any window's deep link.
+  const [settingsRoute, setSettingsRoute] = useState<SettingsRoute | null>(null);
+  const settingsRouteRef = useRef(settingsRoute);
+  settingsRouteRef.current = settingsRoute;
+  useEffect(() => {
+    const pull = async () => {
+      try {
+        const target = await gmailApi.getSettingsTarget();
+        if (!target) return;
+        console.log("[HomeView:openSettings]", { pane: target.pane });
+        setSettingsRoute({
+          pane: target.pane,
+          viewId: target.viewId ?? null,
+          mailbox: target.mailbox ?? null,
+        });
+      } catch (error) {
+        console.log("[HomeView:getSettingsTarget] failed", { error: String(error) });
+      }
+    };
+    void pull();
+    return window.glazeAPI.glaze.ipc.onNotification("settings:open", () => void pull());
+  }, []);
+  // Escape leaves settings (blurring a focused field first, like a dialog).
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || !settingsRouteRef.current) return;
+      if (isTypingTarget(e)) {
+        (document.activeElement as HTMLElement | null)?.blur();
+        return;
+      }
+      e.preventDefault();
+      setSettingsRoute(null);
+    };
+    window.addEventListener("keydown", down, true);
+    return () => window.removeEventListener("keydown", down, true);
+  }, []);
   const [initialized, setInitialized] = useState(false);
 
   const accountsQuery = useAccounts();
@@ -136,10 +177,19 @@ export function HomeView() {
 
   const globalSync = useGlobalSyncStatus(accountIds);
 
-  const sidebarPane = useStoredWidth("gmail:pane:sidebar", 230, 180, 320);
+  const sidebarPane = useStoredWidth("gmail:pane:sidebar", 256, 224, 400);
   const listPane = useStoredWidth("gmail:pane:list", 400, 300, 640);
   const chatPane = useStoredWidth("gmail:pane:chat", 340, 280, 560, -1);
   const [chatOpen, setChatOpen] = useState(() => localStorage.getItem("gmail:chat-open") === "1");
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => localStorage.getItem("gmail:sidebar-open") !== "0",
+  );
+  const toggleSidebar = () => {
+    setSidebarOpen((open) => {
+      localStorage.setItem("gmail:sidebar-open", open ? "0" : "1");
+      return !open;
+    });
+  };
   // Rows multi-selected in the list, surfaced to the chat panel's context chip.
   const [chatSelection, setChatSelection] = useState<GmailMessageSummary[]>([]);
   const toggleChat = () => {
@@ -169,6 +219,16 @@ export function HomeView() {
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         setPaletteOpen((o) => !o);
+        return;
+      }
+      // ⌘B toggles the sidebar — outside text fields, where it means bold.
+      if (e.key === "b" && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+        if (isTypingTarget(e)) return;
+        e.preventDefault();
+        setSidebarOpen((open) => {
+          localStorage.setItem("gmail:sidebar-open", open ? "0" : "1");
+          return !open;
+        });
         return;
       }
       // ⌘I toggles the Hermes chat panel — but only outside a text field, so
@@ -474,27 +534,18 @@ export function HomeView() {
   // refreshes all accounts via its own list handler (sentinel isn't a real account).
   useAccountSync(isCombined ? null : effectiveAccountId);
 
-  // Per-account branding: selections, badges, the compose button and
-  // the SDK accent all take the active account's color (Combined keeps the
-  // neutral defaults). Set on the document root so portaled dialogs/menus
-  // rebrand too; inline properties win over the injected theme rule.
+  // Per-account branding: the primary (send, unread dot, focus ring) and the
+  // SDK accent take the active account's color; selection surfaces stay
+  // neutral (Combined keeps the default blue). Set on the document root so
+  // portaled dialogs/menus rebrand too; inline properties win over the
+  // injected theme rule.
   const brandAccount = isCombined
     ? null
     : (accounts.find((a) => a.id === effectiveAccountId) ?? null);
   const brand = brandAccount ? getAccountColor(brandAccount) : null;
   useEffect(() => {
     const root = document.documentElement.style;
-    const props = [
-      "--accent",
-      "--accent-contrast",
-      "--te-sel",
-      "--te-sel-fg",
-      "--te-selected",
-      "--te-selected-fg",
-      "--te-badge-bg",
-      "--te-badge-fg",
-      "--te-blue",
-    ];
+    const props = ["--accent", "--accent-contrast", "--primary", "--primary-foreground", "--ring"];
     if (!brand) {
       for (const p of props) root.removeProperty(p);
       return;
@@ -502,13 +553,9 @@ export function HomeView() {
     const contrast = getAccountContrastColor(brand);
     root.setProperty("--accent", brand);
     root.setProperty("--accent-contrast", contrast);
-    root.setProperty("--te-sel", brand);
-    root.setProperty("--te-sel-fg", contrast);
-    root.setProperty("--te-selected", brand);
-    root.setProperty("--te-selected-fg", contrast);
-    root.setProperty("--te-badge-bg", brand);
-    root.setProperty("--te-badge-fg", contrast);
-    root.setProperty("--te-blue", brand);
+    root.setProperty("--primary", brand);
+    root.setProperty("--primary-foreground", contrast);
+    root.setProperty("--ring", brand);
   }, [brand]);
 
   // Resolve the selected view to concrete per-account rules.
@@ -603,7 +650,7 @@ export function HomeView() {
   // No accounts connected
   if (!accountsQuery.isLoading && accounts.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center bg-(--te-card)">
+      <div className="h-full flex items-center justify-center bg-canvas">
         <EmptyState
           title="Connect your Gmail account"
           description="Sign in with Google to start reading your emails."
@@ -625,54 +672,102 @@ export function HomeView() {
   const readerAccount = readerAccountId ?? (isCombined ? firstRealAccountId : effectiveAccountId);
   const hasListTarget = isCombined || effectiveAccountId != null;
 
-  // (c) Device frame: top bar, workspace rail, faceplate content card.
+  // Full-height columns: each pane owns its slice of the title band, so the
+  // separators run from the very top of the window.
+  const syncNow = () => {
+    console.log("[HomeView:syncNow]");
+    for (const id of accountIds) void gmailApi.syncAccount(id).catch(() => {});
+  };
+  const titleControls = (
+    <TitleControls
+      leading={
+        settingsRoute ? (
+          <nav aria-label="Settings" className="min-w-0">
+            <ol className="m-0 flex min-w-0 list-none items-center gap-2 p-0 text-sm">
+              <li className="shrink-0 font-medium text-muted-foreground">Settings</li>
+              <li aria-hidden="true" className="flex shrink-0 items-center text-icon-muted">
+                /
+              </li>
+              <li className="min-w-0 truncate font-medium text-foreground">
+                {settingsSectionLabel(settingsRoute.pane)}
+              </li>
+            </ol>
+          </nav>
+        ) : null
+      }
+      syncing={globalSync.syncing}
+      syncLabel={globalSync.label}
+      // The toggle lives here only while the panel is closed; when open, the
+      // panel header draws it at the same top-right spot. Settings has no panel.
+      showPanelToggle={!chatOpen && !settingsRoute}
+      onToggleChat={toggleChat}
+    />
+  );
   return (
     <>
-      <div className="flex h-full flex-col bg-(--te-frame) text-(--te-text)">
-        <TopBar
-          canGoBack={nav.idx > 0}
-          canGoForward={nav.idx < nav.stack.length - 1}
-          onBack={goBack}
-          onForward={goForward}
-          searchQuery={searchQuery}
-          onSearchChange={handleSearchChange}
-          searchRef={searchRef}
-          syncing={globalSync.syncing}
-          syncLabel={globalSync.label}
-          accounts={accounts}
-          selectedAccountId={effectiveAccountId}
-          onSelectAccount={handleSelectAccount}
-          onAddAccount={() => void handleAddAccount()}
-          onOpenPalette={() => setPaletteOpen(true)}
-          onOpenHelp={() => setHelpOpen(true)}
-          chatOpen={chatOpen}
-          onToggleChat={toggleChat}
-        />
-        {/* Outer bottom corners run concentric with the 26px window radius (4px margin). */}
-        <div className="flex min-h-0 flex-1 px-1 pb-1">
-          <div
-            ref={sidebarPane.paneRef}
-            style={{ width: sidebarPane.width }}
-            className={`${PANEL_CARD_GLASS} shrink-0 rounded-bl-[22px]`}
-          >
-            <AccountsSidebar
-              selectedAccountId={effectiveAccountId}
-              onSelectAccount={handleSelectAccount}
-              selectedLabelId={selectedLabelId}
-              onSelectLabel={handleSelectLabel}
-              views={views}
-              onCompose={() => setComposeOpen(true)}
-            />
-          </div>
-          <PaneResizer onPointerDown={sidebarPane.start} />
-          {hasListTarget ? (
+      <div className="flex h-full bg-canvas text-foreground">
+        <div className="contents">
+          {sidebarOpen ? (
+            <>
+              <div
+                ref={sidebarPane.paneRef}
+                style={{ width: sidebarPane.width }}
+                className={`${PANE_SIDEBAR} flex shrink-0 flex-col`}
+                data-app-sidebar=""
+              >
+                {settingsRoute ? (
+                  <>
+                    <WindowTitle sidebarOpen={sidebarOpen} onToggleSidebar={toggleSidebar} />
+                    <SettingsNav
+                      pane={settingsRoute.pane}
+                      onSelect={(pane) => setSettingsRoute({ pane, viewId: null, mailbox: null })}
+                      onBack={() => setSettingsRoute(null)}
+                      onOpenHelp={() => setHelpOpen(true)}
+                    />
+                  </>
+                ) : (
+                  <AccountsSidebar
+                    sidebarOpen={sidebarOpen}
+                    onToggleSidebar={toggleSidebar}
+                    onOpenSettings={() =>
+                      setSettingsRoute({ pane: "general", viewId: null, mailbox: null })
+                    }
+                    onOpenPalette={() => setPaletteOpen(true)}
+                    onSync={syncNow}
+                    syncing={globalSync.syncing}
+                    selectedAccountId={effectiveAccountId}
+                    onSelectAccount={handleSelectAccount}
+                    selectedLabelId={selectedLabelId}
+                    onSelectLabel={handleSelectLabel}
+                    views={views}
+                    onCompose={() => setComposeOpen(true)}
+                    searchQuery={searchQuery}
+                    onSearchChange={handleSearchChange}
+                    searchRef={searchRef}
+                    searchPlaceholder="Search"
+                  />
+                )}
+              </div>
+              <PaneResizer onPointerDown={sidebarPane.start} />
+            </>
+          ) : null}
+          {hasListTarget && !settingsRoute ? (
             <>
               <div
                 ref={listPane.paneRef}
                 style={{ width: listPane.width }}
-                className={`${PANEL_CARD} shrink-0`}
+                className={`${PANE_LIST} shrink-0`}
               >
                 <MessageList
+                  headerLeading={
+                    sidebarOpen ? null : (
+                      <WindowTitle
+                        sidebarOpen={false}
+                        onToggleSidebar={toggleSidebar}
+                        className="-ml-4 h-auto"
+                      />
+                    )
+                  }
                   accountId={(isCombined ? firstRealAccountId : effectiveAccountId) ?? ""}
                   labelId={selectedLabelId}
                   combined={combined}
@@ -693,58 +788,61 @@ export function HomeView() {
               <PaneResizer onPointerDown={listPane.start} />
             </>
           ) : null}
-          <div
-            className={`${PANEL_CARD_GLASS} min-w-0 flex-1 ${chatOpen ? "" : "rounded-br-[22px]"}`}
-          >
-            {composeOpen && composeAccountId ? (
-              <NewMessageView
-                key={mailtoSeq}
-                accounts={accounts}
-                defaultAccountId={composeAccountId}
-                onClose={() => {
-                  setComposeOpen(false);
-                  setMailtoPrefill(null);
-                }}
-                prefill={mailtoPrefill ?? undefined}
-              />
-            ) : readerAccount ? (
-              <MessageReader
-                accountId={readerAccount}
-                messageId={selectedMessageId}
-                onDeselect={() => {
-                  setSelectedMessageId(null);
-                  setReaderAccountId(null);
-                }}
-                onAdvance={handleReaderAdvance}
-                onOpenChat={openChat}
-                onQuote={(q) => {
-                  // Only reflect selections while the panel is open, so normal
-                  // reading/copying is never hijacked.
-                  if (chatOpen) setPendingQuote(q);
-                }}
-                onComposeTo={(email) => {
-                  setMailtoPrefill({ to: email, cc: "", subject: "", body: "" });
-                  setMailtoSeq((n) => n + 1);
-                  setComposeOpen(true);
-                }}
-                onSearchSender={(email) => handleSearchChange(email)}
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center">
-                <EmptyState
-                  title="No account selected"
-                  description="Select an account from the top bar."
+          <div className={`${PANE_MAIN} flex min-w-0 flex-1 flex-col`}>
+            {titleControls}
+            <div className="flex min-h-0 flex-1 flex-col">
+              {settingsRoute ? (
+                <SettingsPage route={settingsRoute} onNavigate={setSettingsRoute} />
+              ) : composeOpen && composeAccountId ? (
+                <NewMessageView
+                  key={mailtoSeq}
+                  accounts={accounts}
+                  defaultAccountId={composeAccountId}
+                  onClose={() => {
+                    setComposeOpen(false);
+                    setMailtoPrefill(null);
+                  }}
+                  prefill={mailtoPrefill ?? undefined}
                 />
-              </div>
-            )}
+              ) : readerAccount ? (
+                <MessageReader
+                  accountId={readerAccount}
+                  messageId={selectedMessageId}
+                  onDeselect={() => {
+                    setSelectedMessageId(null);
+                    setReaderAccountId(null);
+                  }}
+                  onAdvance={handleReaderAdvance}
+                  onOpenChat={openChat}
+                  onQuote={(q) => {
+                    // Only reflect selections while the panel is open, so normal
+                    // reading/copying is never hijacked.
+                    if (chatOpen) setPendingQuote(q);
+                  }}
+                  onComposeTo={(email) => {
+                    setMailtoPrefill({ to: email, cc: "", subject: "", body: "" });
+                    setMailtoSeq((n) => n + 1);
+                    setComposeOpen(true);
+                  }}
+                  onSearchSender={(email) => handleSearchChange(email)}
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center">
+                  <EmptyState
+                    title="No account selected"
+                    description="Select a mailbox from the sidebar."
+                  />
+                </div>
+              )}
+            </div>
           </div>
-          {chatOpen ? (
+          {chatOpen && !settingsRoute ? (
             <>
               <PaneResizer onPointerDown={chatPane.start} />
               <div
                 ref={chatPane.paneRef}
                 style={{ width: chatPane.width }}
-                className={`${PANEL_CARD} shrink-0 rounded-br-[22px]`}
+                className={`${PANE_CHAT} shrink-0`}
               >
                 <HermesChatPanel
                   accountId={selectedMessageId ? readerAccount : null}

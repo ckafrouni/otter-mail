@@ -1,6 +1,7 @@
 import {
   useState,
   type CSSProperties,
+  type RefObject,
   type DragEvent as ReactDragEvent,
   type ReactNode,
 } from "react";
@@ -29,7 +30,11 @@ import {
   ChevronDownIcon,
   LayersIcon,
   TagIcon,
+  SearchIcon,
   SquarePenIcon,
+  XIcon,
+  CommandIcon,
+  RotateCwIcon,
 } from "lucide-react";
 import {
   useAccounts,
@@ -44,7 +49,8 @@ import type { GmailLabel, MailView } from "./types";
 import { gmailApi } from "./api";
 import { COMBINED_ACCOUNT_ID, useMailViews } from "./custom-views";
 import { buildLabelTree, type LabelTreeNode } from "./label-tree";
-import { UnreadPill, HintTooltip } from "./te-ui";
+import { UnreadPill, HintTooltip, IconBtn } from "./ui";
+import { MailboxSwitcher, WindowTitle } from "./top-bar";
 
 const LABEL_DRAG_MIME = "application/x-gmail-label";
 
@@ -131,7 +137,7 @@ function SkRow({
   dragProps?: RowDragProps;
   dropActive?: boolean;
 }) {
-  const style: CSSProperties = { paddingLeft: 8 + depth * 18 };
+  const style: CSSProperties = { paddingLeft: 10 + depth * 16 };
   return (
     <button
       type="button"
@@ -139,17 +145,40 @@ function SkRow({
       style={style}
       {...dragProps}
       className={[
-        "group flex h-7 w-full items-center gap-2 rounded-[5px] pr-2 text-left text-[13px] leading-none",
+        "group flex h-8 w-full cursor-pointer items-center gap-(--sidebar-control-gap) rounded-[var(--control-radius)] pr-(--sidebar-row-content-inset) text-left text-sm font-medium outline-none transition-[background-color,color] focus-visible:ring-2 focus-visible:ring-focus-ring active:bg-sidebar-row-active",
         selected
-          ? "bg-(--te-selected) font-medium text-(--te-selected-fg)"
-          : "text-(--te-muted) hover:bg-(--te-hover) hover:text-(--te-text)",
-        dropActive ? "ring-1 ring-(--te-blue) bg-(--te-hover)" : "",
+          ? "bg-sidebar-row-selected text-sidebar-foreground"
+          : "text-sidebar-muted-foreground/80 hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+        dropActive ? "bg-sidebar-row-hover ring-1 ring-inset ring-primary/70" : "",
       ].join(" ")}
     >
-      <span className={["shrink-0", selected ? "" : "opacity-80"].join(" ")}>{icon}</span>
+      <span
+        className={[
+          "shrink-0",
+          selected
+            ? "text-sidebar-foreground"
+            : "text-(--sidebar-icon-color) group-hover:text-sidebar-foreground",
+        ].join(" ")}
+      >
+        {icon}
+      </span>
       <span className="min-w-0 flex-1 truncate">{title}</span>
-      {badge != null ? <UnreadPill count={badge} selected={selected} /> : null}
-      {trailing}
+      {trailing ? (
+        // One trailing slot: the count at rest, the row action on hover, so
+        // the action never reserves dead space next to the count.
+        <span className="relative ml-auto flex h-5 min-w-5 shrink-0 items-center justify-end">
+          {badge != null && badge > 0 ? (
+            <span className="group-hover:invisible group-focus-within:invisible">
+              <UnreadPill count={badge} selected={selected} />
+            </span>
+          ) : null}
+          <span className="absolute inset-y-0 right-0 flex items-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
+            {trailing}
+          </span>
+        </span>
+      ) : badge != null ? (
+        <UnreadPill count={badge} selected={selected} />
+      ) : null}
     </button>
   );
 }
@@ -172,11 +201,11 @@ function Section({
 }) {
   const [open, setOpen] = useState(true);
   return (
-    <div className="mt-4">
+    <div className="mt-3">
       <div
         className={[
-          "group flex h-6 items-center gap-1 rounded-md pr-2",
-          dropZone?.active ? "ring-1 ring-(--te-blue) bg-(--te-hover)" : "",
+          "group flex h-7 items-center gap-1 rounded-md pr-1",
+          dropZone?.active ? "bg-sidebar-row-hover ring-1 ring-inset ring-primary/70" : "",
         ].join(" ")}
         onDragOver={dropZone?.onDragOver}
         onDragLeave={dropZone?.onDragLeave}
@@ -185,7 +214,7 @@ function Section({
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="te-label flex h-6 items-center gap-1 rounded px-1.5 text-(--te-faint) hover:text-(--te-text)"
+          className="flex h-7 items-center gap-1 rounded-md px-2.5 text-xs font-medium text-sidebar-muted-foreground/70 hover:text-sidebar-foreground"
           aria-label={`Toggle ${title}`}
         >
           <ChevronDownIcon
@@ -208,7 +237,7 @@ function SectionAddButton({ label, onClick }: { label: string; onClick: () => vo
         type="button"
         aria-label={label}
         onClick={onClick}
-        className="flex size-5 items-center justify-center rounded text-(--te-muted) hover:bg-(--te-ctl) hover:text-(--te-strong)"
+        className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
       >
         <PlusIcon className="size-3.5" />
       </button>
@@ -222,9 +251,9 @@ function AddRow({ label, onClick }: { label: string; onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="flex h-7 w-full items-center gap-2 rounded-[5px] px-2 text-left text-[13px] leading-none text-(--te-muted) hover:bg-(--te-hover) hover:text-(--te-text)"
+      className="flex h-8 w-full items-center gap-2 rounded-[var(--control-radius)] px-2.5 text-left text-sm font-medium text-sidebar-muted-foreground/80 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
     >
-      <span className="flex size-4 items-center justify-center rounded bg-(--te-ctl)">
+      <span className="flex size-4 items-center justify-center rounded-sm border border-sidebar-line">
         <PlusIcon className="size-3" />
       </span>
       <span className="truncate">{label}</span>
@@ -267,8 +296,10 @@ function ViewRow({
               tabIndex={-1}
               aria-label={`Edit ${view.name}`}
               className={[
-                "shrink-0 opacity-0 group-hover:opacity-100",
-                selected ? "text-(--te-selected-fg)/70" : "text-(--te-faint) hover:text-(--te-strong)",
+                "flex shrink-0 items-center",
+                selected
+                  ? "text-sidebar-foreground/70"
+                  : "text-muted-foreground hover:text-foreground",
               ].join(" ")}
               onClick={(e) => {
                 e.stopPropagation();
@@ -304,7 +335,7 @@ function labelIcon(label?: GmailLabel): ReactNode {
   if (color) {
     return <TagIcon className="size-4 fill-current" style={{ color }} />;
   }
-  return <TagIcon className="size-4 text-(--te-faint)" />;
+  return <TagIcon className="size-4" />;
 }
 
 type LabelActions = {
@@ -439,21 +470,42 @@ function LabelNode({
 }
 
 type AccountsSidebarProps = {
+  sidebarOpen: boolean;
+  onToggleSidebar: () => void;
+  /** Footer utilities. */
+  onOpenSettings: () => void;
+  onOpenPalette: () => void;
+  onSync: () => void;
+  syncing: boolean;
   selectedAccountId: string | null;
   onSelectAccount: (accountId: string) => void;
   selectedLabelId: string;
   onSelectLabel: (labelId: string) => void;
   views: MailView[];
   onCompose: () => void;
+  searchQuery: string;
+  onSearchChange: (q: string) => void;
+  searchRef: RefObject<HTMLInputElement | null>;
+  searchPlaceholder: string;
 };
 
 export function AccountsSidebar({
+  sidebarOpen,
+  onToggleSidebar,
+  onOpenSettings,
+  onOpenPalette,
+  onSync,
+  syncing,
   selectedAccountId,
   onSelectAccount,
   selectedLabelId,
   onSelectLabel,
   views,
   onCompose,
+  searchQuery,
+  onSearchChange,
+  searchRef,
+  searchPlaceholder,
 }: AccountsSidebarProps) {
   const isCombined = selectedAccountId === COMBINED_ACCOUNT_ID;
 
@@ -549,7 +601,10 @@ export function AccountsSidebar({
     const target = colorTarget;
     setColorTarget(null);
     if (!target || !selectedAccountId) return;
-    console.log("[AccountsSidebar:recolorLabel]", { label: target.name, color: color.backgroundColor });
+    console.log("[AccountsSidebar:recolorLabel]", {
+      label: target.name,
+      color: color.backgroundColor,
+    });
     updateLabel
       .mutateAsync({ accountId: selectedAccountId, labelId: target.id, color })
       .catch(() => toast.error("Could not change the color"));
@@ -599,21 +654,54 @@ export function AccountsSidebar({
 
   return (
     <div className="flex h-full min-w-0 flex-col">
-      {/* Header: mailbox switcher + compose */}
-      <div className="drag-region flex h-11 shrink-0 items-center justify-between gap-2 border-b border-(--te-border) px-3">
-        <span className="flex-1" />
+      <WindowTitle sidebarOpen={sidebarOpen} onToggleSidebar={onToggleSidebar} />
 
-        <button
-          type="button"
-          onClick={onCompose}
-          aria-label="New message"
-          className="flex size-7 shrink-0 items-center justify-center rounded-full bg-(--te-selected) text-(--te-selected-fg) shadow-sm hover:opacity-90"
-        >
-          <SquarePenIcon className="size-3.5" />
-        </button>
+      {/* Mailbox switcher row (All mailboxes / an account). */}
+      <div className="shrink-0 px-(--sidebar-content-inset) pb-1">
+        <MailboxSwitcher
+          accounts={accounts}
+          selectedAccountId={selectedAccountId}
+          onSelectAccount={onSelectAccount}
+        />
       </div>
 
-      <div className="te-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-4 pt-3">
+      {/* Search row + compose, like the workspace sidebar. */}
+      <div className="flex h-10 shrink-0 items-center gap-1 px-(--sidebar-content-inset)">
+        <label className="group/search flex h-8 min-w-0 flex-1 cursor-text items-center gap-2 rounded-[var(--control-radius)] px-(--sidebar-row-content-inset) transition-colors hover:bg-sidebar-row-hover focus-within:bg-sidebar-row-hover">
+          <SearchIcon className="size-4 shrink-0 text-(--sidebar-icon-color) group-focus-within/search:text-sidebar-foreground" />
+          <input
+            ref={searchRef}
+            value={searchQuery}
+            onChange={(e) => onSearchChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                onSearchChange("");
+                e.currentTarget.blur();
+              }
+            }}
+            placeholder={searchPlaceholder}
+            aria-label="Search mail"
+            className="min-w-0 flex-1 bg-transparent text-sm font-medium text-sidebar-foreground outline-none placeholder:text-sidebar-muted-foreground"
+          />
+          {searchQuery ? (
+            <button
+              type="button"
+              onClick={() => onSearchChange("")}
+              aria-label="Clear search"
+              className="shrink-0 text-muted-foreground hover:text-foreground"
+            >
+              <XIcon className="size-3.5" />
+            </button>
+          ) : null}
+        </label>
+        <HintTooltip label="New message" hint="C">
+          <IconBtn label="New message" onClick={onCompose}>
+            <SquarePenIcon className="size-4" />
+          </IconBtn>
+        </HintTooltip>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-(--sidebar-content-inset) pb-4 pt-1">
         {isCombined ? (
           <>
             {views
@@ -715,6 +803,26 @@ export function AccountsSidebar({
         )}
       </div>
 
+      {/* Footer utilities, like the workspace sidebar's bottom row. */}
+      <div className="flex shrink-0 items-center gap-1 px-(--sidebar-content-inset) py-1">
+        <HintTooltip label="Settings" hint="⌘,">
+          <IconBtn label="Settings" onClick={onOpenSettings} className="size-8">
+            <SettingsIcon className="size-4" />
+          </IconBtn>
+        </HintTooltip>
+        <HintTooltip label="Jump to anything" hint="⌘K">
+          <IconBtn label="Command palette" onClick={onOpenPalette} className="size-8">
+            <CommandIcon className="size-4" />
+          </IconBtn>
+        </HintTooltip>
+        <span className="flex-1" />
+        <HintTooltip label={syncing ? "Syncing…" : "Sync now"}>
+          <IconBtn label="Sync now" onClick={onSync} disabled={syncing} className="size-8">
+            <RotateCwIcon className={syncing ? "size-4 animate-spin" : "size-4"} />
+          </IconBtn>
+        </HintTooltip>
+      </div>
+
       <Dialog
         open={createLabelOpen}
         onOpenChange={setCreateLabelOpen}
@@ -776,7 +884,7 @@ export function AccountsSidebar({
                 "size-6 rounded-full",
                 colorTarget?.color?.backgroundColor === color.backgroundColor
                   ? "ring-2 ring-accent ring-offset-1"
-                  : "hover:ring-2 hover:ring-(--te-faint)",
+                  : "hover:ring-2 hover:ring-input",
               ].join(" ")}
               style={{ backgroundColor: color.backgroundColor }}
             />

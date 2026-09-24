@@ -38,7 +38,7 @@ export function SenderAvatar({
   });
   const photo = photoQuery.data?.dataUrl ?? null;
 
-  const sizeClasses = size === "sm" ? "size-6 text-[11px] rounded-[4px]" : "size-9 text-[15px] rounded-[5px]";
+  const sizeClasses = size === "sm" ? "size-6 text-2xs rounded-sm" : "size-9 text-sm rounded-md";
 
   if (photo) {
     return (
@@ -62,7 +62,7 @@ export function SenderAvatar({
   return (
     <span
       className={[
-        "shrink-0 flex items-center justify-center font-bold select-none",
+        "shrink-0 flex items-center justify-center font-semibold select-none",
         sizeClasses,
         className ?? "",
       ].join(" ")}

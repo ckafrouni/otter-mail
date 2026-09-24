@@ -90,13 +90,14 @@ export async function listLabels(accountId: string): Promise<GmailLabel[]> {
   for (let i = 0; i < rawLabels.length; i += CONCURRENCY) {
     const batch = rawLabels.slice(i, i + CONCURRENCY);
     const fetched = await Promise.all(
-      batch.map((l) =>
-        gmailFetch(accountId, `/labels/${l.id}`) as Promise<{
-          id: string;
-          messagesUnread?: number;
-          messagesTotal?: number;
-          color?: { backgroundColor?: string; textColor?: string };
-        }>,
+      batch.map(
+        (l) =>
+          gmailFetch(accountId, `/labels/${l.id}`) as Promise<{
+            id: string;
+            messagesUnread?: number;
+            messagesTotal?: number;
+            color?: { backgroundColor?: string; textColor?: string };
+          }>,
       ),
     );
     for (const label of fetched) {
@@ -147,7 +148,11 @@ export async function createLabel(accountId: string, name: string): Promise<Gmai
  */
 export async function updateLabel(
   accountId: string,
-  params: { labelId: string; name?: string; color?: { backgroundColor: string; textColor: string } },
+  params: {
+    labelId: string;
+    name?: string;
+    color?: { backgroundColor: string; textColor: string };
+  },
 ): Promise<{ ok: true }> {
   const body: Record<string, unknown> = {};
   if (params.name) body.name = params.name;
@@ -198,10 +203,7 @@ function parseFrom(from: string): { fromName: string; fromEmail: string } {
 
 // ── getHeaderValue ─────────────────────────────────────────────────────────────
 
-function getHeaderValue(
-  headers: { name: string; value: string }[],
-  name: string,
-): string {
+function getHeaderValue(headers: { name: string; value: string }[], name: string): string {
   return headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? "";
 }
 
@@ -275,7 +277,9 @@ export async function fetchMetadataForIds(
         }
       }),
     );
-    results.push(...fetched.filter((m): m is RawMessageMetadata => m !== null).map(mapMessageSummary));
+    results.push(
+      ...fetched.filter((m): m is RawMessageMetadata => m !== null).map(mapMessageSummary),
+    );
   }
 
   return results;
@@ -440,11 +444,11 @@ interface RawMessageFull extends RawMessageMetadata {
   };
 }
 
-export async function getMessage(accountId: string, messageId: string): Promise<GmailMessageDetail> {
-  const msg = (await gmailFetch(
-    accountId,
-    `/messages/${messageId}?format=full`,
-  )) as RawMessageFull;
+export async function getMessage(
+  accountId: string,
+  messageId: string,
+): Promise<GmailMessageDetail> {
+  const msg = (await gmailFetch(accountId, `/messages/${messageId}?format=full`)) as RawMessageFull;
 
   const summary = mapMessageSummary(msg);
   const headers = msg.payload?.headers ?? [];
@@ -763,7 +767,11 @@ function buildMime(params: OutgoingMessage): string {
 }
 
 function encodeBase64url(data: string): string {
-  return Buffer.from(data).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return Buffer.from(data)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
 export async function sendMessage(
@@ -839,10 +847,14 @@ export async function saveDraft(
   const message: { raw: string; threadId?: string } = { raw: encodeBase64url(raw) };
   if (params.threadId) message.threadId = params.threadId;
 
-  const res = (await gmailFetch(accountId, params.draftId ? `/drafts/${params.draftId}` : "/drafts", {
-    method: params.draftId ? "PUT" : "POST",
-    body: JSON.stringify(params.draftId ? { id: params.draftId, message } : { message }),
-  })) as { id: string; message?: { id?: string; threadId?: string } };
+  const res = (await gmailFetch(
+    accountId,
+    params.draftId ? `/drafts/${params.draftId}` : "/drafts",
+    {
+      method: params.draftId ? "PUT" : "POST",
+      body: JSON.stringify(params.draftId ? { id: params.draftId, message } : { message }),
+    },
+  )) as { id: string; message?: { id?: string; threadId?: string } };
   return {
     draftId: res.id,
     messageId: res.message?.id,
@@ -918,10 +930,7 @@ export async function getAttachmentData(
     throw new Error(`Attachment ${attachmentId} returned no data.`);
   }
 
-  const buffer = Buffer.from(
-    data.data.replace(/-/g, "+").replace(/_/g, "/"),
-    "base64",
-  );
+  const buffer = Buffer.from(data.data.replace(/-/g, "+").replace(/_/g, "/"), "base64");
   await putCachedAttachment(accountId, messageId, attachmentId, buffer);
   return { base64: buffer.toString("base64"), size: buffer.length };
 }
@@ -986,7 +995,8 @@ export async function proxyRemoteImage(url: string): Promise<{ dataUrl: string }
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const contentType = res.headers.get("content-type") ?? "";
-    if (!contentType.startsWith("image/")) throw new Error(`not an image: ${contentType || "unknown"}`);
+    if (!contentType.startsWith("image/"))
+      throw new Error(`not an image: ${contentType || "unknown"}`);
     const declared = Number(res.headers.get("content-length") ?? "0");
     if (declared > MAX_PROXY_IMAGE_BYTES) throw new Error("image too large");
     const bytes = Buffer.from(await res.arrayBuffer());

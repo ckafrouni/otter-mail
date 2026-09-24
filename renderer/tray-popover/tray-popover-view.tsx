@@ -1,24 +1,30 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { injectActiveTheme, SegmentedControl, SegmentedControlItem } from "@glaze/core/components";
-import { SquarePen, RotateCw, ExternalLink, Power, ArchiveIcon, Trash2Icon } from "lucide-react";
-import { SenderAvatar } from "../main/gmail/sender-avatar";
+import { injectActiveTheme } from "@glaze/core/components";
+import {
+  ArchiveIcon,
+  PowerIcon,
+  RotateCwIcon,
+  SquareArrowOutUpRightIcon,
+  SquarePenIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { getAccountColor, getAccountDisplayName } from "../main/gmail/account-style";
 import { decodeEntities } from "../main/gmail/text";
-import { IconBtn, HintTooltip, UnreadPill } from "../main/gmail/te-ui";
-import { TE_DARK_THEME, TE_LIGHT_THEME } from "../main/gmail/te-theme";
+import { HintTooltip, IconBtn, buttonClass, cn } from "../main/gmail/ui";
+import { MailboxSwitcher } from "../main/gmail/top-bar";
+import { COMBINED_ACCOUNT_ID } from "../main/gmail/custom-views";
+import { APP_DARK_THEME, APP_LIGHT_THEME } from "../main/gmail/app-theme";
 import { gmailApi } from "../main/gmail/api";
-import { trayApi, type TrayAccountSnapshot } from "./api";
+import { trayApi } from "./api";
 import type { GmailMessageSummary } from "../main/gmail/types";
 
-const ALL_TAB = "__all__";
-
-// Same TE glass skin as the main/message windows, following system appearance.
-function applyTeTheme() {
+// Same Otter palette as the main and message windows, following the system appearance.
+function applyAppTheme() {
   const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  injectActiveTheme(dark ? TE_DARK_THEME : TE_LIGHT_THEME);
+  injectActiveTheme(dark ? APP_DARK_THEME : APP_LIGHT_THEME);
 }
-applyTeTheme();
+applyAppTheme();
 
 function formatRelativeDate(timestamp: number): string {
   const date = new Date(timestamp);
@@ -30,40 +36,7 @@ function formatRelativeDate(timestamp: number): string {
   return date.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-/** Circular colored tab, same shape as the main window's account switcher. */
-function TabKnob({
-  label,
-  selected,
-  onClick,
-  background,
-  children,
-}: {
-  label: string;
-  selected: boolean;
-  onClick: () => void;
-  background: string;
-  children: ReactNode;
-}) {
-  return (
-    <HintTooltip label={label}>
-      <button
-        type="button"
-        aria-label={label}
-        onClick={onClick}
-        className={[
-          "flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white",
-          selected
-            ? "ring-2 ring-(--te-strong) ring-offset-1 ring-offset-(--te-frame)"
-            : "opacity-75 hover:opacity-100",
-        ].join(" ")}
-        style={{ background }}
-      >
-        {children}
-      </button>
-    </HintTooltip>
-  );
-}
-
+/** One conversation, in the main list's row recipe (no avatar, quiet meta). */
 function InboxRow({
   message,
   accountColor,
@@ -81,96 +54,128 @@ function InboxRow({
   onArchive: () => void;
   onTrash: () => void;
 }) {
+  const unread = message.threadUnread ?? message.unread;
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="group flex w-full items-start gap-2 rounded-[6px] px-2 py-1.5 text-left hover:bg-(--te-hover)"
-    >
-      <SenderAvatar
-        name={message.fromName}
-        email={message.fromEmail}
-        accountId={message.accountId}
-        size="sm"
-      />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-[12.5px] font-semibold text-(--te-strong)">
+    <div className="py-0.5">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onOpen}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onOpen();
+          }
+        }}
+        className="group relative flex w-full cursor-pointer select-none flex-col gap-px rounded-md px-(--sidebar-row-content-inset) py-2 text-left outline-none transition-colors hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-focus-ring"
+      >
+        <div className="flex h-5 min-w-0 items-center gap-1.5">
+          {unread ? (
+            <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
+          ) : null}
+          <span
+            className={cn(
+              "min-w-0 flex-1 truncate text-sm leading-snug",
+              unread ? "font-semibold text-foreground" : "font-medium text-foreground/90",
+            )}
+          >
             {message.fromName || message.fromEmail}
           </span>
-          <span className="relative flex h-4 shrink-0 items-center">
-            <span className="flex items-center gap-1.5 group-hover:pointer-events-none group-hover:opacity-0">
+          {/* Meta at rest; row actions take its place on hover. */}
+          <span className="relative flex h-5 shrink-0 items-center">
+            <span className="flex items-center gap-1.5 group-focus-within:invisible group-hover:invisible">
               {showAccountLabel ? (
-                <span className="truncate max-w-20 text-[10.5px] font-semibold" style={{ color: accountColor }}>
+                <span
+                  className="max-w-20 truncate text-xs font-medium"
+                  style={{ color: accountColor }}
+                >
                   {accountName}
                 </span>
               ) : null}
-              <span className="shrink-0 text-[10.5px] text-(--te-muted)">
+              <span className="text-xs tabular-nums text-muted-foreground/55">
                 {formatRelativeDate(message.date)}
               </span>
             </span>
-            <span className="absolute inset-y-0 right-0 flex items-center gap-1.5 opacity-0 group-hover:opacity-100">
-              <button
-                type="button"
-                aria-label="Archive"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onArchive();
-                }}
-                onMouseDown={(e) => e.stopPropagation()}
-                className="shrink-0 text-(--te-muted) hover:text-(--te-strong)"
-              >
-                <ArchiveIcon className="size-3.5" />
-              </button>
-              <button
-                type="button"
-                aria-label="Move to Trash"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onTrash();
-                }}
-                onMouseDown={(e) => e.stopPropagation()}
-                className="shrink-0 text-(--te-muted) hover:text-(--red)"
-              >
-                <Trash2Icon className="size-3.5" />
-              </button>
+            <span className="absolute inset-y-0 right-0 flex items-center gap-0.5 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
+              <HintTooltip label="Archive">
+                <IconBtn
+                  label="Archive"
+                  className="size-6"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onArchive();
+                  }}
+                >
+                  <ArchiveIcon className="size-3.5" />
+                </IconBtn>
+              </HintTooltip>
+              <HintTooltip label="Move to Trash">
+                <IconBtn
+                  label="Move to Trash"
+                  className="size-6 hover:text-destructive"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onTrash();
+                  }}
+                >
+                  <Trash2Icon className="size-3.5" />
+                </IconBtn>
+              </HintTooltip>
             </span>
           </span>
         </div>
-        <div className="truncate text-[12px] text-(--te-text)">
+        <div
+          className={cn(
+            "truncate text-sm leading-snug",
+            unread ? "font-medium text-foreground/90" : "text-muted-foreground",
+          )}
+        >
           {message.subject || "(no subject)"}
         </div>
-        <div className="truncate text-[11.5px] text-(--te-muted)">
-          {decodeEntities(message.snippet)}
+        <div className="truncate text-xs leading-snug text-muted-foreground/70">
+          {decodeEntities(message.snippet) || " "}
         </div>
       </div>
-    </button>
+    </div>
   );
 }
 
 /**
- * The tray popover's mini inbox: one tab per connected account (plus "All"
- * when there's more than one) showing that account's unread INBOX threads.
- * Opening a row hands off to the standalone message window; everything else
- * routes through main/handlers/tray-popover.ts.
+ * The menu-bar popover: a pocket version of the main window. A mailbox
+ * switcher and Unread toggle up top, the conversation list, and a footer of
+ * utilities. Opening a row hands off to the standalone message window;
+ * everything else routes through main/handlers/tray-popover.ts.
  */
 export function TrayPopoverView() {
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<string>(ALL_TAB);
+  const [mailbox, setMailbox] = useState<string>(COMBINED_ACCOUNT_ID);
   const [syncing, setSyncing] = useState(false);
-  // Same "All / Unread" mode switcher as the main window's message list.
-  const [mode, setMode] = useState<"all" | "unread">("unread");
+  const [unreadOnly, setUnreadOnly] = useState(true);
 
   const snapshotQuery = useQuery({
-    queryKey: ["tray:snapshot", mode],
-    queryFn: () => trayApi.getSnapshot(mode === "unread"),
+    queryKey: ["tray:snapshot", unreadOnly],
+    queryFn: () => trayApi.getSnapshot(unreadOnly),
   });
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => applyTeTheme();
+    const onChange = () => applyAppTheme();
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  // Reopening the popover re-activates its window, and WebKit restores focus
+  // to the last-clicked control drawn as keyboard focus (a ring around the
+  // mailbox switcher). Start every opening with nothing focused.
+  useEffect(() => {
+    const clearFocus = () =>
+      requestAnimationFrame(() => {
+        const el = document.activeElement;
+        if (el instanceof HTMLElement && el !== document.body) el.blur();
+      });
+    clearFocus();
+    window.addEventListener("focus", clearFocus);
+    return () => window.removeEventListener("focus", clearFocus);
   }, []);
 
   useEffect(() => {
@@ -185,41 +190,39 @@ export function TrayPopoverView() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") void trayApi.hide();
+      if (e.key === "Escape" && !e.defaultPrevented) void trayApi.hide();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const accounts = snapshotQuery.data?.accounts ?? [];
+  const snapshots = snapshotQuery.data?.accounts ?? [];
+  const accounts = snapshots.map((s) => s.account);
   const totalUnread = snapshotQuery.data?.totalUnread ?? 0;
-  const showTabs = accounts.length > 1;
-  const effectiveTab = showTabs ? activeTab : (accounts[0]?.account.id ?? ALL_TAB);
-
-  const activeAccount: TrayAccountSnapshot | null =
-    accounts.find((a) => a.account.id === effectiveTab) ?? null;
+  const combined = accounts.length > 1;
+  // A single account has no "All mailboxes"; a vanished account falls back.
+  const effectiveMailbox =
+    combined && (mailbox === COMBINED_ACCOUNT_ID || accounts.some((a) => a.id === mailbox))
+      ? mailbox
+      : (accounts[0]?.id ?? COMBINED_ACCOUNT_ID);
+  const isCombined = effectiveMailbox === COMBINED_ACCOUNT_ID;
 
   const rows = useMemo(() => {
-    if (effectiveTab === ALL_TAB || !activeAccount) {
-      return accounts
-        .flatMap((a) =>
-          a.messages.map((message) => ({
-            message,
-            accountId: a.account.id,
-            accountColor: getAccountColor(a.account),
-            accountName: getAccountDisplayName(a.account),
-          })),
-        )
-        .sort((a, b) => b.message.date - a.message.date)
-        .slice(0, 25);
-    }
-    return activeAccount.messages.map((message) => ({
-      message,
-      accountId: activeAccount.account.id,
-      accountColor: getAccountColor(activeAccount.account),
-      accountName: getAccountDisplayName(activeAccount.account),
-    }));
-  }, [effectiveTab, activeAccount, accounts]);
+    const scoped = isCombined
+      ? snapshots
+      : snapshots.filter((s) => s.account.id === effectiveMailbox);
+    return scoped
+      .flatMap((s) =>
+        s.messages.map((message) => ({
+          message,
+          accountId: s.account.id,
+          accountColor: getAccountColor(s.account),
+          accountName: getAccountDisplayName(s.account),
+        })),
+      )
+      .sort((a, b) => b.message.date - a.message.date)
+      .slice(0, 40);
+  }, [snapshots, isCombined, effectiveMailbox]);
 
   async function handleSync() {
     if (syncing) return;
@@ -243,47 +246,63 @@ export function TrayPopoverView() {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-[10px] bg-(--te-frame) text-(--te-text)">
-      <div className="flex shrink-0 items-center justify-between px-3 pb-1 pt-3">
-        <span className="te-label text-[13px] font-semibold text-(--te-strong)">OtterMail</span>
-        <UnreadPill count={totalUnread} />
+    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-canvas text-foreground">
+      {/* Header: mailbox switcher, unread toggle, compose. */}
+      <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-(--sidebar-content-inset)">
+        <div className="min-w-0 flex-1">
+          {accounts.length > 0 ? (
+            <MailboxSwitcher
+              accounts={accounts}
+              selectedAccountId={effectiveMailbox}
+              onSelectAccount={setMailbox}
+            />
+          ) : (
+            <span className="px-(--sidebar-row-content-inset) text-sm font-semibold tracking-tight">
+              Otter Mail
+            </span>
+          )}
+        </div>
+        <HintTooltip label={unreadOnly ? "Show all messages" : "Show unread only"} side="bottom">
+          <button
+            type="button"
+            aria-pressed={unreadOnly}
+            onClick={() => setUnreadOnly((v) => !v)}
+            className={cn(
+              buttonClass("ghost-muted", "xs"),
+              "gap-1 font-medium tabular-nums",
+              unreadOnly && "bg-accent-surface text-foreground",
+            )}
+          >
+            Unread
+            {totalUnread > 0 ? (
+              <span className="text-muted-foreground">
+                {totalUnread > 999 ? "999+" : totalUnread}
+              </span>
+            ) : null}
+          </button>
+        </HintTooltip>
+        <HintTooltip label="New message" side="bottom">
+          <IconBtn label="New message" onClick={() => void trayApi.compose()}>
+            <SquarePenIcon className="size-4" />
+          </IconBtn>
+        </HintTooltip>
       </div>
 
-      {showTabs ? (
-        <div className="flex shrink-0 items-center px-3 pb-2">
-          <div className="flex items-center gap-1 rounded-full border border-(--te-border) bg-(--te-ctl) p-1">
-            <TabKnob
-              label="All accounts"
-              selected={activeTab === ALL_TAB}
-              onClick={() => setActiveTab(ALL_TAB)}
-              background="var(--te-strong)"
-            >
-              {totalUnread > 0 ? (totalUnread > 99 ? "99+" : totalUnread) : "—"}
-            </TabKnob>
-            {accounts.map((a) => (
-              <TabKnob
-                key={a.account.id}
-                label={getAccountDisplayName(a.account)}
-                selected={activeTab === a.account.id}
-                onClick={() => setActiveTab(a.account.id)}
-                background={getAccountColor(a.account)}
-              >
-                {(getAccountDisplayName(a.account)[0] ?? "?").toUpperCase()}
-              </TabKnob>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-1.5">
-        {accounts.length === 0 ? (
-          <div className="flex h-full items-center justify-center px-4 text-center">
-            <span className="text-[12.5px] text-(--te-muted)">No accounts connected.</span>
+      <div className="min-h-0 flex-1 overflow-y-auto px-(--sidebar-content-inset) py-1">
+        {snapshotQuery.isLoading ? null : accounts.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
+            <span className="text-sm font-medium text-foreground">No accounts yet</span>
+            <span className="text-xs text-muted-foreground">
+              Open Otter Mail to connect a Gmail account.
+            </span>
           </div>
         ) : rows.length === 0 ? (
-          <div className="flex h-full items-center justify-center px-4 text-center">
-            <span className="text-[12.5px] text-(--te-muted)">
-              {mode === "unread" ? "No unread mail." : "No mail."}
+          <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
+            <span className="text-sm font-medium text-foreground">
+              {unreadOnly ? "All caught up" : "No mail"}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {unreadOnly ? "Nothing unread in the inbox." : "This inbox is empty."}
             </span>
           </div>
         ) : (
@@ -293,7 +312,7 @@ export function TrayPopoverView() {
               message={message}
               accountColor={accountColor}
               accountName={accountName}
-              showAccountLabel={effectiveTab === ALL_TAB}
+              showAccountLabel={isCombined}
               onOpen={() => void trayApi.openThread(accountId, message.id)}
               onArchive={() => void handleArchive(accountId, message.threadId)}
               onTrash={() => void handleTrash(accountId, message.threadId)}
@@ -302,37 +321,37 @@ export function TrayPopoverView() {
         )}
       </div>
 
-      <div className="flex shrink-0 items-center justify-between border-t border-(--te-border) px-2 py-1.5">
-        <div className="flex items-center gap-0.5">
-          <IconBtn label="New Message" onClick={() => void trayApi.compose()}>
-            <SquarePen className="size-4" />
-          </IconBtn>
+      {/* Footer utilities, like the main sidebar's bottom row. */}
+      <div className="flex shrink-0 items-center gap-1 border-t border-border px-(--sidebar-content-inset) py-1">
+        <HintTooltip label="Open Otter Mail">
           <IconBtn
-            label="Synchronize All Mailboxes"
+            label="Open Otter Mail"
+            onClick={() => void trayApi.openApp()}
+            className="size-8"
+          >
+            <SquareArrowOutUpRightIcon className="size-4" />
+          </IconBtn>
+        </HintTooltip>
+        <HintTooltip label={syncing ? "Syncing…" : "Sync now"}>
+          <IconBtn
+            label="Sync now"
             onClick={() => void handleSync()}
             disabled={syncing}
+            className="size-8"
           >
-            <RotateCw className={syncing ? "size-4 animate-spin" : "size-4"} />
+            <RotateCwIcon className={syncing ? "size-4 animate-spin" : "size-4"} />
           </IconBtn>
-        </div>
-        <SegmentedControl
-          type="single"
-          value={mode}
-          onValueChange={(v) => setMode(v as "all" | "unread")}
-          size="small"
-          variant="filled"
-        >
-          <SegmentedControlItem value="all">All</SegmentedControlItem>
-          <SegmentedControlItem value="unread">Unread</SegmentedControlItem>
-        </SegmentedControl>
-        <div className="flex items-center gap-0.5">
-          <IconBtn label="Open OtterMail" onClick={() => void trayApi.openApp()}>
-            <ExternalLink className="size-4" />
+        </HintTooltip>
+        <span className="flex-1" />
+        <HintTooltip label="Quit Otter Mail">
+          <IconBtn
+            label="Quit Otter Mail"
+            onClick={() => void trayApi.quit()}
+            className="size-8 hover:text-destructive"
+          >
+            <PowerIcon className="size-4" />
           </IconBtn>
-          <IconBtn label="Quit" onClick={() => void trayApi.quit()}>
-            <Power className="size-4" />
-          </IconBtn>
-        </div>
+        </HintTooltip>
       </div>
     </div>
   );

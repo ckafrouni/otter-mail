@@ -8,7 +8,14 @@ import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
 
-import { app, BrowserWindow, Menu, ipcMain, logger, initDevToolsButtonState } from "@glaze/core/backend";
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  ipcMain,
+  logger,
+  initDevToolsButtonState,
+} from "@glaze/core/backend";
 
 import { registerHandlers } from "./handlers/index.js";
 import { parseMailtoUrl, setPendingMailto } from "./services/mailto-target.js";
@@ -17,7 +24,8 @@ import { pruneAttachmentCache } from "./services/attachment-cache.js";
 import { createTray, destroyTray } from "./services/tray.js";
 import { getSettings } from "./services/settings-store.js";
 import { getPreloadPath, getWindowUrl } from "./windows/window-paths.js";
-import { openSettingsWindow } from "./windows/settings-window.js";
+import { setSettingsTarget } from "./windows/settings-window.js";
+import { focusMainWindow } from "./services/tray.js";
 
 // Get directory paths
 const __filename = fileURLToPath(import.meta.url);
@@ -170,7 +178,11 @@ async function setupApplicationMenu() {
           label: "Settings…",
           icon: "gearshape",
           accelerator: "Command+,",
-          click: async () => await openSettingsWindow(),
+          click: async () => {
+            setSettingsTarget({ pane: "general", viewId: null, mailbox: null });
+            await focusMainWindow();
+            ipcMain.broadcast("settings:open");
+          },
         },
         { type: "separator" },
         { role: "services" },

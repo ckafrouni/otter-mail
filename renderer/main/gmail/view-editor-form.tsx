@@ -1,17 +1,12 @@
 import { useMemo, useState } from "react";
+import { Button, Field, FieldSet, Input, Text, EmptyState } from "@glaze/core/components";
 import {
-  Button,
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  Field,
-  FieldSet,
-  Input,
-  Text,
-  EmptyState,
-} from "@glaze/core/components";
+} from "./menu";
 import { BanIcon, PlusIcon, XIcon } from "lucide-react";
 import { useAllAccountLabels, useCombinedCounts } from "./hooks";
 import { defaultRulesFor } from "./custom-views";
@@ -40,7 +35,8 @@ type Picks = Record<string, AccountPicks>;
 
 function rulesToPicks(rules: ViewRule[]): Picks {
   const picks: Picks = {};
-  for (const rule of rules) picks[rule.accountId] = { allOf: [...rule.allOf], noneOf: [...rule.noneOf] };
+  for (const rule of rules)
+    picks[rule.accountId] = { allOf: [...rule.allOf], noneOf: [...rule.noneOf] };
   return picks;
 }
 
@@ -87,7 +83,10 @@ function LabelChipButton({
       : undefined;
   return (
     <span
-      className={[PILL, excluded ? "bg-support-red/15 text-support-red" : label?.color ? "" : "bg-control"].join(" ")}
+      className={[
+        PILL,
+        excluded ? "bg-support-red/15 text-support-red" : label?.color ? "" : "bg-control",
+      ].join(" ")}
       style={style}
     >
       {excluded ? <BanIcon className="size-3" /> : null}
@@ -189,12 +188,19 @@ function ChipRow({
   );
 }
 
-export function ViewEditorForm({ view, accounts, onSave, onDelete, onReset, onDone }: ViewEditorFormProps) {
+export function ViewEditorForm({
+  view,
+  accounts,
+  onSave,
+  onDelete,
+  onReset,
+  onDone,
+}: ViewEditorFormProps) {
   const accountIds = accounts.map((a) => a.id);
   const accountLabels = useAllAccountLabels(accountIds, true);
   const anyLoading = accountLabels.some((a) => a.isLoading);
 
-  const initialRules = view == null ? [] : view.rules ?? defaultRulesFor(view.kind, accounts);
+  const initialRules = view == null ? [] : (view.rules ?? defaultRulesFor(view.kind, accounts));
 
   const [name, setName] = useState(view?.name ?? "");
   const [picks, setPicks] = useState<Picks>(() => rulesToPicks(initialRules));
@@ -202,7 +208,10 @@ export function ViewEditorForm({ view, accounts, onSave, onDelete, onReset, onDo
   const isDefault = view != null && view.kind !== "custom";
 
   const update = (accountId: string, fn: (p: AccountPicks) => AccountPicks) => {
-    setPicks((prev) => ({ ...prev, [accountId]: fn(prev[accountId] ?? { allOf: [], noneOf: [] }) }));
+    setPicks((prev) => ({
+      ...prev,
+      [accountId]: fn(prev[accountId] ?? { allOf: [], noneOf: [] }),
+    }));
   };
 
   const rules = useMemo(() => picksToRules(picks), [picks]);
@@ -218,7 +227,13 @@ export function ViewEditorForm({ view, accounts, onSave, onDelete, onReset, onDo
   };
 
   if (accounts.length === 0) {
-    return <EmptyState placement="inline" title="No accounts" description="Connect an account to build views." />;
+    return (
+      <EmptyState
+        placement="inline"
+        title="No accounts"
+        description="Connect an account to build views."
+      />
+    );
   }
 
   return (
@@ -241,7 +256,9 @@ export function ViewEditorForm({ view, accounts, onSave, onDelete, onReset, onDo
           {rules.length > 0 && draftCounts.data ? (
             <Text variant="mini" color="secondary" className="shrink-0 tabular-nums">
               {draftCounts.data.total.toLocaleString()} messages
-              {draftCounts.data.unread > 0 ? `, ${draftCounts.data.unread.toLocaleString()} unread` : ""}
+              {draftCounts.data.unread > 0
+                ? `, ${draftCounts.data.unread.toLocaleString()} unread`
+                : ""}
             </Text>
           ) : null}
         </div>
@@ -253,7 +270,10 @@ export function ViewEditorForm({ view, accounts, onSave, onDelete, onReset, onDo
             const p = picks[account.id] ?? { allOf: [], noneOf: [] };
             const usedIds = new Set([...p.allOf, ...p.noneOf]);
             return (
-              <div key={account.id} className="flex flex-col gap-2 rounded-control bg-control-subtle px-3 py-2.5">
+              <div
+                key={account.id}
+                className="flex flex-col gap-2 rounded-control bg-control-subtle px-3 py-2.5"
+              >
                 <div className="flex items-center gap-2 min-w-0">
                   <span
                     className="size-2.5 shrink-0 rounded-full"
@@ -278,9 +298,14 @@ export function ViewEditorForm({ view, accounts, onSave, onDelete, onReset, onDo
                       emptyHint={p.noneOf.length > 0 ? "All mail" : "Not included — add a label"}
                       labels={labels}
                       usedIds={usedIds}
-                      onAdd={(id) => update(account.id, (cur) => ({ ...cur, allOf: [...cur.allOf, id] }))}
+                      onAdd={(id) =>
+                        update(account.id, (cur) => ({ ...cur, allOf: [...cur.allOf, id] }))
+                      }
                       onRemove={(id) =>
-                        update(account.id, (cur) => ({ ...cur, allOf: cur.allOf.filter((x) => x !== id) }))
+                        update(account.id, (cur) => ({
+                          ...cur,
+                          allOf: cur.allOf.filter((x) => x !== id),
+                        }))
                       }
                     />
                     <ChipRow
@@ -289,9 +314,14 @@ export function ViewEditorForm({ view, accounts, onSave, onDelete, onReset, onDo
                       excluded
                       labels={labels}
                       usedIds={usedIds}
-                      onAdd={(id) => update(account.id, (cur) => ({ ...cur, noneOf: [...cur.noneOf, id] }))}
+                      onAdd={(id) =>
+                        update(account.id, (cur) => ({ ...cur, noneOf: [...cur.noneOf, id] }))
+                      }
                       onRemove={(id) =>
-                        update(account.id, (cur) => ({ ...cur, noneOf: cur.noneOf.filter((x) => x !== id) }))
+                        update(account.id, (cur) => ({
+                          ...cur,
+                          noneOf: cur.noneOf.filter((x) => x !== id),
+                        }))
                       }
                     />
                   </>
@@ -301,8 +331,8 @@ export function ViewEditorForm({ view, accounts, onSave, onDelete, onReset, onDo
           })}
         </div>
         <Text variant="mini" color="tertiary" className="px-1">
-          A message must carry every "must have" label and none of the "must not have" ones; accounts add
-          together.
+          A message must carry every "must have" label and none of the "must not have" ones;
+          accounts add together.
         </Text>
       </div>
 
@@ -312,13 +342,23 @@ export function ViewEditorForm({ view, accounts, onSave, onDelete, onReset, onDo
             variant="filled"
             size="small"
             className="text-support-red"
-            onClick={() => { void onDelete(view.id); onDone(); }}
+            onClick={() => {
+              void onDelete(view.id);
+              onDone();
+            }}
           >
             Delete
           </Button>
         ) : null}
         {view && isDefault ? (
-          <Button variant="filled" size="small" onClick={() => { void onReset(view.id); onDone(); }}>
+          <Button
+            variant="filled"
+            size="small"
+            onClick={() => {
+              void onReset(view.id);
+              onDone();
+            }}
+          >
             Reset to default
           </Button>
         ) : null}

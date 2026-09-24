@@ -81,13 +81,14 @@ type PeoplePerson = {
   emailAddresses?: { value?: string }[];
 };
 
-function photoFromPeopleResults(results: { person?: PeoplePerson }[], email: string): string | null {
+function photoFromPeopleResults(
+  results: { person?: PeoplePerson }[],
+  email: string,
+): string | null {
   for (const result of results) {
     const person = result.person;
     if (!person) continue;
-    const matches = (person.emailAddresses ?? []).some(
-      (e) => e.value?.toLowerCase() === email,
-    );
+    const matches = (person.emailAddresses ?? []).some((e) => e.value?.toLowerCase() === email);
     if (!matches) continue;
     const photo = (person.photos ?? []).find((p) => p.url && !p.default);
     if (photo?.url) return photo.url;

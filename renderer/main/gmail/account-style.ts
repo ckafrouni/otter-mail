@@ -24,7 +24,9 @@ function hashString(value: string): number {
 
 /** An account's display color — its saved choice, or a stable fallback from the palette. */
 export function getAccountColor(account: Pick<GmailAccount, "id" | "color">): string {
-  return account.color ?? ACCOUNT_COLOR_PALETTE[hashString(account.id) % ACCOUNT_COLOR_PALETTE.length];
+  return (
+    account.color ?? ACCOUNT_COLOR_PALETTE[hashString(account.id) % ACCOUNT_COLOR_PALETTE.length]
+  );
 }
 
 /** An account's display name — the user's override, or the Google profile name. */

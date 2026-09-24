@@ -6,7 +6,7 @@ import { useGetAttachment, usePruneThreadRows, useSendMessage } from "./hooks";
 import { gmailApi } from "./api";
 import { RichTextArea, textToHtml, type RichTextRef } from "./rich-text";
 import { RecipientInput } from "./recipient-input";
-import { IconBtn, HintTooltip } from "./te-ui";
+import { IconBtn, HintTooltip } from "./ui";
 import { parseAddressEntry, splitAddressList } from "./address";
 import {
   CollapsedRow,
@@ -79,7 +79,12 @@ export function DraftEditor({
     if (el) el.scrollTop = el.scrollHeight;
   }, []);
 
-  const handleDownloadAttachment: DownloadAttachment = (messageId, attachmentId, filename, mimeType) => {
+  const handleDownloadAttachment: DownloadAttachment = (
+    messageId,
+    attachmentId,
+    filename,
+    mimeType,
+  ) => {
     console.log("[DraftEditor:downloadAttachment]", { messageId, filename });
     void (async () => {
       try {
@@ -121,7 +126,12 @@ export function DraftEditor({
           messageId: detail.id,
           attachmentId: att.id,
         });
-        out.push({ name: att.filename, mimeType: att.mimeType, size: data.size, base64: data.base64 });
+        out.push({
+          name: att.filename,
+          mimeType: att.mimeType,
+          size: data.size,
+          base64: data.base64,
+        });
       }
       attSnapshotRef.current ??= attachmentSignature(out);
       setAttachments(out);
@@ -335,19 +345,19 @@ export function DraftEditor({
     });
   }, attachments == null);
 
-  const recipientRow = "flex items-center gap-2 border-b border-(--te-border) px-3 py-1.5";
+  const recipientRow = "flex items-center gap-2 border-b border-border px-3 py-1.5";
   const fieldInput =
-    "min-w-0 flex-1 bg-transparent text-[13px] text-(--te-strong) outline-none placeholder:text-(--te-faint)";
+    "min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-placeholder";
 
   return (
     <div className="relative flex h-full min-w-0 flex-col" {...dropProps}>
       <ComposeDropOverlay visible={isDragging} />
-      <div className="drag-region flex h-11 shrink-0 items-center gap-2 border-b border-(--te-border) px-4">
+      <div className="drag-region flex h-11 shrink-0 items-center gap-2 border-b border-border px-4">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[15px] font-bold leading-tight tracking-tight text-(--te-strong)">
+          <div className="truncate text-sm font-medium leading-tight text-foreground">
             {subject.trim() || "Draft"}
           </div>
-          <div className="te-label truncate leading-tight text-(--te-muted)">
+          <div className="truncate text-xs leading-tight text-muted-foreground">
             Draft ·{" "}
             {saveState === "saving"
               ? "saving…"
@@ -376,7 +386,7 @@ export function DraftEditor({
               <div key={m.id}>
                 {newDay ? <DayDivider timestamp={m.date} /> : null}
                 {!newDay && isExpanded && prevExpanded ? (
-                  <div className="mx-5 my-1 border-t border-(--te-border)" />
+                  <div className="mx-5 my-1 border-t border-border" />
                 ) : null}
                 {isExpanded ? (
                   <ExpandedRow
@@ -386,7 +396,11 @@ export function DraftEditor({
                     onDownload={handleDownloadAttachment}
                   />
                 ) : (
-                  <CollapsedRow accountId={accountId} summary={m} onExpand={() => toggleExpanded(m.id)} />
+                  <CollapsedRow
+                    accountId={accountId}
+                    summary={m}
+                    onExpand={() => toggleExpanded(m.id)}
+                  />
                 )}
               </div>
             );
@@ -394,11 +408,13 @@ export function DraftEditor({
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1.5 overflow-hidden px-6 text-center">
-          <span className="flex size-11 items-center justify-center rounded-full border border-(--te-outline)">
-            <FileIcon className="size-5 text-(--te-muted)" />
+          <span className="flex size-11 items-center justify-center rounded-full border border-input">
+            <FileIcon className="size-5 text-muted-foreground" />
           </span>
-          <span className="pt-1 text-[15px] font-bold text-(--te-text)">Pick up where you left off</span>
-          <span className="text-[13px] text-(--te-muted)">
+          <span className="pt-1 text-sm font-medium text-foreground">
+            Pick up where you left off
+          </span>
+          <span className="text-sm text-muted-foreground">
             Changes save back to this draft as you type.
           </span>
         </div>
@@ -406,7 +422,7 @@ export function DraftEditor({
 
       <div className="shrink-0 px-5 pb-4 pt-1" data-inline-compose="">
         <div
-          className="rounded-[6px] border border-(--te-outline) bg-(--te-panel) focus-within:border-(--te-outline-hover)"
+          className="rounded-2xl border border-(--chat-composer-outline) bg-(--chat-composer-surface) shadow-composer transition-colors focus-within:border-input dark:shadow-none dark:inset-shadow-2xs dark:inset-shadow-(color:--chat-composer-highlight)"
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();
@@ -415,7 +431,7 @@ export function DraftEditor({
           }}
         >
           <div className={recipientRow}>
-            <span className="te-label shrink-0 text-(--te-faint)">To</span>
+            <span className="shrink-0 text-xs font-medium text-muted-foreground">To</span>
             <RecipientInput
               value={to}
               onChange={setTo}
@@ -426,7 +442,7 @@ export function DraftEditor({
               <button
                 type="button"
                 onClick={() => setCcVisible(true)}
-                className="shrink-0 text-[11px] text-(--te-faint) hover:text-(--te-strong)"
+                className="shrink-0 text-2xs text-muted-foreground/70 hover:text-foreground"
               >
                 Cc
               </button>
@@ -435,7 +451,7 @@ export function DraftEditor({
               <button
                 type="button"
                 onClick={() => setBccVisible(true)}
-                className="shrink-0 text-[11px] text-(--te-faint) hover:text-(--te-strong)"
+                className="shrink-0 text-2xs text-muted-foreground/70 hover:text-foreground"
               >
                 Bcc
               </button>
@@ -443,18 +459,18 @@ export function DraftEditor({
           </div>
           {ccVisible ? (
             <div className={recipientRow}>
-              <span className="te-label shrink-0 text-(--te-faint)">Cc</span>
+              <span className="shrink-0 text-xs font-medium text-muted-foreground">Cc</span>
               <RecipientInput value={cc} onChange={setCc} ariaLabel="Cc" />
             </div>
           ) : null}
           {bccVisible ? (
             <div className={recipientRow}>
-              <span className="te-label shrink-0 text-(--te-faint)">Bcc</span>
+              <span className="shrink-0 text-xs font-medium text-muted-foreground">Bcc</span>
               <RecipientInput value={bcc} onChange={setBcc} ariaLabel="Bcc" />
             </div>
           ) : null}
           <div className={recipientRow}>
-            <span className="te-label shrink-0 text-(--te-faint)">Subject</span>
+            <span className="shrink-0 text-xs font-medium text-muted-foreground">Subject</span>
             <input
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
@@ -501,28 +517,28 @@ export function DraftEditor({
             </HintTooltip>
             {attachments == null ? (
               attachLoadFailed ? (
-                <span className="te-label pl-1 text-(--red)">
+                <span className="pl-1 text-xs text-destructive-foreground">
                   Couldn't load attachments —{" "}
                   <button
                     type="button"
                     onClick={() => void loadAttachments()}
-                    className="underline hover:text-(--te-strong)"
+                    className="underline hover:text-foreground"
                   >
                     retry
                   </button>
                 </span>
               ) : (
-                <span className="te-label pl-1 text-(--te-faint)">Loading attachments…</span>
+                <span className="pl-1 text-xs text-muted-foreground">Loading attachments…</span>
               )
             ) : null}
             <span className="flex-1" />
-            {canSend ? <span className="te-label pr-1 text-(--te-faint)">⌘↩ send</span> : null}
+            {canSend ? <span className="pr-1 text-xs text-muted-foreground">⌘↩ send</span> : null}
             <button
               type="button"
               onClick={handleSend}
               disabled={!canSend}
               aria-label="Send"
-              className="flex h-7 w-9 items-center justify-center rounded-[5px] bg-(--te-accent) text-white hover:brightness-110 disabled:bg-(--te-ctl) disabled:text-(--te-faint)"
+              className="inline-flex h-7 w-9 items-center justify-center rounded-[var(--control-radius)] border border-primary bg-primary text-primary-foreground shadow-xs shadow-primary/24 transition-[box-shadow,scale] not-disabled:inset-shadow-[0_1px_rgb(255_255_255/16%)] hover:bg-primary/90 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-64"
             >
               <SendHorizontalIcon className="size-3.5" />
             </button>

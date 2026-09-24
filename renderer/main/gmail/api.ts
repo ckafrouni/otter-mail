@@ -188,7 +188,7 @@ export type SyncSettings = {
 
 export type SaveViewParams = { id?: string; name: string; rules: ViewRule[]; mailbox?: string };
 
-export type SettingsPane = "general" | "accounts" | "views";
+export type SettingsPane = "general" | "accounts" | "views" | "assistant";
 export type SettingsTarget = {
   pane: SettingsPane;
   viewId?: string | null;

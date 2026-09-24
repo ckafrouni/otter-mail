@@ -66,10 +66,10 @@ function ToolBtn({
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
       className={[
-        "flex size-6 shrink-0 items-center justify-center rounded-[4px]",
+        "flex size-6 shrink-0 items-center justify-center rounded-sm",
         active
-          ? "bg-(--te-ctl) text-(--te-strong)"
-          : "text-(--te-muted) hover:bg-(--te-hover) hover:text-(--te-strong)",
+          ? "bg-secondary text-foreground"
+          : "text-muted-foreground hover:bg-accent-surface hover:text-foreground",
       ].join(" ")}
     >
       {children}
@@ -250,7 +250,7 @@ export const RichTextArea = forwardRef<
 
   return (
     <div className="flex min-w-0 flex-col">
-      <div className="flex items-center gap-0.5 border-b border-(--te-border) px-2 py-1">
+      <div className="flex items-center gap-0.5 border-b border-border px-2 py-1">
         <ToolBtn label="Bold (⌘B)" active={toolbar.bold} onClick={() => exec("bold")}>
           <BoldIcon className="size-3.5" />
         </ToolBtn>
@@ -264,14 +264,18 @@ export const RichTextArea = forwardRef<
         >
           <UnderlineIcon className="size-3.5" />
         </ToolBtn>
-        <ToolBtn label="Strikethrough (⇧⌘X)" active={toolbar.strike} onClick={() => exec("strikeThrough")}>
+        <ToolBtn
+          label="Strikethrough (⇧⌘X)"
+          active={toolbar.strike}
+          onClick={() => exec("strikeThrough")}
+        >
           <StrikethroughIcon className="size-3.5" />
         </ToolBtn>
-        <span className="mx-1 h-4 w-px shrink-0 bg-(--te-border)" aria-hidden />
+        <span className="mx-1 h-4 w-px shrink-0 bg-border" aria-hidden />
         <ToolBtn label="Link (⌘K)" onClick={openLinkInput}>
           <Link2Icon className="size-3.5" />
         </ToolBtn>
-        <span className="mx-1 h-4 w-px shrink-0 bg-(--te-border)" aria-hidden />
+        <span className="mx-1 h-4 w-px shrink-0 bg-border" aria-hidden />
         <ToolBtn label="Bulleted list (⇧⌘8)" onClick={() => exec("insertUnorderedList")}>
           <ListIcon className="size-3.5" />
         </ToolBtn>
@@ -281,15 +285,15 @@ export const RichTextArea = forwardRef<
         <ToolBtn label="Quote (⇧⌘9)" onClick={() => exec("formatBlock", "blockquote")}>
           <TextQuoteIcon className="size-3.5" />
         </ToolBtn>
-        <span className="mx-1 h-4 w-px shrink-0 bg-(--te-border)" aria-hidden />
+        <span className="mx-1 h-4 w-px shrink-0 bg-border" aria-hidden />
         <ToolBtn label="Clear formatting (⌘\\)" onClick={() => exec("removeFormat")}>
           <RemoveFormattingIcon className="size-3.5" />
         </ToolBtn>
       </div>
 
       {linkOpen ? (
-        <div className="flex items-center gap-2 border-b border-(--te-border) px-3 py-1.5">
-          <span className="te-label shrink-0 text-(--te-faint)">Link</span>
+        <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
+          <span className="shrink-0 text-xs font-medium text-muted-foreground">Link</span>
           <input
             value={linkUrl}
             onChange={(e) => setLinkUrl(e.target.value)}
@@ -307,12 +311,12 @@ export const RichTextArea = forwardRef<
             placeholder="https://example.com"
             aria-label="Link URL"
             autoFocus
-            className="min-w-0 flex-1 bg-transparent text-[13px] text-(--te-strong) outline-none placeholder:text-(--te-faint)"
+            className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-placeholder"
           />
           <button
             type="button"
             onClick={applyLink}
-            className="te-label shrink-0 text-(--te-blue) hover:brightness-110"
+            className="te-label shrink-0 text-primary hover:brightness-110"
           >
             Apply
           </button>
@@ -333,7 +337,7 @@ export const RichTextArea = forwardRef<
         onBlur={onBlur}
         className={[
           "te-scroll max-h-[55vh] w-full overflow-y-auto bg-transparent px-3 py-2.5",
-          "text-[15px] leading-relaxed text-(--te-strong) outline-none",
+          "text-sm leading-relaxed text-foreground outline-none",
           minHeightClass ?? "min-h-[38px]",
         ].join(" ")}
       />

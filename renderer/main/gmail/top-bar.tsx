@@ -1,93 +1,171 @@
-import { useEffect, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { DropdownMenu as RadixMenu } from "radix-ui";
 import {
-  ContextMenu,
-  ContextMenuTrigger,
-  ContextMenuContent,
-  ContextMenuItem,
-} from "@glaze/core/components";
-import {
-  BotMessageSquareIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  CircleHelpIcon,
+  CheckIcon,
+  ChevronDownIcon,
   LayersIcon,
-  PlusIcon,
-  SearchIcon,
-  SettingsIcon,
-  XIcon,
+  PanelLeftCloseIcon,
+  PanelLeftIcon,
+  PanelRightIcon,
 } from "lucide-react";
-import { IconBtn, HintTooltip } from "./te-ui";
+import { IconBtn, HintTooltip, buttonClass, cn, restoreFocusForKeyboardOnly } from "./ui";
 import { COMBINED_ACCOUNT_ID } from "./custom-views";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
 import { gmailApi } from "./api";
 import type { GmailAccount } from "./types";
 
-type TopBarProps = {
-  canGoBack: boolean;
-  canGoForward: boolean;
-  onBack: () => void;
-  onForward: () => void;
-  searchQuery: string;
-  onSearchChange: (q: string) => void;
-  searchRef: RefObject<HTMLInputElement | null>;
-  syncing: boolean;
-  syncLabel: string;
+/**
+ * Every column owns the slice of the title band above it, so the pane
+ * separators run all the way up. These pieces fill those slices: the window
+ * title (traffic lights, sidebar toggle, wordmark), the mailbox breadcrumb,
+ * and the right-hand controls.
+ */
+
+/** Traffic-light clearance + sidebar toggle + wordmark. */
+export function WindowTitle({
+  sidebarOpen,
+  onToggleSidebar,
+  className,
+}: {
+  sidebarOpen: boolean;
+  onToggleSidebar: () => void;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "drag-region flex h-(--workspace-topbar-height) shrink-0 items-center gap-2 pl-[84px] pr-3",
+        className,
+      )}
+    >
+      <HintTooltip label={sidebarOpen ? "Hide sidebar" : "Show sidebar"} hint="⌘B">
+        <IconBtn label="Toggle sidebar" onClick={onToggleSidebar}>
+          {sidebarOpen ? (
+            <PanelLeftCloseIcon className="size-4" />
+          ) : (
+            <PanelLeftIcon className="size-4" />
+          )}
+        </IconBtn>
+      </HintTooltip>
+      <span className="select-none whitespace-nowrap text-sm font-semibold tracking-tight text-foreground">
+        Otter Mail
+      </span>
+    </div>
+  );
+}
+
+/** Small square mark for a mailbox, like a project favicon in the breadcrumb. */
+function MailboxMark({ account, className }: { account: GmailAccount | null; className?: string }) {
+  if (!account) {
+    return <LayersIcon className={cn("size-4 shrink-0", className)} aria-hidden />;
+  }
+  return (
+    <span
+      className={cn(
+        "flex size-4 shrink-0 items-center justify-center rounded-[4px] text-[9px] font-bold leading-none text-white",
+        className,
+      )}
+      style={{ background: getAccountColor(account) }}
+      aria-hidden
+    >
+      {(getAccountDisplayName(account)[0] ?? "?").toUpperCase()}
+    </span>
+  );
+}
+
+/** Mailbox switcher row for the sidebar; aligned with the rows below it. */
+export function MailboxSwitcher({
+  accounts,
+  selectedAccountId,
+  onSelectAccount,
+  className,
+}: {
   accounts: GmailAccount[];
   selectedAccountId: string | null;
   onSelectAccount: (accountId: string) => void;
-  onAddAccount: () => void;
-  onOpenPalette: () => void;
-  onOpenHelp: () => void;
-  chatOpen: boolean;
-  onToggleChat: () => void;
-};
-
-/** Round mailbox-switcher button, sized for the header row. */
-function AccountKnob({
-  label,
-  hint,
-  selected,
-  onClick,
-  children,
-  background,
-  menu,
-}: {
-  label: string;
-  hint?: string;
-  selected?: boolean;
-  onClick: () => void;
-  children: ReactNode;
-  background: string;
-  /** Right-click items (settings deep links). */
-  menu: ReactNode;
+  className?: string;
 }) {
+  const isCombined = selectedAccountId === COMBINED_ACCOUNT_ID;
+  const selectedAccount = isCombined
+    ? null
+    : (accounts.find((a) => a.id === selectedAccountId) ?? null);
+  const mailboxName = isCombined
+    ? "All mailboxes"
+    : selectedAccount
+      ? getAccountDisplayName(selectedAccount)
+      : "Mailbox";
+  const options: { id: string; account: GmailAccount | null; name: string; shortcut: string }[] = [
+    ...(accounts.length > 1
+      ? [{ id: COMBINED_ACCOUNT_ID, account: null, name: "All mailboxes", shortcut: "⌘1" }]
+      : []),
+    ...accounts.map((account, i) => ({
+      id: account.id,
+      account,
+      name: getAccountDisplayName(account),
+      shortcut: `⌘${accounts.length > 1 ? i + 2 : 1}`,
+    })),
+  ];
+
   return (
-    <ContextMenu>
-      <ContextMenuTrigger>
-        <HintTooltip label={label} hint={hint}>
-          <button
-            type="button"
-            aria-label={label}
-            onClick={onClick}
-            className={[
-              "flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white",
-              selected
-                ? "ring-2 ring-(--te-strong) ring-offset-1 ring-offset-(--te-frame)"
-                : "opacity-75 hover:opacity-100",
-            ].join(" ")}
-            style={{ background }}
-          >
-            {children}
-          </button>
-        </HintTooltip>
-      </ContextMenuTrigger>
-      <ContextMenuContent>{menu}</ContextMenuContent>
-    </ContextMenu>
+    <RadixMenu.Root>
+      <RadixMenu.Trigger asChild>
+        <button
+          type="button"
+          aria-label="Switch mailbox"
+          className={cn(
+            "group/switcher flex h-8 w-full min-w-0 cursor-pointer items-center gap-(--sidebar-control-gap) rounded-[var(--control-radius)] px-(--sidebar-row-content-inset) text-left text-sm font-medium text-sidebar-foreground outline-none transition-colors hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-focus-ring data-[state=open]:bg-sidebar-row-hover",
+            className,
+          )}
+        >
+          <span className="flex size-4 shrink-0 items-center justify-center">
+            <MailboxMark account={selectedAccount} className="text-(--sidebar-icon-color)" />
+          </span>
+          <span className="min-w-0 flex-1 truncate">{mailboxName}</span>
+          <ChevronDownIcon
+            className="size-3.5 shrink-0 text-(--sidebar-icon-color) transition-transform group-data-[state=open]/switcher:rotate-180"
+            aria-hidden
+          />
+        </button>
+      </RadixMenu.Trigger>
+      <RadixMenu.Portal>
+        <RadixMenu.Content
+          align="start"
+          sideOffset={4}
+          onCloseAutoFocus={restoreFocusForKeyboardOnly}
+          className="dropdown-glass z-[130] w-(--radix-dropdown-menu-trigger-width) min-w-52 rounded-lg p-1 text-foreground shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] outline-none dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]"
+        >
+          {options.map((option) => {
+            const selected = option.id === (selectedAccountId ?? "");
+            return (
+              <RadixMenu.Item
+                key={option.id}
+                onSelect={() => onSelectAccount(option.id)}
+                className={cn(
+                  "flex min-h-7 cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1 text-sm outline-none data-[highlighted]:bg-accent-surface data-[highlighted]:text-foreground",
+                  selected && "bg-foreground/[0.08]",
+                )}
+              >
+                <span className="flex size-4 shrink-0 items-center justify-center">
+                  <MailboxMark account={option.account} className="text-muted-foreground" />
+                </span>
+                <span className="min-w-0 flex-1 truncate">{option.name}</span>
+                {selected ? (
+                  <CheckIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                ) : null}
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                  {option.shortcut}
+                </span>
+              </RadixMenu.Item>
+            );
+          })}
+        </RadixMenu.Content>
+      </RadixMenu.Portal>
+    </RadixMenu.Root>
   );
 }
 
 /**
- * Outline nudge shown only while OtterMail is not the macOS default mail app;
+ * Outline nudge shown only while Otter Mail is not the macOS default mail app;
  * clicking asks the OS (consent dialog) and the button hides once granted.
  */
 function DefaultMailButton() {
@@ -119,204 +197,55 @@ function DefaultMailButton() {
   };
 
   return (
-    <HintTooltip label="Use OtterMail for email links">
-      <button
-        type="button"
-        onClick={() => void request()}
-        className="te-label flex h-7 shrink-0 items-center rounded-[5px] border border-(--te-outline) px-2 text-(--te-muted) hover:border-(--te-outline-hover) hover:text-(--te-strong)"
-      >
-        Set as default mail app
+    <HintTooltip label="Use Otter Mail for email links">
+      <button type="button" onClick={() => void request()} className={buttonClass("outline", "xs")}>
+        Set as default
       </button>
     </HintTooltip>
   );
 }
 
-export function TopBar({
-  canGoBack,
-  canGoForward,
-  onBack,
-  onForward,
-  searchQuery,
-  onSearchChange,
-  searchRef,
+/** Title band of the content column: optional breadcrumb, sync status, the panel toggle. */
+export function TitleControls({
+  leading,
   syncing,
   syncLabel,
-  accounts,
-  selectedAccountId,
-  onSelectAccount,
-  onAddAccount,
-  onOpenPalette,
-  onOpenHelp,
-  chatOpen,
+  showPanelToggle,
   onToggleChat,
-}: TopBarProps) {
-  const isCombined = selectedAccountId === COMBINED_ACCOUNT_ID;
-
+}: {
+  leading?: ReactNode;
+  syncing: boolean;
+  syncLabel: string;
+  showPanelToggle: boolean;
+  onToggleChat: () => void;
+}) {
   return (
     <div
       data-toolbar=""
-      // No own bg: the frame's translucent wash is painted once by the parent
-      // (stacking two alpha layers here would render the bar darker than the rail).
-      className="drag-region flex h-11 shrink-0 items-center gap-1 pl-[84px] pr-2"
+      className="drag-region flex h-(--workspace-topbar-height) shrink-0 items-center gap-3 px-4"
     >
-      <IconBtn label="Back" disabled={!canGoBack} onClick={onBack} className="size-7">
-        <ChevronLeftIcon className="size-4.5" />
-      </IconBtn>
-      <IconBtn label="Forward" disabled={!canGoForward} onClick={onForward} className="size-7">
-        <ChevronRightIcon className="size-4.5" />
-      </IconBtn>
-
-      {/* Mailbox switcher: Combined stands alone, the accounts form a tab group. */}
-      <div className="flex shrink-0 items-center gap-2 px-2">
-        {accounts.length > 1 ? (
-          <>
-            <AccountKnob
-              label="Combined"
-              hint="⌘1"
-              selected={isCombined}
-              onClick={() => onSelectAccount(COMBINED_ACCOUNT_ID)}
-              background="var(--te-strong)"
-              menu={
-                <>
-                  <ContextMenuItem
-                    icon="slider.horizontal.3"
-                    onSelect={() =>
-                      void gmailApi.openSettings({ pane: "views", mailbox: COMBINED_ACCOUNT_ID })
-                    }
-                  >
-                    Manage Views…
-                  </ContextMenuItem>
-                  <ContextMenuItem
-                    icon="gearshape"
-                    onSelect={() => void gmailApi.openSettings({ pane: "general" })}
-                  >
-                    Settings…
-                  </ContextMenuItem>
-                </>
-              }
-            >
-              <LayersIcon className="size-3.5" style={{ color: "var(--te-card)" }} />
-            </AccountKnob>
-            <span className="h-5 w-px shrink-0 bg-(--te-border)" aria-hidden />
-          </>
-        ) : null}
-        <div className="flex items-center gap-1 rounded-full border border-(--te-border) bg-(--te-ctl) p-1">
-          {accounts.map((account, i) => (
-            <AccountKnob
-              key={account.id}
-              label={getAccountDisplayName(account)}
-              hint={accounts.length > 1 ? `⌘${i + 2}` : "⌘1"}
-              selected={selectedAccountId === account.id}
-              onClick={() => onSelectAccount(account.id)}
-              background={getAccountColor(account)}
-              menu={
-                <>
-                  <ContextMenuItem
-                    icon="person.crop.circle"
-                    onSelect={() => void gmailApi.openSettings({ pane: "accounts" })}
-                  >
-                    Account Settings…
-                  </ContextMenuItem>
-                  <ContextMenuItem
-                    icon="slider.horizontal.3"
-                    onSelect={() =>
-                      void gmailApi.openSettings({ pane: "views", mailbox: account.id })
-                    }
-                  >
-                    Manage Views…
-                  </ContextMenuItem>
-                </>
-              }
-            >
-              {(getAccountDisplayName(account)[0] ?? "?").toUpperCase()}
-            </AccountKnob>
-          ))}
-          <HintTooltip label="Add Gmail account">
-            <button
-              type="button"
-              aria-label="Add Gmail account"
-              onClick={onAddAccount}
-              className="flex size-6 shrink-0 items-center justify-center rounded-full border border-dashed border-(--te-outline) text-(--te-muted) hover:border-(--te-outline-hover) hover:text-(--te-strong)"
-            >
-              <PlusIcon className="size-3.5" />
-            </button>
-          </HintTooltip>
-        </div>
-      </div>
-
-      <span className="min-w-0 flex-1" />
-
-      {/* Quiet ghost search, right-aligned; borderless until focused. */}
-      <div className="relative shrink-0">
-        <SearchIcon className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-(--te-faint)" />
-        <input
-          ref={searchRef}
-          value={searchQuery}
-          onChange={(e) => onSearchChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              onSearchChange("");
-              e.currentTarget.blur();
-            }
-          }}
-          placeholder={isCombined ? "Search all mailboxes" : "Search mail"}
-          className="h-7 w-48 rounded-[5px] border border-transparent bg-transparent pl-7 pr-6 text-[12px] text-(--te-strong) outline-none placeholder:text-(--te-faint) hover:bg-(--te-hover) focus:border-(--te-outline) focus:bg-(--te-panel)"
-          aria-label="Search mail"
-        />
-        {searchQuery ? (
-          <button
-            type="button"
-            onClick={() => onSearchChange("")}
-            aria-label="Clear search"
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-(--te-faint) hover:text-(--te-strong)"
-          >
-            <XIcon className="size-3.5" />
-          </button>
-        ) : null}
-      </div>
-
-      <HintTooltip label="Jump to anything" hint="⌘K">
-        <button
-          type="button"
-          aria-label="Open command palette"
-          onClick={onOpenPalette}
-          className="te-num flex h-7 shrink-0 items-center rounded-[5px] border border-(--te-outline) px-1.5 text-[11px] text-(--te-muted) hover:border-(--te-outline-hover) hover:text-(--te-strong)"
-        >
-          ⌘K
-        </button>
-      </HintTooltip>
-
+      {leading}
       {syncing ? (
-        <div className="flex min-w-0 items-center gap-1.5 pr-1">
-          <span className="te-blink size-1.5 shrink-0 bg-(--te-accent)" aria-hidden />
-          <span className="te-label max-w-40 truncate text-(--te-muted)">{syncLabel}</span>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span
+            className="size-1.5 shrink-0 rounded-full bg-primary animate-status-pulse"
+            aria-hidden
+          />
+          <span className="max-w-64 truncate text-xs text-muted-foreground">{syncLabel}</span>
         </div>
       ) : null}
 
+      <span className="min-w-0 flex-1" />
+
       <DefaultMailButton />
 
-      <HintTooltip label={chatOpen ? "Hide Hermes chat" : "Chat with Hermes"} hint="⌘I">
-        <IconBtn label="Hermes chat" active={chatOpen} onClick={onToggleChat} className="size-7">
-          <BotMessageSquareIcon className="size-3.5" />
-        </IconBtn>
-      </HintTooltip>
-
-      <HintTooltip label="Keyboard shortcuts" hint="?">
-        <IconBtn label="Help" onClick={onOpenHelp} className="size-7">
-          <CircleHelpIcon className="size-3.5" />
-        </IconBtn>
-      </HintTooltip>
-
-      <HintTooltip label="Settings" hint="⌘,">
-        <IconBtn
-          label="Open Settings"
-          onClick={() => void gmailApi.openSettings({ pane: "general" })}
-          className="size-7"
-        >
-          <SettingsIcon className="size-3.5" />
-        </IconBtn>
-      </HintTooltip>
-
+      {showPanelToggle ? (
+        <HintTooltip label="Show Hermes panel" hint="⌘I" side="bottom">
+          <IconBtn label="Toggle Hermes panel" onClick={onToggleChat}>
+            <PanelRightIcon className="size-4" />
+          </IconBtn>
+        </HintTooltip>
+      ) : null}
     </div>
   );
 }

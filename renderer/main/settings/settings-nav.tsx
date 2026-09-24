@@ -1,0 +1,92 @@
+import type { ComponentType } from "react";
+import {
+  ArrowLeftIcon,
+  BotIcon,
+  CircleHelpIcon,
+  LayersIcon,
+  Settings2Icon,
+  UsersIcon,
+} from "lucide-react";
+import type { SettingsPane } from "../gmail/api";
+import { HintTooltip, IconBtn, cn } from "../gmail/ui";
+
+export const SETTINGS_SECTIONS: ReadonlyArray<{
+  id: SettingsPane;
+  label: string;
+  icon: ComponentType<{ className?: string }>;
+}> = [
+  { id: "general", label: "General", icon: Settings2Icon },
+  { id: "accounts", label: "Accounts", icon: UsersIcon },
+  { id: "views", label: "Views", icon: LayersIcon },
+  { id: "assistant", label: "Assistant", icon: BotIcon },
+];
+
+export function settingsSectionLabel(pane: SettingsPane): string {
+  return SETTINGS_SECTIONS.find((s) => s.id === pane)?.label ?? "Settings";
+}
+
+const ROW =
+  "flex h-8 w-full cursor-pointer items-center gap-(--sidebar-control-gap) rounded-[var(--control-radius)] px-(--sidebar-row-content-inset) text-left text-sm font-medium outline-none transition-[background-color,color] focus-visible:ring-2 focus-visible:ring-focus-ring active:bg-sidebar-row-active [&>svg]:size-4 [&>svg]:shrink-0";
+
+/** Sidebar contents while the settings page is open: back row + sections. */
+export function SettingsNav({
+  pane,
+  onSelect,
+  onBack,
+  onOpenHelp,
+}: {
+  pane: SettingsPane;
+  onSelect: (pane: SettingsPane) => void;
+  onBack: () => void;
+  onOpenHelp: () => void;
+}) {
+  return (
+    <>
+      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-(--sidebar-content-inset) pb-4 pt-1">
+        <button
+          type="button"
+          onClick={onBack}
+          className={cn(
+            ROW,
+            "text-sidebar-muted-foreground/80 hover:bg-sidebar-row-hover hover:text-sidebar-foreground [&>svg]:text-(--sidebar-icon-color) hover:[&>svg]:text-sidebar-foreground",
+          )}
+        >
+          <ArrowLeftIcon />
+          <span className="truncate">Back</span>
+        </button>
+        <div className="px-(--sidebar-row-content-inset) pb-1 pt-3 text-xs font-medium text-sidebar-muted-foreground/70">
+          Settings
+        </div>
+        {SETTINGS_SECTIONS.map((section) => {
+          const Icon = section.icon;
+          const active = section.id === pane;
+          return (
+            <button
+              key={section.id}
+              type="button"
+              onClick={() => onSelect(section.id)}
+              aria-current={active ? "page" : undefined}
+              className={cn(
+                ROW,
+                active
+                  ? "bg-sidebar-row-selected text-sidebar-foreground [&>svg]:text-sidebar-foreground"
+                  : "text-sidebar-muted-foreground/80 hover:bg-sidebar-row-hover hover:text-sidebar-foreground [&>svg]:text-(--sidebar-icon-color) hover:[&>svg]:text-sidebar-foreground",
+              )}
+            >
+              <Icon />
+              <span className="truncate">{section.label}</span>
+            </button>
+          );
+        })}
+      </div>
+      {/* Bottom footer row, where the mail sidebar keeps its utilities. */}
+      <div className="flex shrink-0 items-center gap-1 px-(--sidebar-content-inset) py-1">
+        <HintTooltip label="Keyboard shortcuts" hint="?">
+          <IconBtn label="Keyboard shortcuts" onClick={onOpenHelp} className="size-8">
+            <CircleHelpIcon className="size-4" />
+          </IconBtn>
+        </HintTooltip>
+      </div>
+    </>
+  );
+}

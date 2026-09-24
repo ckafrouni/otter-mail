@@ -150,7 +150,8 @@ export async function chatConfigure(baseUrl: string, apiKey: string): Promise<Ch
   const base = normalizeBaseUrl(baseUrl);
   const response = await fetch(`${base}/models`, { headers: authHeaders(apiKey) });
   if (response.status === 401) throw new Error("The API key was rejected (401).");
-  if (!response.ok) throw new Error(`The server answered ${response.status} — is that the API server URL?`);
+  if (!response.ok)
+    throw new Error(`The server answered ${response.status} — is that the API server URL?`);
   const data = (await response.json()) as { data?: { id?: string }[] };
   const model = data.data?.[0]?.id || "hermes-agent";
   const sessions = await probeSessions(base, apiKey);
@@ -292,7 +293,9 @@ export async function sessionRename(sessionId: string, title: string): Promise<{
 export async function sessionList(params: { limit?: number }): Promise<ChatSession[]> {
   const { key, root } = await requireReady();
   const limit = Math.min(Math.max(params.limit ?? 40, 1), 200);
-  const response = await fetch(`${root}/api/sessions?limit=${limit}`, { headers: authHeaders(key) });
+  const response = await fetch(`${root}/api/sessions?limit=${limit}`, {
+    headers: authHeaders(key),
+  });
   if (!response.ok) throw new Error(await readError(response));
   const body = (await response.json()) as { data?: RawSession[] };
   return (body.data ?? []).map(toSession).filter((s) => s.id);
@@ -337,7 +340,8 @@ export async function sessionMessages(sessionId: string): Promise<ChatSessionMes
   const body = (await response.json()) as { data?: RawMessage[] };
   const out: ChatSessionMessage[] = [];
   for (const m of body.data ?? []) {
-    const role = m.role === "user" || m.role === "assistant" || m.role === "tool" ? m.role : "system";
+    const role =
+      m.role === "user" || m.role === "assistant" || m.role === "tool" ? m.role : "system";
     const toolCalls = (m.tool_calls ?? [])
       .map((call) => call.function?.name ?? call.name ?? "")
       .filter((name) => name.length > 0);
@@ -445,7 +449,15 @@ export async function chatSend(params: {
     resetIdle();
     const ok = sessionId
       ? await streamSessionTurn({ requestId, input, sessionId, config, key, controller, resetIdle })
-      : await streamResponsesTurn({ requestId, input, previousResponseId, config, key, controller, resetIdle });
+      : await streamResponsesTurn({
+          requestId,
+          input,
+          previousResponseId,
+          config,
+          key,
+          controller,
+          resetIdle,
+        });
     return { ok };
   } catch (err) {
     const aborted = controller.signal.aborted;
@@ -455,7 +467,11 @@ export async function chatSend(params: {
         ? "timeout"
         : "cancelled"
       : "unreachable";
-    logger.info("assistant-chat", "failed", { requestId, message, error: aborted ? message : String(err) });
+    logger.info("assistant-chat", "failed", {
+      requestId,
+      message,
+      error: aborted ? message : String(err),
+    });
     emit({ requestId, type: "error", message });
     return { ok: false };
   } finally {
@@ -502,7 +518,11 @@ async function streamSessionTurn(ctx: TurnContext & { sessionId: string }): Prom
   }
   if (!response.ok || !response.body) {
     const message = await readError(response);
-    logger.info("assistant-chat", "session turn rejected", { requestId, status: response.status, message });
+    logger.info("assistant-chat", "session turn rejected", {
+      requestId,
+      status: response.status,
+      message,
+    });
     emit({ requestId, type: "error", message: `http_${response.status}` });
     return false;
   }
@@ -529,7 +549,8 @@ async function streamSessionTurn(ctx: TurnContext & { sessionId: string }): Prom
           // Mid-turn commentary beside tool calls; skip when it already streamed as deltas.
           if (payload.already_streamed) break;
           const text = String(payload.text ?? "").trim();
-          if (text) emit({ requestId, type: "delta", text: `${streamedText ? "\n\n" : ""}${text}\n\n` });
+          if (text)
+            emit({ requestId, type: "delta", text: `${streamedText ? "\n\n" : ""}${text}\n\n` });
           streamedText = true;
           break;
         }
@@ -543,7 +564,11 @@ async function streamSessionTurn(ctx: TurnContext & { sessionId: string }): Prom
           break;
         }
         case "tool.started":
-          emit({ requestId, type: "tool", name: String(payload.tool_name ?? payload.tool ?? "tool") });
+          emit({
+            requestId,
+            type: "tool",
+            name: String(payload.tool_name ?? payload.tool ?? "tool"),
+          });
           break;
         case "tool.completed":
         case "tool.failed": {
@@ -561,7 +586,11 @@ async function streamSessionTurn(ctx: TurnContext & { sessionId: string }): Prom
         case "run.failed": {
           terminal = "failed";
           const reason = payload.turn_exit_reason ? String(payload.turn_exit_reason) : "";
-          emit({ requestId, type: "error", message: reason ? `agent_error: ${reason}` : "agent_error" });
+          emit({
+            requestId,
+            type: "error",
+            message: reason ? `agent_error: ${reason}` : "agent_error",
+          });
           break;
         }
         case "run.cancelled":
@@ -571,7 +600,11 @@ async function streamSessionTurn(ctx: TurnContext & { sessionId: string }): Prom
         case "error": {
           terminal = "failed";
           const message = String(payload.message ?? "");
-          emit({ requestId, type: "error", message: message ? `agent_error: ${message}` : "agent_error" });
+          emit({
+            requestId,
+            type: "error",
+            message: message ? `agent_error: ${message}` : "agent_error",
+          });
           break;
         }
         default:

@@ -7,7 +7,5 @@ export function isTypingTarget(e: KeyboardEvent): boolean {
   const el = e.target;
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return true;
   if (el instanceof HTMLElement && el.isContentEditable) return true;
-  return (
-    document.querySelector('[role="dialog"], [data-radix-popper-content-wrapper]') != null
-  );
+  return document.querySelector('[role="dialog"], [data-radix-popper-content-wrapper]') != null;
 }

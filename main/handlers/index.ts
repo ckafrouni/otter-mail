@@ -8,17 +8,13 @@ import * as path from "path";
 import { fileURLToPath } from "url";
 
 import { appHandlers } from "./app.js";
-import {
-  getSettingsWindow,
-  openSettingsWindow,
-  setSettingsTarget,
-  takeSettingsTarget,
-} from "../windows/settings-window.js";
+import { setSettingsTarget, takeSettingsTarget } from "../windows/settings-window.js";
 import { registerGmailHandlers } from "./gmail.js";
 import { registerTrayPopoverHandlers } from "./tray-popover.js";
 import * as assistant from "../services/assistant.js";
 import * as assistantChat from "../services/assistant-chat.js";
 import { openMessageWindow } from "../windows/message-window.js";
+import { focusMainWindow } from "../services/tray.js";
 import { listMailApps, setDefaultMailHandler } from "../services/default-mail.js";
 import { configureAutoSync, syncAllAccounts } from "../services/mail-sync.js";
 import { takePendingMailto } from "../services/mailto-target.js";
@@ -43,31 +39,28 @@ export function registerHandlers(): void {
     return path.join(__dirname, "..", "..");
   });
 
-  // Settings window handlers. Accepts an optional navigation target so any
-  // window can deep-link into a pane (e.g. edit a view from the main sidebar).
+  // Settings live in the main window. Any window can deep-link into a pane
+  // (e.g. edit a view from the tray); the main window pulls the target on
+  // mount and whenever settings:open is broadcast.
   ipcMain.handle("window:openSettings", async (_event, params: unknown) => {
     const p = params as { pane?: unknown; viewId?: unknown; mailbox?: unknown } | undefined;
     const pane =
-      p?.pane === "general" || p?.pane === "accounts" || p?.pane === "views" || p?.pane === "oauth"
+      p?.pane === "general" ||
+      p?.pane === "accounts" ||
+      p?.pane === "views" ||
+      p?.pane === "assistant"
         ? p.pane
-        : null;
-    if (pane) {
-      setSettingsTarget({
-        pane,
-        viewId: typeof p?.viewId === "string" ? p.viewId : null,
-        mailbox: typeof p?.mailbox === "string" ? p.mailbox : null,
-      });
-    }
-    const existed = getSettingsWindow() != null;
-    await openSettingsWindow();
-    if (existed && pane) ipcMain.broadcast("settings:navigate");
+        : "general";
+    setSettingsTarget({
+      pane,
+      viewId: typeof p?.viewId === "string" ? p.viewId : null,
+      mailbox: typeof p?.mailbox === "string" ? p.mailbox : null,
+    });
+    await focusMainWindow();
+    ipcMain.broadcast("settings:open");
   });
 
   ipcMain.handle("window:getSettingsTarget", async () => takeSettingsTarget());
-
-  ipcMain.handle("window:closeSettings", async (_event) => {
-    getSettingsWindow()?.close();
-  });
 
   // Cmd+click a message → standalone single-message window.
   ipcMain.handle("window:openMessage", async (_event, params: unknown) => {

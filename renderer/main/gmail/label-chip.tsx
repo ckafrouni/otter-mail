@@ -1,8 +1,25 @@
+import type { CSSProperties } from "react";
 import { ChevronsRightIcon, InboxIcon, XIcon } from "lucide-react";
 import type { GmailLabel } from "./types";
 
+/** Badge chrome shared by every chip (Otter Code's `Badge`, size sm). */
 const PILL =
-  "te-label group relative inline-flex w-fit max-w-32 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-[3px] px-1.5 py-0.5 leading-none";
+  "group relative inline-flex h-4.5 w-fit max-w-32 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-sm border px-1 text-2xs font-medium leading-none";
+
+/** Neutral outline chip. */
+const OUTLINE = "border-input bg-canvas text-muted-foreground dark:bg-input/32";
+
+/**
+ * Tinted chip driven by a `--label` color: a faint wash of the label over the
+ * surface and text that leans towards it, so colored labels stay quiet next
+ * to the list copy (Otter Code's `label` badge variant).
+ */
+const TINTED =
+  "border-transparent bg-[color-mix(in_srgb,var(--label)_8%,transparent)] text-[color-mix(in_srgb,var(--label)_30%,var(--foreground))] dark:bg-[color-mix(in_srgb,var(--label)_12%,transparent)] dark:text-[color-mix(in_srgb,var(--label)_45%,var(--foreground))]";
+
+function tint(color: string): CSSProperties {
+  return { "--label": color } as CSSProperties;
+}
 
 /** Hover-revealed remove control: overlays the chip's right edge (bg-inherit
     paints over the text below), so the chip never changes size. */
@@ -16,7 +33,7 @@ function RemoveButton({ label, onRemove }: { label: string; onRemove: () => void
         e.stopPropagation();
         onRemove();
       }}
-      className="absolute inset-y-0 right-0 hidden w-4 items-center justify-center rounded-r-[3px] bg-inherit group-hover:flex"
+      className="absolute inset-y-0 right-0 hidden w-4 items-center justify-center rounded-r-sm bg-inherit group-hover:flex"
     >
       <XIcon className="size-2.5" strokeWidth={3} />
     </button>
@@ -35,10 +52,7 @@ export function CategoryChip({ id }: { id: string }) {
   const meta = CATEGORY_CHIPS[id];
   if (!meta) return null;
   return (
-    <span
-      className={`${PILL} border border-transparent`}
-      style={{ backgroundColor: meta.bg, color: "#ffffff" }}
-    >
+    <span className={`${PILL} ${TINTED}`} style={tint(meta.bg)}>
       {meta.name}
     </span>
   );
@@ -61,13 +75,7 @@ export function ImportantMarker() {
     `onRemove` (reader header) reveals a hover ✕ that archives. */
 export function InboxChip({ selected, onRemove }: { selected?: boolean; onRemove?: () => void }) {
   return (
-    <span
-      className={`${PILL} ${
-        selected
-          ? "border border-transparent bg-(--te-sel-fg)/25 text-(--te-sel-fg)"
-          : "border border-(--te-outline) text-(--te-muted)"
-      } ${onRemove ? "bg-(--te-card)" : ""}`}
-    >
+    <span className={`${PILL} ${OUTLINE} ${selected ? "border-foreground/20" : ""}`}>
       <InboxIcon className="size-3" />
       Inbox
       {onRemove ? <RemoveButton label="Archive" onRemove={onRemove} /> : null}
@@ -76,9 +84,9 @@ export function InboxChip({ selected, onRemove }: { selected?: boolean; onRemove
 }
 
 /**
- * Colored chip for a label. Uncolored labels get a hairline outline, but on a
- * selected (accent-filled) row that is nearly invisible — `selected` switches
- * them to a translucent selection-foreground fill instead.
+ * Chip for a label: tinted with the label's Gmail color, or a neutral outline
+ * when the label has none. Selection only firms up the outline, since the
+ * selected row is a quiet surface rather than a filled block.
  */
 export function LabelChip({
   label,
@@ -96,32 +104,14 @@ export function LabelChip({
   const text = <span className="min-w-0 truncate">{displayName}</span>;
   if (label.color) {
     return (
-      <span
-        className={`${PILL} border border-transparent`}
-        style={{
-          backgroundColor: label.color.backgroundColor,
-          color: label.color.textColor,
-        }}
-      >
-        {text}
-        {remove}
-      </span>
-    );
-  }
-  if (selected) {
-    return (
-      <span className={`${PILL} border border-transparent bg-(--te-sel-fg)/25 text-(--te-sel-fg)`}>
+      <span className={`${PILL} ${TINTED}`} style={tint(label.color.backgroundColor)}>
         {text}
         {remove}
       </span>
     );
   }
   return (
-    <span
-      className={`${PILL} border border-(--te-outline) text-(--te-muted) ${
-        onRemove ? "bg-(--te-card)" : ""
-      }`}
-    >
+    <span className={`${PILL} ${OUTLINE} ${selected ? "border-foreground/20" : ""}`}>
       {text}
       {remove}
     </span>

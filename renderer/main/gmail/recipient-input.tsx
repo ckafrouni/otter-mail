@@ -88,11 +88,11 @@ export const RecipientInput = forwardRef<
         spellCheck={false}
         className={
           className ??
-          "w-full min-w-0 bg-transparent text-[13px] text-(--te-strong) outline-none placeholder:text-(--te-faint)"
+          "w-full min-w-0 bg-transparent text-sm text-foreground outline-none placeholder:text-placeholder"
         }
       />
       {open ? (
-        <div className="absolute left-0 top-full z-50 mt-1.5 max-h-64 w-full min-w-64 overflow-y-auto rounded-[6px] border border-(--te-border) bg-(--te-card) py-1 shadow-xl te-scroll">
+        <div className="dropdown-glass absolute left-0 top-full z-50 mt-1.5 max-h-64 w-full min-w-64 overflow-y-auto rounded-lg p-1 shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]">
           {suggestions.map((suggestion, i) => (
             <button
               key={suggestion.email}
@@ -105,16 +105,18 @@ export const RecipientInput = forwardRef<
               onMouseEnter={() => setActiveIdx(i)}
               className={[
                 "flex w-full items-center gap-2.5 px-3 py-1.5 text-left",
-                i === activeIdx ? "bg-(--te-hover)" : "",
+                i === activeIdx ? "bg-accent-surface" : "",
               ].join(" ")}
             >
               <SenderAvatar name={suggestion.name} email={suggestion.email} size="sm" />
               <span className="flex min-w-0 flex-col">
-                <span className="truncate text-[13px] font-semibold text-(--te-strong)">
+                <span className="truncate text-sm font-semibold text-foreground">
                   {suggestion.name || suggestion.email}
                 </span>
                 {suggestion.name ? (
-                  <span className="truncate text-[11px] text-(--te-muted)">{suggestion.email}</span>
+                  <span className="truncate text-2xs text-muted-foreground">
+                    {suggestion.email}
+                  </span>
                 ) : null}
               </span>
             </button>

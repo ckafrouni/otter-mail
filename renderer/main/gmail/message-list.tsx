@@ -1,4 +1,5 @@
 import type React from "react";
+import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import {
   ContextMenu,
@@ -9,15 +10,15 @@ import {
   ContextMenuSeparator,
   ContextMenuSub,
   Dialog,
+  Text,
+} from "@glaze/core/components";
+import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuCheckboxItem,
   DropdownMenuSeparator,
-  SegmentedControl,
-  SegmentedControlItem,
-  Text,
-} from "@glaze/core/components";
+} from "./menu";
 import {
   ArchiveIcon,
   ArchiveXIcon,
@@ -32,7 +33,7 @@ import {
   Trash2Icon,
   XIcon,
 } from "lucide-react";
-import { IconBtn, HintTooltip } from "./te-ui";
+import { IconBtn, HintTooltip, buttonClass, cn } from "./ui";
 import { SlackAiIcon } from "./assistant-icons";
 import { gmailApi } from "./api";
 import {
@@ -50,20 +51,11 @@ import {
   useLabelResolver,
   useSyncAccountLabels,
 } from "./hooks";
-import {
-  AskAssistantDialog,
-  contextFromMessages,
-  type AssistantContext,
-} from "./ask-assistant";
+import { AskAssistantDialog, contextFromMessages, type AssistantContext } from "./ask-assistant";
 import { LabelChip, InboxChip, ImportantMarker } from "./label-chip";
 import { LabelOverlay, type LabelOverlayMode } from "./label-overlay";
 import { renderLabelMenuNodes } from "./label-picker-menu";
-import {
-  INBOX_VIEW_ID,
-  STARRED_VIEW_ID,
-  SENT_VIEW_ID,
-  DRAFTS_VIEW_ID,
-} from "./custom-views";
+import { INBOX_VIEW_ID, STARRED_VIEW_ID, SENT_VIEW_ID, DRAFTS_VIEW_ID } from "./custom-views";
 import { buildLabelTree } from "./label-tree";
 import { isTypingTarget } from "./keyboard";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
@@ -83,6 +75,8 @@ export type CombinedList = { viewId: string; name: string; rules: ViewRule[] };
 type CombinedMeta = { mailbox: string | null; accountName: string; accountColor: string };
 
 type MessageListProps = {
+  /** Rendered at the start of the title band (window title when the sidebar is hidden). */
+  headerLeading?: ReactNode;
   /** Active account — used for account-mode queries and as a fallback owner id. */
   accountId: string;
   labelId: string;
@@ -325,161 +319,138 @@ function MessageRow({
   const unread = message.threadUnread ?? message.unread;
 
   return (
-    <div className="px-2">
+    <div className="px-2 py-0.5">
       <ContextMenu>
         <ContextMenuTrigger asChild>
-      <button
-        ref={rowRef}
-        type="button"
-        onClick={onRowClick}
-        onDoubleClick={() => void gmailApi.openMessageWindow(ownerAccountId, message.id)}
-        // shift-click must not start a text selection
-        onMouseDown={(e) => {
-          if (e.shiftKey) e.preventDefault();
-        }}
-        className={[
-          "group my-px flex w-full items-start gap-2.5 rounded-[6px] px-3 py-2 text-left",
-          selected
-            ? "bg-(--te-sel)"
-            : checked
-              ? "bg-(--te-hover) ring-1 ring-inset ring-(--te-outline-hover)"
-              : "hover:bg-(--te-hover)",
-        ].join(" ")}
-      >
-        <div className="flex min-w-0 flex-1 flex-col gap-px">
-          <div className="flex items-center justify-between gap-2">
-            <span className="flex min-w-0 flex-1 items-center gap-1.5">
-              {unread && !selected ? (
-                <span className="size-1.5 shrink-0 bg-(--te-blue)" aria-hidden />
-              ) : null}
-              {message.labelIds.includes("IMPORTANT") ? <ImportantMarker /> : null}
-              <span
-                className={[
-                  "min-w-0 truncate text-[14px] leading-snug",
-                  selected
-                    ? "font-bold text-(--te-sel-fg)"
-                    : unread
-                      ? "font-bold text-(--te-strong)"
-                      : "font-medium text-(--te-text)",
-                ].join(" ")}
-              >
-                {message.fromName || message.fromEmail}
-              </span>
-            </span>
-            <div className="flex shrink-0 items-center gap-1.5">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAskAssistant();
-                }}
-                onMouseDown={(e) => e.stopPropagation()}
-                aria-label="Send to Hermes in Slack"
-                className={[
-                  "shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
-                  selected
-                    ? "text-(--te-sel-fg)/80 hover:text-(--te-sel-fg)"
-                    : "text-(--te-faint) hover:text-(--te-strong)",
-                ].join(" ")}
-              >
-                <SlackAiIcon className="size-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onChatAssistant();
-                }}
-                onMouseDown={(e) => e.stopPropagation()}
-                aria-label="Open in Hermes chat"
-                className={[
-                  "shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
-                  selected
-                    ? "text-(--te-sel-fg)/80 hover:text-(--te-sel-fg)"
-                    : "text-(--te-faint) hover:text-(--te-strong)",
-                ].join(" ")}
-              >
-                <BotMessageSquareIcon className="size-3.5" />
-              </button>
-              {combinedMeta ? (
-                <span className="flex items-center gap-1 text-[11px]">
-                  {combinedMeta.mailbox ? (
-                    <span className={selected ? "text-(--te-sel-fg)/70" : "text-(--te-faint)"}>
-                      {combinedMeta.mailbox} -
-                    </span>
+          <button
+            ref={rowRef}
+            type="button"
+            onClick={onRowClick}
+            onDoubleClick={() => void gmailApi.openMessageWindow(ownerAccountId, message.id)}
+            // shift-click must not start a text selection
+            onMouseDown={(e) => {
+              if (e.shiftKey) e.preventDefault();
+            }}
+            className={[
+              "group relative flex w-full cursor-pointer select-none items-start gap-2.5 overflow-hidden rounded-md px-(--sidebar-row-content-inset) py-(--sidebar-content-inset) text-left outline-none focus-visible:ring-2 focus-visible:ring-focus-ring",
+              selected
+                ? "bg-sidebar-row-active"
+                : checked
+                  ? "bg-sidebar-row-hover ring-1 ring-inset ring-primary/70"
+                  : "hover:bg-sidebar-row-hover",
+            ].join(" ")}
+          >
+            <div className="flex min-w-0 flex-1 flex-col gap-px">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                  {unread && !selected ? (
+                    <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
                   ) : null}
+                  {message.labelIds.includes("IMPORTANT") ? <ImportantMarker /> : null}
                   <span
-                    className="font-semibold"
-                    style={{
-                      color: selected ? "var(--te-sel-fg)" : combinedMeta.accountColor,
-                    }}
+                    className={[
+                      "min-w-0 truncate text-sm leading-snug",
+                      unread ? "font-semibold text-foreground" : "font-medium text-foreground/90",
+                    ].join(" ")}
                   >
-                    {combinedMeta.accountName}
+                    {message.fromName || message.fromEmail}
                   </span>
                 </span>
-              ) : null}
-              {threadCount > 1 ? (
-                <span
-                  className={[
-                    "te-num rounded-[3px] px-1 py-px text-[10px]",
-                    selected
-                      ? "bg-(--te-sel-fg)/25 text-(--te-sel-fg)"
-                      : "border border-(--te-outline) text-(--te-muted)",
-                  ].join(" ")}
-                >
-                  {threadCount}
-                </span>
-              ) : null}
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAskAssistant();
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    aria-label="Send to Hermes in Slack"
+                    className={[
+                      "shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+                      "text-muted-foreground hover:text-foreground",
+                    ].join(" ")}
+                  >
+                    <SlackAiIcon className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onChatAssistant();
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    aria-label="Open in Hermes chat"
+                    className={[
+                      "shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+                      "text-muted-foreground hover:text-foreground",
+                    ].join(" ")}
+                  >
+                    <BotMessageSquareIcon className="size-3.5" />
+                  </button>
+                  {combinedMeta ? (
+                    <span className="flex items-center gap-1 text-2xs">
+                      {combinedMeta.mailbox ? (
+                        <span className="text-muted-foreground/70">{combinedMeta.mailbox} -</span>
+                      ) : null}
+                      <span
+                        className="font-semibold"
+                        style={{
+                          color: combinedMeta.accountColor,
+                        }}
+                      >
+                        {combinedMeta.accountName}
+                      </span>
+                    </span>
+                  ) : null}
+                  {threadCount > 1 ? (
+                    <span
+                      className={[
+                        "inline-flex h-4 min-w-4 items-center justify-center rounded-sm border border-input px-1 text-2xs font-medium tabular-nums text-muted-foreground",
+                      ].join(" ")}
+                    >
+                      {threadCount}
+                    </span>
+                  ) : null}
+                  <span className={["text-xs tabular-nums text-muted-foreground/55"].join(" ")}>
+                    {formatRelativeDate(message.date)}
+                  </span>
+                </div>
+              </div>
               <span
                 className={[
-                  "te-num text-[10px]",
-                  selected ? "text-(--te-sel-fg)/75" : "text-(--te-faint)",
+                  "truncate text-sm leading-snug",
+                  unread ? "font-medium text-foreground/90" : "text-muted-foreground",
                 ].join(" ")}
               >
-                {formatRelativeDate(message.date)}
+                {message.subject || "(no subject)"}
               </span>
+              <span
+                className={["truncate text-xs leading-snug", "text-muted-foreground/70"].join(" ")}
+              >
+                {decodeEntities(message.snippet) || " "}
+              </span>
+              {/* Fixed-height single-line chip strip so every row measures the same. */}
+              <div className="mt-0.5 flex h-5 items-center gap-1 overflow-hidden">
+                {showInboxChip && message.labelIds.includes("INBOX") ? (
+                  <InboxChip selected={selected} />
+                ) : null}
+                {messageLabels.map((label) => (
+                  <LabelChip key={label.id} label={label} selected={selected} />
+                ))}
+              </div>
             </div>
-          </div>
-          <span
-            className={[
-              "truncate text-[13px] leading-snug",
-              selected ? "text-(--te-sel-fg)/95" : unread ? "font-semibold text-(--te-strong)" : "text-(--te-muted)",
-            ].join(" ")}
-          >
-            {message.subject || "(no subject)"}
-          </span>
-          <span
-            className={[
-              "truncate text-[12px] leading-snug",
-              selected ? "text-(--te-sel-fg)/70" : "text-(--te-faint)",
-            ].join(" ")}
-          >
-            {decodeEntities(message.snippet) || " "}
-          </span>
-          {/* Fixed-height single-line chip strip so every row measures the same. */}
-          <div className="mt-0.5 flex h-5 items-center gap-1 overflow-hidden">
-            {showInboxChip && message.labelIds.includes("INBOX") ? (
-              <InboxChip selected={selected} />
-            ) : null}
-            {messageLabels.map((label) => (
-              <LabelChip key={label.id} label={label} selected={selected} />
-            ))}
-          </div>
-        </div>
 
-        {message.starred ? (
-          <button
-            type="button"
-            onClick={handleStarToggle}
-            className="mt-0.5 shrink-0"
-            aria-label="Unflag"
-          >
-            <FlagIcon
-              className={["size-4 fill-current", selected ? "text-(--te-sel-fg)" : "text-(--red)"].join(" ")}
-            />
+            {message.starred ? (
+              <button
+                type="button"
+                onClick={handleStarToggle}
+                className="mt-0.5 shrink-0"
+                aria-label="Unflag"
+              >
+                <FlagIcon className="size-4 fill-current text-(--red)" />
+              </button>
+            ) : null}
           </button>
-        ) : null}
-      </button>
         </ContextMenuTrigger>
         <ContextMenuContent>
           <ContextMenuItem
@@ -530,10 +501,7 @@ function MessageRow({
             </ContextMenuItem>
           )}
           {trashed ? null : (
-            <ContextMenuItem
-              icon={junk ? "checkmark.shield" : "xmark.bin"}
-              onSelect={handleJunk}
-            >
+            <ContextMenuItem icon={junk ? "checkmark.shield" : "xmark.bin"} onSelect={handleJunk}>
               {junk ? "Not Junk" : "Move to Junk"}
             </ContextMenuItem>
           )}
@@ -589,7 +557,7 @@ function FilterPill({ label, onRemove }: { label: string; onRemove: () => void }
       type="button"
       onClick={onRemove}
       aria-label={`Remove filter: ${label}`}
-      className="te-label flex shrink-0 items-center gap-1 rounded-[4px] border border-(--te-outline) px-1.5 py-0.5 text-(--te-muted) hover:bg-(--te-hover) hover:text-(--te-strong)"
+      className="inline-flex h-5 shrink-0 items-center gap-1 rounded-sm border border-input bg-canvas px-1.5 text-xs font-medium text-muted-foreground hover:bg-accent-surface/50 hover:text-foreground dark:bg-input/32"
     >
       {label}
       <XIcon className="size-3" />
@@ -604,6 +572,7 @@ function formatMailboxSummary(total: number, unread: number): string {
 }
 
 export function MessageList({
+  headerLeading,
   accountId,
   labelId,
   combined,
@@ -693,11 +662,17 @@ export function MessageList({
   // Header title + "N messages, M unread". Combined counts come from the local
   // store (rules can't be summed from Gmail's per-label counters); account mode
   // still uses Gmail's own label counters.
-  const combinedCounts = useCombinedCounts(combined?.rules ?? [], combined?.viewId ?? "", isCombined);
+  const combinedCounts = useCombinedCounts(
+    combined?.rules ?? [],
+    combined?.viewId ?? "",
+    isCombined,
+  );
   const activeLabel = resolveLabel(accountId, labelId);
   const mailboxTitle = isCombined
     ? combined.name
-    : (activeLabel ? labelDisplayName(activeLabel) : (SYSTEM_LABEL_NAMES[labelId] ?? labelId));
+    : activeLabel
+      ? labelDisplayName(activeLabel)
+      : (SYSTEM_LABEL_NAMES[labelId] ?? labelId);
   const { mailboxTotal, mailboxUnread } = isCombined
     ? {
         mailboxTotal: combinedCounts.data?.total ?? 0,
@@ -852,43 +827,53 @@ export function MessageList({
     clearChecked();
   };
   const bulkArchive = () =>
-    bulk("archive", (m) =>
-      void listModifyThread.mutateAsync({
-        accountId: m.accountId ?? accountId,
-        threadId: m.threadId || m.id,
-        removeLabelIds: ["INBOX"],
-      }),
+    bulk(
+      "archive",
+      (m) =>
+        void listModifyThread.mutateAsync({
+          accountId: m.accountId ?? accountId,
+          threadId: m.threadId || m.id,
+          removeLabelIds: ["INBOX"],
+        }),
     );
   const bulkTrash = () =>
-    bulk("trash", (m) =>
-      void listTrashThread.mutateAsync({
-        accountId: m.accountId ?? accountId,
-        threadId: m.threadId || m.id,
-      }),
+    bulk(
+      "trash",
+      (m) =>
+        void listTrashThread.mutateAsync({
+          accountId: m.accountId ?? accountId,
+          threadId: m.threadId || m.id,
+        }),
     );
   const bulkJunk = () =>
-    bulk("junk", (m) =>
-      void listModifyThread.mutateAsync({
-        accountId: m.accountId ?? accountId,
-        threadId: m.threadId || m.id,
-        addLabelIds: ["SPAM"],
-        removeLabelIds: ["INBOX"],
-      }),
+    bulk(
+      "junk",
+      (m) =>
+        void listModifyThread.mutateAsync({
+          accountId: m.accountId ?? accountId,
+          threadId: m.threadId || m.id,
+          addLabelIds: ["SPAM"],
+          removeLabelIds: ["INBOX"],
+        }),
     );
   const bulkMarkRead = () =>
-    bulk("read", (m) =>
-      void listModifyThread.mutateAsync({
-        accountId: m.accountId ?? accountId,
-        threadId: m.threadId || m.id,
-        removeLabelIds: ["UNREAD"],
-      }),
+    bulk(
+      "read",
+      (m) =>
+        void listModifyThread.mutateAsync({
+          accountId: m.accountId ?? accountId,
+          threadId: m.threadId || m.id,
+          removeLabelIds: ["UNREAD"],
+        }),
     );
   const bulkUntrash = () =>
-    bulk("untrash", (m) =>
-      void listUntrashThread.mutateAsync({
-        accountId: m.accountId ?? accountId,
-        threadId: m.threadId || m.id,
-      }),
+    bulk(
+      "untrash",
+      (m) =>
+        void listUntrashThread.mutateAsync({
+          accountId: m.accountId ?? accountId,
+          threadId: m.threadId || m.id,
+        }),
     );
   const listDeleteForever = useDeleteThreadsForever();
   const [confirmDeleteRows, setConfirmDeleteRows] = useState<GmailMessageSummary[] | null>(null);
@@ -909,17 +894,20 @@ export function MessageList({
     clearChecked();
   };
   const bulkNotJunk = () =>
-    bulk("notJunk", (m) =>
-      void listModifyThread.mutateAsync({
-        accountId: m.accountId ?? accountId,
-        threadId: m.threadId || m.id,
-        addLabelIds: ["INBOX"],
-        removeLabelIds: ["SPAM"],
-      }),
+    bulk(
+      "notJunk",
+      (m) =>
+        void listModifyThread.mutateAsync({
+          accountId: m.accountId ?? accountId,
+          threadId: m.threadId || m.id,
+          addLabelIds: ["INBOX"],
+          removeLabelIds: ["SPAM"],
+        }),
     );
   // Trash/spam rows only surface in their own views, so a uniform selection
   // decides the bar's vocabulary; mixed selections fall back to the default.
-  const allTrashed = checkedRows.length > 0 && checkedRows.every((m) => m.labelIds.includes("TRASH"));
+  const allTrashed =
+    checkedRows.length > 0 && checkedRows.every((m) => m.labelIds.includes("TRASH"));
   const allJunk =
     !allTrashed && checkedRows.length > 0 && checkedRows.every((m) => m.labelIds.includes("SPAM"));
 
@@ -932,12 +920,14 @@ export function MessageList({
     // Gmail-style: marking the open conversation unread returns to the list
     // (and keeps the reader from instantly re-marking it read).
     if (selectedMessageId && checked.has(selectedMessageId)) onDeselect();
-    bulk("unread", (m) =>
-      void listModifyMessage.mutateAsync({
-        accountId: m.accountId ?? accountId,
-        messageId: m.id,
-        addLabelIds: ["UNREAD"],
-      }),
+    bulk(
+      "unread",
+      (m) =>
+        void listModifyMessage.mutateAsync({
+          accountId: m.accountId ?? accountId,
+          messageId: m.id,
+          addLabelIds: ["UNREAD"],
+        }),
     );
   };
 
@@ -988,7 +978,12 @@ export function MessageList({
     });
   };
 
-  const shortcutState = useRef({ visibleMessages, selectedMessageId, accountId, moveContextLabelId });
+  const shortcutState = useRef({
+    visibleMessages,
+    selectedMessageId,
+    accountId,
+    moveContextLabelId,
+  });
   shortcutState.current = { visibleMessages, selectedMessageId, accountId, moveContextLabelId };
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -997,12 +992,16 @@ export function MessageList({
       // queue, replaying moves long after the key is released — drop repeats
       // that have been waiting more than a beat.
       if (e.repeat && performance.now() - e.timeStamp > 80) return;
-      const { visibleMessages: rows, selectedMessageId: selId, accountId: fallbackAccount } =
-        shortcutState.current;
+      const {
+        visibleMessages: rows,
+        selectedMessageId: selId,
+        accountId: fallbackAccount,
+      } = shortcutState.current;
       if (rows.length === 0) return;
       const idx = rows.findIndex((m) => m.id === selId);
       const selectedRow = idx >= 0 ? rows[idx] : undefined;
-      const select = (m: GmailMessageSummary) => onSelectMessage(m.id, m.accountId ?? fallbackAccount);
+      const select = (m: GmailMessageSummary) =>
+        onSelectMessage(m.id, m.accountId ?? fallbackAccount);
       const advance = () => {
         const next = pickAdvanceTarget(rows, idx);
         if (next) select(next);
@@ -1153,14 +1152,10 @@ export function MessageList({
   return (
     <div className="relative flex h-full min-w-0 flex-col">
       {/* Header */}
-      <div className="drag-region flex h-11 shrink-0 items-center gap-2 border-b border-(--te-border) px-4">
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[15px] font-bold leading-tight tracking-tight text-(--te-strong)">
-            {mailboxTitle}
-          </div>
-          <div className="te-label truncate leading-tight text-(--te-muted)">
-            {formatMailboxSummary(mailboxTotal, mailboxUnread)}
-          </div>
+      <div className="drag-region flex h-(--workspace-topbar-height) shrink-0 items-center gap-2 border-b border-border px-4">
+        {headerLeading}
+        <div className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+          {formatMailboxSummary(mailboxTotal, mailboxUnread)}
         </div>
         <HintTooltip label={filterOpen ? "Hide search" : "Search this mailbox"}>
           <IconBtn
@@ -1208,21 +1203,25 @@ export function MessageList({
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
-        <SegmentedControl
-          type="single"
-          value={mailboxMode}
-          onValueChange={(v) => setMailboxMode(v as "all" | "unread")}
-          size="small"
-          variant="filled"
-        >
-          <SegmentedControlItem value="all">All</SegmentedControlItem>
-          <SegmentedControlItem value="unread">Unread</SegmentedControlItem>
-        </SegmentedControl>
+        <HintTooltip label={unreadOnly ? "Show all messages" : "Show unread only"}>
+          <button
+            type="button"
+            aria-pressed={unreadOnly}
+            onClick={() => setMailboxMode(unreadOnly ? "all" : "unread")}
+            className={cn(
+              buttonClass("ghost-muted", "xs"),
+              "font-medium",
+              unreadOnly && "bg-accent-surface text-foreground",
+            )}
+          >
+            Unread
+          </button>
+        </HintTooltip>
       </div>
 
       {filterOpen ? (
-        <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-(--te-border) px-4">
-          <SearchIcon className="size-3.5 shrink-0 text-(--te-faint)" />
+        <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-border px-4">
+          <SearchIcon className="size-3.5 shrink-0 text-muted-foreground/70" />
           <input
             autoFocus
             value={filterQuery}
@@ -1234,13 +1233,13 @@ export function MessageList({
               }
             }}
             placeholder={`Search in ${mailboxTitle}`}
-            className="h-6 min-w-24 flex-1 bg-transparent text-[13px] text-(--te-text) outline-none placeholder:text-(--te-faint)"
+            className="h-6 min-w-24 flex-1 bg-transparent text-sm text-foreground/90 outline-none placeholder:text-placeholder"
           />
           <button
             type="button"
             onClick={closeSearch}
             aria-label="Close search"
-            className="shrink-0 text-(--te-faint) hover:text-(--te-strong)"
+            className="shrink-0 text-muted-foreground/70 hover:text-foreground"
           >
             <XIcon className="size-3.5" />
           </button>
@@ -1248,7 +1247,7 @@ export function MessageList({
       ) : null}
 
       {filtersActive ? (
-        <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-1.5 border-b border-(--te-border) px-4 py-1.5">
+        <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-4 py-1.5">
           {filters.starred ? (
             <FilterPill label="Flagged" onRemove={() => patchFilters({ starred: false })} />
           ) : null}
@@ -1272,7 +1271,7 @@ export function MessageList({
             type="button"
             onClick={clearFilters}
             aria-label="Clear filters"
-            className="shrink-0 text-(--te-faint) hover:text-(--te-strong)"
+            className="shrink-0 text-muted-foreground/70 hover:text-foreground"
           >
             <XIcon className="size-3.5" />
           </button>
@@ -1282,29 +1281,28 @@ export function MessageList({
       <div
         ref={scrollRef}
         onScroll={maybeLoadMore}
-        className={[
-          "te-scroll min-h-0 flex-1 overflow-y-auto py-1.5",
-          checked.size > 0 ? "pb-16" : "",
-        ].join(" ")}
+        className={["min-h-0 flex-1 overflow-y-auto py-1", checked.size > 0 ? "pb-16" : ""].join(
+          " ",
+        )}
       >
         {isLoading ? (
           <div className="flex flex-col gap-0">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="flex w-full items-start gap-3 px-5 py-2.5">
                 <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  <div className="h-3.5 w-32 animate-pulse rounded-[3px] bg-(--te-ctl)" />
-                  <div className="h-3 w-48 animate-pulse rounded-[3px] bg-(--te-hover)" />
-                  <div className="h-3 w-40 animate-pulse rounded-[3px] bg-(--te-hover)" />
+                  <div className="h-3.5 w-32 animate-skeleton rounded-sm bg-secondary" />
+                  <div className="h-3 w-48 animate-skeleton rounded-sm bg-accent-surface" />
+                  <div className="h-3 w-40 animate-skeleton rounded-sm bg-accent-surface" />
                 </div>
               </div>
             ))}
           </div>
         ) : visibleMessages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
-            <span className="text-[15px] font-bold text-(--te-text)">
+            <span className="text-sm font-medium text-foreground">
               {unreadOnly ? "No unread messages" : "No messages"}
             </span>
-            <span className="text-[13px] text-(--te-muted)">
+            <span className="text-sm text-muted-foreground">
               {unreadOnly
                 ? "Everything here has been read."
                 : filtering
@@ -1339,8 +1337,11 @@ export function MessageList({
             ))}
             {isFetchingNextPage ? (
               <div className="flex items-center justify-center gap-1.5 py-3">
-                <span className="te-blink size-1.5 shrink-0 bg-(--te-accent)" aria-hidden />
-                <span className="te-label text-(--te-faint)">Loading more</span>
+                <span
+                  className="size-1.5 shrink-0 rounded-full bg-primary animate-status-pulse"
+                  aria-hidden
+                />
+                <span className="text-xs text-muted-foreground">Loading more</span>
               </div>
             ) : null}
           </>
@@ -1349,10 +1350,12 @@ export function MessageList({
 
       {checked.size > 0 ? (
         <div className="absolute inset-x-0 bottom-3 z-10 flex justify-center px-3">
-          <div className="flex items-center gap-0.5 rounded-[6px] border border-(--te-outline) bg-(--te-panel) px-2 py-1 shadow-lg">
-            <span className="te-num pl-1 text-[11px] text-(--te-badge-bg)">{checked.size}</span>
-            <span className="te-label pr-1 text-(--te-faint)">selected</span>
-            <span className="mx-1 h-5 w-px shrink-0 bg-(--te-border)" aria-hidden />
+          <div className="dropdown-glass flex items-center gap-0.5 rounded-lg px-2 py-1 shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]">
+            <span className="pl-1 text-xs font-medium tabular-nums text-foreground">
+              {checked.size}
+            </span>
+            <span className="pr-1 text-xs text-muted-foreground">selected</span>
+            <span className="mx-1 h-5 w-px shrink-0 bg-border" aria-hidden />
             {allTrashed ? (
               <>
                 <HintTooltip label="Restore from Trash">
@@ -1411,7 +1414,7 @@ export function MessageList({
                 </HintTooltip>
               </>
             )}
-            <span className="mx-1 h-5 w-px shrink-0 bg-(--te-border)" aria-hidden />
+            <span className="mx-1 h-5 w-px shrink-0 bg-border" aria-hidden />
             <HintTooltip label="Mark as read">
               <IconBtn label="Mark as read" className="size-7" onClick={bulkMarkRead}>
                 <MailOpenIcon className="size-3.5" />
@@ -1422,9 +1425,13 @@ export function MessageList({
                 <MailIcon className="size-3.5" />
               </IconBtn>
             </HintTooltip>
-            <span className="mx-1 h-5 w-px shrink-0 bg-(--te-border)" aria-hidden />
+            <span className="mx-1 h-5 w-px shrink-0 bg-border" aria-hidden />
             <HintTooltip label="Send selection to Hermes in Slack">
-              <IconBtn label="Send to Slack" className="size-7" onClick={() => askAbout(checkedRows)}>
+              <IconBtn
+                label="Send to Slack"
+                className="size-7"
+                onClick={() => askAbout(checkedRows)}
+              >
                 <SlackAiIcon className="size-3.5" />
               </IconBtn>
             </HintTooltip>
@@ -1437,7 +1444,7 @@ export function MessageList({
                 <BotMessageSquareIcon className="size-3.5" />
               </IconBtn>
             </HintTooltip>
-            <span className="mx-1 h-5 w-px shrink-0 bg-(--te-border)" aria-hidden />
+            <span className="mx-1 h-5 w-px shrink-0 bg-border" aria-hidden />
             <HintTooltip label="Clear selection" hint="Esc">
               <IconBtn label="Clear selection" className="size-7" onClick={clearChecked}>
                 <XIcon className="size-3.5" />

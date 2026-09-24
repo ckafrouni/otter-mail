@@ -71,9 +71,9 @@ export function SenderHoverCard({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-2 rounded-[5px] px-2 py-1.5 text-left text-[12px] text-(--te-text) hover:bg-(--te-hover)"
+      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-foreground/90 hover:bg-accent-surface"
     >
-      <span className="shrink-0 text-(--te-muted)">{icon}</span>
+      <span className="shrink-0 text-muted-foreground">{icon}</span>
       {label}
     </button>
   );
@@ -94,18 +94,18 @@ export function SenderHoverCard({
               style={{ left: pos.x, top: pos.y }}
               onMouseEnter={clearTimers}
               onMouseLeave={hide}
-              className="fixed z-50 w-64 rounded-[10px] border border-(--te-outline) bg-(--te-panel) p-3 shadow-lg"
+              className="dropdown-glass fixed z-50 w-64 rounded-lg p-3 shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]"
             >
               <div className="flex items-center gap-2.5">
                 <SenderAvatar name={name} email={email} accountId={accountId} />
                 <div className="min-w-0">
-                  <div className="truncate text-[13px] font-bold text-(--te-strong)">
+                  <div className="truncate text-sm font-semibold text-foreground">
                     {displayName}
                   </div>
-                  <div className="truncate text-[12px] text-(--te-faint)">{email}</div>
+                  <div className="truncate text-xs text-muted-foreground/70">{email}</div>
                 </div>
               </div>
-              <div className="mt-2 flex flex-col gap-0.5 border-t border-(--te-border) pt-1.5">
+              <div className="mt-2 flex flex-col gap-0.5 border-t border-border pt-1.5">
                 {onCompose ? (
                   <Action
                     icon={<SquarePenIcon className="size-3.5" />}

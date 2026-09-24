@@ -181,7 +181,9 @@ export function useMailViews() {
     onMutate: (input) =>
       patchViews((views) =>
         input.id
-          ? views.map((v) => (v.id === input.id ? { ...v, name: input.name, rules: input.rules } : v))
+          ? views.map((v) =>
+              v.id === input.id ? { ...v, name: input.name, rules: input.rules } : v,
+            )
           : [
               ...views,
               {

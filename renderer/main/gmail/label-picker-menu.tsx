@@ -7,7 +7,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuSeparator,
   DropdownMenuSub,
-} from "@glaze/core/components";
+} from "./menu";
 import { useLabels, useModifyMessage } from "./hooks";
 import { buildLabelTree, type LabelTreeNode } from "./label-tree";
 

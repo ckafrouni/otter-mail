@@ -10,7 +10,7 @@
 @source not "./dev/**/*";
 
 /* Windows without an injected theme (Settings) keep the Apple Mail accent and
-   native neutral appearance. The main window injects the TE theme
+   native neutral appearance. The main window injects the app theme
    (root-view.tsx), which owns --theme-accent there. */
 :root:not(.active-theme) {
   --theme-accent: #0071e1;
@@ -21,89 +21,321 @@
   --accent: #0a84ff;
 }
 
-/* Teenage-engineering-inspired skin for the main window, consumed via
-   bg-(--te-*) etc. Warm gray "device body" frame, off-white faceplate card,
-   hairline borders, one loud orange. Light values live on :root; .dark
-   (synced by the injected theme, which follows the system appearance)
-   overrides them. */
+/* ---------------------------------------------------------------------------
+ * Otter Code design system (ported from T3 Code's index.css).
+ *
+ * Quiet zinc surfaces in light mode, a neutral-black canvas in dark mode,
+ * hairline alpha borders, one blue "primary" for solid controls and focus.
+ * Raw roles live on :root / .dark; the @theme inline block below exposes them
+ * as Tailwind utilities (bg-card, text-muted-foreground, border-input, …).
+ * Names that would collide with Glaze's own seeds (--background, --sidebar,
+ * --accent) are aliased: canvas, sidebar-surface, accent-surface.
+ * ------------------------------------------------------------------------- */
 :root {
-  --te-frame: rgb(215 212 206 / 10%); /* window frame: near-bare vibrancy glass */
-  --te-card: #f2f1ed; /* faceplate the three panes live on */
-  --te-card-glass: rgb(242 241 237 / 45%); /* sidebar faceplate: lets the vibrancy through */
-  --te-panel: #fbfaf8; /* raised inputs (composer, search) */
-  --te-border: #c9c6be; /* hairlines between panes */
-  --te-hover: rgb(0 0 0 / 5%); /* row hover wash */
-  --te-ctl: rgb(0 0 0 / 6%); /* control fills (chips, skeletons) */
-  --te-ctl-hover: rgb(0 0 0 / 11%);
-  --te-outline: rgb(0 0 0 / 24%); /* input borders */
-  --te-outline-hover: rgb(0 0 0 / 45%);
-  --te-strong: #191813; /* titles, unread, primary emphasis */
-  --te-text: #33322c;
-  --te-muted: #6c6a62;
-  --te-faint: #93908a;
-  --te-blue: #e34500; /* unread LED, links (rebranded per account) */
-  --te-sel: #191813; /* list-row selection */
-  --te-sel-fg: #ffffff; /* text on the list-row selection */
-  --te-accent: #ff4e00; /* the orange: send, sync LED */
-  --te-selected: #191813; /* sidebar selected row (inverted) */
-  --te-selected-fg: #ffffff;
-  --te-badge-bg: #e34500; /* unread count numeral */
-  --te-badge-fg: #ffffff;
+  --radius: 0.625rem;
+  --control-radius: 0.5rem;
+  --sidebar-content-inset: 0.5rem;
+  --sidebar-control-gap: 0.5rem;
+  --sidebar-row-content-inset: 0.625rem;
+  --workspace-topbar-height: 52px;
+  --app-scrollbar-width: 6px;
+  --app-scrollbar-thumb: rgb(217 217 217);
+  --app-scrollbar-thumb-hover: rgb(191 191 191);
+  --glass-blur: 12px;
+  --glass-opacity: 80%;
+  --glass-saturation: 1.14;
+
+  --canvas: #fcfcfc; /* zinc-25 */
+  --app-chrome-background: var(--canvas);
+  --foreground: #27272a; /* zinc-800 */
+  --card: #ffffff;
+  --card-foreground: #27272a;
+  --popover: #ffffff;
+  --popover-foreground: #27272a;
+  --surface-raised: color-mix(in srgb, var(--card) 20%, transparent);
+  --primary: oklch(0.488 0.217 264);
+  --primary-foreground: #ffffff;
+  --secondary: #fafafa; /* zinc-50 */
+  --secondary-foreground: #27272a;
+  --muted: #fafafa;
+  --muted-foreground: #71717a; /* zinc-500 */
+  --placeholder: var(--muted-foreground);
+  --secondary-label: var(--muted-foreground);
+  --icon-muted: var(--muted-foreground);
+  --accent-surface: #f4f4f5; /* zinc-100 */
+  --accent-surface-foreground: #18181b; /* zinc-900 */
+  --message-surface: var(--accent-surface);
+  --message-foreground: var(--foreground);
+  --error: #ef4444;
+  --error-foreground: #b91c1c;
+  --error-surface: color-mix(in srgb, var(--error) 8%, transparent);
+  --destructive: var(--error);
+  --destructive-foreground: var(--error-foreground);
+  --border: #e4e4e7; /* zinc-200 */
+  --input: #d4d4d8; /* zinc-300 */
+  --ring: var(--primary);
+  --info: #3b82f6;
+  --info-foreground: #1d4ed8;
+  --success: #10b981;
+  --success-foreground: #047857;
+  --warning: #f59e0b;
+  --warning-foreground: #b45309;
+  --warning-surface: color-mix(in srgb, var(--warning) 8%, transparent);
+  --sidebar-surface: #fafafa;
+  --sidebar-foreground: var(--foreground);
+  --sidebar-muted-foreground: var(--muted-foreground);
+  --sidebar-control-surface: #f4f4f5;
+  --sidebar-row-hover: #fcfcfc;
+  --sidebar-row-active: #ffffff;
+  --sidebar-row-selected: #ffffff;
+  --sidebar-line: var(--border);
+  --sidebar-icon-color: color-mix(
+    in srgb,
+    var(--sidebar-muted-foreground) 60%,
+    var(--sidebar-surface)
+  );
+  --code-background: color-mix(in srgb, var(--card) 90%, var(--canvas));
+  --code-foreground: var(--foreground);
+  /* The composer's glass card (Hermes chat, reply editor, new message). */
+  --chat-composer-surface: var(--card);
+  --chat-composer-outline: rgb(0 0 0 / 8%);
+  --chat-composer-highlight: transparent;
 }
 .dark {
-  --te-frame: rgb(15 15 14 / 10%);
-  --te-card: #1b1b19;
-  --te-card-glass: rgb(27 27 25 / 40%);
-  --te-panel: #242421;
-  --te-border: #32322e;
-  --te-hover: rgb(255 255 255 / 6%);
-  --te-ctl: rgb(255 255 255 / 9%);
-  --te-ctl-hover: rgb(255 255 255 / 14%);
-  --te-outline: rgb(255 255 255 / 22%);
-  --te-outline-hover: rgb(255 255 255 / 45%);
-  --te-strong: #f2f0ea;
-  --te-text: #d6d4cd;
-  --te-muted: #98968e;
-  --te-faint: #73716a;
-  --te-blue: #ff6a33;
-  --te-sel: #ff5b26;
-  --te-sel-fg: #161511;
-  --te-accent: #ff5b26;
-  --te-selected: #f2f0ea;
-  --te-selected-fg: #191813;
-  --te-badge-bg: #ff6a33;
-  --te-badge-fg: #161511;
+  --app-scrollbar-thumb: rgb(255 255 255 / 8%);
+  --app-scrollbar-thumb-hover: rgb(255 255 255 / 12%);
+  --glass-blur: 16px;
+  --glass-saturation: 1.08;
+
+  --canvas: #0a0a0a; /* neutral-950 */
+  --surface-raised: color-mix(in srgb, var(--canvas) 97%, #ffffff);
+  --foreground: #f5f5f5; /* neutral-100 */
+  --card: color-mix(in srgb, var(--canvas) 97%, #ffffff);
+  --card-foreground: #f5f5f5;
+  --popover: color-mix(in srgb, var(--canvas) 97%, #ffffff);
+  --popover-foreground: #f5f5f5;
+  --primary: oklch(0.571 0.21 264);
+  --secondary: rgb(255 255 255 / 3%);
+  --secondary-foreground: #f5f5f5;
+  --muted: rgb(255 255 255 / 3%);
+  --muted-foreground: color-mix(in srgb, #737373 90%, #ffffff);
+  --accent-surface: rgb(255 255 255 / 4%);
+  --accent-surface-foreground: #f5f5f5;
+  --error: color-mix(in srgb, #ef4444 90%, #ffffff);
+  --error-foreground: #f87171;
+  --error-surface: color-mix(in srgb, var(--error) 16%, transparent);
+  --border: rgb(255 255 255 / 6%);
+  --input: rgb(255 255 255 / 8%);
+  --info-foreground: #60a5fa;
+  --success-foreground: #34d399;
+  --warning-foreground: #fbbf24;
+  --warning-surface: color-mix(in srgb, var(--warning) 16%, transparent);
+  --sidebar-surface: var(--card);
+  --sidebar-control-surface: var(--muted);
+  --sidebar-row-hover: var(--accent-surface);
+  --sidebar-row-active: var(--accent-surface);
+  --sidebar-row-selected: var(--muted);
+  --chat-composer-surface: var(--surface-raised);
+  --chat-composer-outline: rgb(255 255 255 / 5%);
+  --chat-composer-highlight: rgb(255 255 255 / 3%);
 }
 
-/* Hardware-panel micro-label: tiny, uppercase, letterspaced, monospaced. */
+/* The app sidebar keeps its own quiet hierarchy (T3 Code's [data-app-sidebar]). */
+[data-app-sidebar] {
+  --canvas: #fcfcfc;
+  --foreground: #27272a;
+  --card: #ffffff;
+  --card-foreground: #27272a;
+  --accent-surface: #f4f4f5;
+  --accent-surface-foreground: #18181b;
+  --muted: #fafafa;
+  --muted-foreground: #71717a;
+  --border: #e4e4e7;
+  --input: #d4d4d8;
+  --sidebar-surface: #fafafa;
+  --sidebar-foreground: #27272a;
+  --sidebar-muted-foreground: #71717a;
+  --sidebar-control-surface: #f4f4f5;
+  --sidebar-row-hover: #fcfcfc;
+  --sidebar-row-active: #ffffff;
+  --sidebar-row-selected: #ffffff;
+  --sidebar-line: #e4e4e7;
+}
+.dark [data-app-sidebar] {
+  --canvas: #000;
+  --foreground: #f1f3f7;
+  --card: #000;
+  --card-foreground: var(--foreground);
+  --accent-surface: #191a1d;
+  --accent-surface-foreground: #f7f9ff;
+  --muted: #0a0a0a;
+  --muted-foreground: #a3a3a3;
+  --border: rgb(255 255 255 / 8%);
+  --input: rgb(255 255 255 / 18%);
+  --sidebar-surface: var(--card);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-muted-foreground: var(--muted-foreground);
+  --sidebar-control-surface: var(--muted);
+  --sidebar-row-hover: color-mix(in srgb, var(--foreground) 8%, transparent);
+  --sidebar-row-active: color-mix(in srgb, var(--foreground) 11%, transparent);
+  --sidebar-row-selected: color-mix(in srgb, var(--foreground) 7%, transparent);
+  --sidebar-line: var(--border);
+}
+
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+@theme inline {
+  /* Two steps below text-xs for dense UI: metadata rows, badges, counters,
+     keyboard hints. 2xs is 11px, 3xs is 10px and the floor of the scale. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: calc(1 / 0.6875);
+  --text-3xs: 0.625rem;
+  --text-3xs--line-height: calc(0.875 / 0.625);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --shadow-composer: 0 12px 28px -18px rgb(0 0 0 / 40%);
+  --shadow-composer-dark: 0 14px 32px -18px rgb(0 0 0 / 75%);
+  --animate-skeleton: skeleton 2.4s infinite;
+  --animate-status-pulse: status-pulse 2s infinite;
+
+  --color-canvas: var(--canvas);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-surface-raised: var(--surface-raised);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-placeholder: var(--placeholder);
+  --color-secondary-label: var(--secondary-label);
+  --color-icon-muted: var(--icon-muted);
+  --color-accent-surface: var(--accent-surface);
+  --color-accent-surface-foreground: var(--accent-surface-foreground);
+  --color-message: var(--message-surface);
+  --color-message-foreground: var(--message-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-error: var(--error);
+  --color-error-foreground: var(--error-foreground);
+  --color-error-surface: var(--error-surface);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-surface: var(--warning-surface);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-focus-ring: var(--ring);
+  --color-code: var(--code-background);
+  --color-code-foreground: var(--code-foreground);
+  --color-sidebar-surface: var(--sidebar-surface);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted-foreground: var(--sidebar-muted-foreground);
+  --color-sidebar-control-surface: var(--sidebar-control-surface);
+  --color-sidebar-row-hover: var(--sidebar-row-hover);
+  --color-sidebar-row-active: var(--sidebar-row-active);
+  --color-sidebar-row-selected: var(--sidebar-row-selected);
+  --color-sidebar-line: var(--sidebar-line);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+
+  @keyframes skeleton {
+    0%,
+    42% {
+      opacity: 1;
+      animation-timing-function: steps(4);
+    }
+    50%,
+    92% {
+      opacity: 0.55;
+      animation-timing-function: steps(4);
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+  @keyframes status-pulse {
+    0%,
+    40% {
+      opacity: 1;
+      animation-timing-function: steps(6);
+    }
+    50%,
+    90% {
+      opacity: 0.5;
+      animation-timing-function: steps(6);
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+}
+
+/* Frosted surfaces (popovers, menus, floating bars, dialogs). */
+@utility surface-glass {
+  background: color-mix(in srgb, var(--canvas) var(--glass-opacity), transparent);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+}
+@utility dropdown-glass {
+  background: color-mix(
+    in srgb,
+    var(--popover) 18%,
+    color-mix(in srgb, var(--popover) var(--glass-opacity), transparent)
+  );
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+@utility dialog-glass {
+  background: color-mix(in srgb, var(--canvas) var(--glass-opacity), transparent);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  border-color: color-mix(in srgb, var(--foreground) 10%, transparent);
+  box-shadow: 0 24px 64px -24px rgb(0 0 0 / 65%);
+}
+/* Fine paper grain over sidebar/card surfaces. */
+@utility surface-grain {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
+/* Micro-label: 11px medium sans (metadata, field labels, section captions). */
 .te-label {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 10px;
+  font-size: 0.6875rem;
+  line-height: 1rem;
   font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
-/* Monospaced numerals/timestamps. */
+/* Timestamps and counters keep tabular digits. */
 .te-num {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-variant-numeric: tabular-nums;
 }
 
-/* Blinking panel indicator (sync LED). */
-@keyframes te-blink {
-  50% {
-    opacity: 0.25;
-  }
-}
+/* Duty-cycled status indicator (sync LED). */
 .te-blink {
-  animation: te-blink 1s steps(2, jump-none) infinite;
+  animation: status-pulse 2s infinite;
 }
 
 /* Rich-text composer content (contentEditable) */
 [data-rt][data-empty="true"]::before {
   content: attr(data-placeholder);
-  color: var(--te-faint);
+  color: var(--placeholder);
   pointer-events: none;
   display: block;
   position: absolute;
@@ -113,7 +345,7 @@
   word-break: break-word;
 }
 [data-rt] a {
-  color: var(--te-blue);
+  color: var(--primary);
   text-decoration: underline;
 }
 [data-rt] ul,
@@ -128,37 +360,60 @@
   list-style: decimal;
 }
 [data-rt] blockquote {
-  border-left: 3px solid var(--te-border);
+  border-left: 3px solid var(--border);
   padding-left: 0.75em;
   margin: 0.15em 0;
-  color: var(--te-muted);
+  color: var(--muted-foreground);
 }
 
-/* Overlay scrollbars for the custom panes. */
-.te-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: rgb(0 0 0 / 25%) transparent;
+/* Slim overlay scrollbars everywhere (6px thumb, no track). */
+::-webkit-scrollbar {
+  width: var(--app-scrollbar-width);
+  height: var(--app-scrollbar-width);
 }
-.te-scroll::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-.te-scroll::-webkit-scrollbar-track {
+::-webkit-scrollbar-track {
   background: transparent;
 }
-.te-scroll::-webkit-scrollbar-thumb {
-  background: rgb(0 0 0 / 22%);
-  border-radius: 2px;
+::-webkit-scrollbar-thumb {
+  background: var(--app-scrollbar-thumb);
+  border-radius: 3px;
 }
-.te-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgb(0 0 0 / 35%);
+::-webkit-scrollbar-thumb:hover {
+  background: var(--app-scrollbar-thumb-hover);
 }
-.dark .te-scroll {
-  scrollbar-color: rgb(255 255 255 / 20%) transparent;
+.te-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--app-scrollbar-thumb) transparent;
 }
-.dark .te-scroll::-webkit-scrollbar-thumb {
-  background: rgb(255 255 255 / 18%);
+
+/* In-page tooltip entrance (see HintTooltip). */
+@keyframes tooltip-in {
+  from {
+    opacity: 0;
+    scale: 0.98;
+  }
 }
-.dark .te-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgb(255 255 255 / 30%);
+.tooltip-in {
+  animation: tooltip-in 120ms ease-out;
+}
+
+/* Tailwind v4 resets buttons to the default cursor; every clickable control
+   in the app shows the pointer, like Otter Code. Utilities still override. */
+@layer base {
+  /* Borders default to the hairline role, as in Otter Code (Tailwind v4
+     would otherwise paint a bare `border` in the text color). */
+  *,
+  ::before,
+  ::after {
+    border-color: var(--border);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  a[href],
+  summary,
+  select,
+  label[for] {
+    cursor: pointer;
+  }
 }
