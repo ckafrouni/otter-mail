@@ -1,5 +1,5 @@
 export type SettingsTarget = {
-  pane: "general" | "appearance" | "accounts" | "views" | "assistant";
+  pane: "general" | "appearance" | "keybindings" | "accounts" | "views" | "assistant";
   /** For the views pane: a view id to edit, or "new" to create one. */
   viewId?: string | null;
   /** For "new": which mailbox (account id or "__combined__") owns the view. */

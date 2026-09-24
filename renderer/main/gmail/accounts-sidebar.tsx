@@ -668,7 +668,7 @@ export function AccountsSidebar({
             </button>
           ) : null}
         </label>
-        <HintTooltip label="New message" hint="C">
+        <HintTooltip label="New message" shortcut="compose.new">
           <IconBtn label="New message" onClick={onCompose}>
             <SquarePenIcon className="size-4" />
           </IconBtn>

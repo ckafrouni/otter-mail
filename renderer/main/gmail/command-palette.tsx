@@ -40,6 +40,8 @@ import { cn } from "./ui";
 import { COMBINED_ACCOUNT_ID } from "./custom-views";
 import { APP_THEMES, setThemeForAppearance, useThemeChoice } from "../theme/apply-theme";
 import type { GmailAccount, GmailMessageSummary, MailView } from "./types";
+import type { KeybindingCommand } from "../keybindings/commands";
+import { shortcutLabelFor, useKeybindingsState } from "../keybindings/store";
 
 /**
  * Command palette (⌘K), modeled on Otter Code's: a frosted card anchored near
@@ -168,7 +170,11 @@ export function CommandPalette({
 
   const close = () => onOpenChange(false);
 
+  // Shortcut labels follow the live keybindings (Settings › Keybindings).
+  const { resolved: keybindings } = useKeybindingsState();
   const groups: PaletteGroup[] = useMemo(() => {
+    const sc = (command: KeybindingCommand) => shortcutLabelFor(keybindings, command) ?? undefined;
+    const jump = (digit: number) => sc(`mailbox.jump.${digit}` as KeybindingCommand);
     const needle = query.trim().toLowerCase();
     const matches = (item: PaletteItem) =>
       !needle ||
@@ -223,7 +229,7 @@ export function CommandPalette({
         id: "compose",
         icon: <SquarePenIcon className={ICON} />,
         title: "New message",
-        shortcut: "C",
+        shortcut: sc("compose.new"),
         run: onCompose,
       },
       { id: "sync", icon: <RotateCwIcon className={ICON} />, title: "Sync now", run: onSync },
@@ -232,14 +238,14 @@ export function CommandPalette({
         icon: <PanelRightIcon className={ICON} />,
         title: "Toggle Hermes panel",
         keywords: "chat assistant ai",
-        shortcut: "⌘I",
+        shortcut: sc("assistant.toggle"),
         run: onToggleChat,
       },
       {
         id: "sidebar",
         icon: <PanelLeftIcon className={ICON} />,
         title: "Toggle sidebar",
-        shortcut: "⌘B",
+        shortcut: sc("sidebar.toggle"),
         run: onToggleSidebar,
       },
       {
@@ -273,7 +279,7 @@ export function CommandPalette({
               id: `mailbox:${COMBINED_ACCOUNT_ID}`,
               icon: <LayersIcon className={ICON} />,
               title: "All mailboxes",
-              shortcut: "⌘1",
+              shortcut: jump(1),
               checked: selectedAccountId === COMBINED_ACCOUNT_ID,
               run: () => onSelectAccount(COMBINED_ACCOUNT_ID),
             },
@@ -284,7 +290,7 @@ export function CommandPalette({
         icon: <Dot color={getAccountColor(account)} />,
         title: getAccountDisplayName(account),
         description: account.email,
-        shortcut: `⌘${accounts.length > 1 ? i + 2 : 1}`,
+        shortcut: jump(accounts.length > 1 ? i + 2 : 1),
         checked: selectedAccountId === account.id,
         run: () => onSelectAccount(account.id),
       })),
@@ -332,6 +338,7 @@ export function CommandPalette({
       ? [...staticGroups, { id: "mail", label: "Mail", items: mail }]
       : staticGroups;
   }, [
+    keybindings,
     page,
     query,
     scheme,

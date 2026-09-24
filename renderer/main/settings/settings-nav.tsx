@@ -2,14 +2,14 @@ import type { ComponentType } from "react";
 import {
   ArrowLeftIcon,
   BotIcon,
-  CircleHelpIcon,
+  KeyboardIcon,
   LayersIcon,
   PaletteIcon,
   Settings2Icon,
   UsersIcon,
 } from "lucide-react";
 import type { SettingsPane } from "../gmail/api";
-import { HintTooltip, IconBtn, cn } from "../gmail/ui";
+import { cn } from "../gmail/ui";
 
 export const SETTINGS_SECTIONS: ReadonlyArray<{
   id: SettingsPane;
@@ -18,6 +18,7 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
 }> = [
   { id: "general", label: "General", icon: Settings2Icon },
   { id: "appearance", label: "Appearance", icon: PaletteIcon },
+  { id: "keybindings", label: "Keybindings", icon: KeyboardIcon },
   { id: "accounts", label: "Accounts", icon: UsersIcon },
   { id: "views", label: "Views", icon: LayersIcon },
   { id: "assistant", label: "Assistant", icon: BotIcon },
@@ -35,12 +36,10 @@ export function SettingsNav({
   pane,
   onSelect,
   onBack,
-  onOpenHelp,
 }: {
   pane: SettingsPane;
   onSelect: (pane: SettingsPane) => void;
   onBack: () => void;
-  onOpenHelp: () => void;
 }) {
   return (
     <>
@@ -70,8 +69,7 @@ export function SettingsNav({
           );
         })}
       </div>
-      {/* Bottom row, like Otter Code's settings sidebar: Back on the left,
-          utilities on the right. */}
+      {/* Bottom row, like Otter Code's settings sidebar. */}
       <div className="flex shrink-0 items-center gap-1 px-(--sidebar-content-inset) py-1">
         <button
           type="button"
@@ -84,11 +82,6 @@ export function SettingsNav({
           <ArrowLeftIcon />
           <span className="truncate">Back</span>
         </button>
-        <HintTooltip label="Keyboard shortcuts" hint="?">
-          <IconBtn label="Keyboard shortcuts" onClick={onOpenHelp} className="size-8">
-            <CircleHelpIcon className="size-4" />
-          </IconBtn>
-        </HintTooltip>
       </div>
     </>
   );

@@ -1,4 +1,12 @@
-import { Fragment, useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+  type ReactNode,
+} from "react";
 import { Dialog, Text, toast } from "@glaze/core/components";
 import {
   ArchiveIcon,
@@ -44,7 +52,8 @@ import { SenderAvatar } from "./sender-avatar";
 import { decodeEntities } from "./text";
 import { LabelPickerMenu } from "./label-picker-menu";
 import { parseAddressEntry, splitAddressList } from "./address";
-import { isTypingTarget } from "./keyboard";
+import { matchesCommand, useCommandHandlers } from "../keybindings/dispatch";
+import { ShortcutText, useShortcutLabel } from "../keybindings/store";
 import { IconBtn, HintTooltip, buttonClass, cn } from "./ui";
 import {
   DropdownMenu,
@@ -424,7 +433,53 @@ function QuoteToggle({ open, onToggle }: { open: boolean; onToggle: () => void }
   );
 }
 
-function HtmlBody({ html, onQuoteText }: { html: string; onQuoteText?: (text: string) => void }) {
+/** Where an HTML body's `cid:` images come from: the message's inline attachments. */
+type InlineImageSource = {
+  accountId: string;
+  messageId: string;
+  /** Lower-cased Content-ID → attachment (see `matchInlineImages`). */
+  byCid: Map<string, MessageAttachment>;
+};
+
+/**
+ * Pairs each `<img src="cid:…">` in the body with the attachment it embeds. By
+ * Content-ID when known; details cached before Content-IDs were recorded fall
+ * back to the image's alt text (Gmail sets it to the filename), then to the
+ * only image attachment when there's exactly one of each.
+ */
+function matchInlineImages(
+  html: string | null,
+  attachments: MessageAttachment[],
+): Map<string, MessageAttachment> {
+  const byCid = new Map<string, MessageAttachment>();
+  if (!html || attachments.length === 0) return byCid;
+  const images = attachments.filter((a) => a.mimeType.startsWith("image/"));
+  const refs: { cid: string; alt: string }[] = [];
+  for (const tag of html.match(/<img\b[^>]*>/gi) ?? []) {
+    const src = /\bsrc\s*=\s*["']?cid:([^"'\s>]+)/i.exec(tag)?.[1];
+    if (!src) continue;
+    const alt = /\balt\s*=\s*["']([^"']*)["']/i.exec(tag)?.[1] ?? "";
+    refs.push({ cid: decodeURIComponent(src).toLowerCase(), alt });
+  }
+  for (const { cid, alt } of refs) {
+    const match =
+      images.find((a) => a.contentId?.toLowerCase() === cid) ??
+      (alt ? images.find((a) => !a.contentId && a.filename === alt) : undefined) ??
+      (refs.length === 1 && images.length === 1 && !images[0].contentId ? images[0] : undefined);
+    if (match) byCid.set(cid, match);
+  }
+  return byCid;
+}
+
+function HtmlBody({
+  html,
+  inlineImages,
+  onQuoteText,
+}: {
+  html: string;
+  inlineImages?: InlineImageSource;
+  onQuoteText?: (text: string) => void;
+}) {
   // Quoted history is hidden inside the frame; the toggle lives outside it
   // (WKWebView doesn't reliably deliver clicks from the sandboxed frame).
   const quotedRef = useRef<HTMLElement[]>([]);
@@ -442,6 +497,8 @@ function HtmlBody({ html, onQuoteText }: { html: string; onQuoteText?: (text: st
   const frameRef = useRef<HTMLIFrameElement>(null);
   const quoteRef = useRef(onQuoteText);
   quoteRef.current = onQuoteText;
+  const inlineRef = useRef(inlineImages);
+  inlineRef.current = inlineImages;
   const dark = useDarkAppearance();
   // Light: white card, email's own dark-mode CSS disabled, white-on-white
   // rescued. Dark: transparent canvas, email's dark CSS honored, dark-on-dark
@@ -515,6 +572,28 @@ function HtmlBody({ html, onQuoteText }: { html: string; onQuoteText?: (text: st
           })
           .catch(() => {});
       };
+      // Inline images point at the message's own attachments (`cid:`), which
+      // the frame can't resolve — load the bytes and swap in a data URL.
+      doc.querySelectorAll("img").forEach((el) => {
+        const img = el as HTMLImageElement;
+        const src = img.getAttribute("src") ?? "";
+        const source = inlineRef.current;
+        if (!/^cid:/i.test(src) || !source) return;
+        const attachment = source.byCid.get(decodeURIComponent(src.slice(4)).toLowerCase());
+        if (!attachment) return;
+        img.dataset.glazeProxied = "1";
+        void gmailApi
+          .getAttachmentData({
+            accountId: source.accountId,
+            messageId: source.messageId,
+            attachmentId: attachment.id,
+          })
+          .then((data) => {
+            img.addEventListener("load", fit, { once: true });
+            img.src = `data:${attachment.mimeType};base64,${data.base64}`;
+          })
+          .catch(() => {});
+      });
       doc.querySelectorAll("img").forEach((el) => {
         const img = el as HTMLImageElement;
         if (img.complete) {
@@ -670,15 +749,17 @@ function PlainBody({ text }: { text: string }) {
 function MessageBody({
   bodyHtml,
   bodyText,
+  inlineImages,
   onQuoteText,
 }: {
   bodyHtml: string | null;
   bodyText: string | null;
+  inlineImages?: InlineImageSource;
   /** Reports selected text inside the (same-origin) HTML iframe. */
   onQuoteText?: (text: string) => void;
 }) {
   if (bodyHtml) {
-    return <HtmlBody html={bodyHtml} onQuoteText={onQuoteText} />;
+    return <HtmlBody html={bodyHtml} inlineImages={inlineImages} onQuoteText={onQuoteText} />;
   }
   if (bodyText) {
     // Flush inside the message card (the card is the surface now).
@@ -1098,6 +1179,10 @@ export function ExpandedRow({
   }, [summary.unread, summary.id, accountId]);
 
   const detail = detailQuery.data;
+  const inlineImages = useMemo(
+    () => matchInlineImages(detail?.bodyHtml ?? null, detail?.attachments ?? []),
+    [detail],
+  );
 
   return (
     <div className="group border-b border-border/50 px-6 py-4">
@@ -1163,12 +1248,20 @@ export function ExpandedRow({
               <MessageBody
                 bodyHtml={detail.bodyHtml}
                 bodyText={detail.bodyText}
+                inlineImages={
+                  inlineImages.size > 0
+                    ? { accountId, messageId: summary.id, byCid: inlineImages }
+                    : undefined
+                }
                 onQuoteText={onQuoteText}
               />
+              {/* Images already shown in the body aren't repeated as tiles. */}
               <AttachmentList
                 accountId={accountId}
                 messageId={summary.id}
-                attachments={detail.attachments}
+                attachments={detail.attachments.filter(
+                  (a) => ![...inlineImages.values()].includes(a),
+                )}
                 onDownload={onDownload}
               />
             </>
@@ -1429,7 +1522,7 @@ function InlineComposer({
       <div
         className="rounded-2xl border border-(--chat-composer-outline) bg-(--chat-composer-surface) shadow-composer transition-colors focus-within:border-input dark:shadow-none dark:inset-shadow-2xs dark:inset-shadow-(color:--chat-composer-highlight)"
         onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          if (matchesCommand(e.nativeEvent, "composer.send")) {
             e.preventDefault();
             handleSend();
           }
@@ -1535,7 +1628,13 @@ function InlineComposer({
             <span className="pl-1 text-xs text-destructive-foreground">Couldn't save draft</span>
           ) : null}
           <span className="flex-1" />
-          {canSend ? <span className="pr-1 text-xs text-muted-foreground">⌘↩ send</span> : null}
+          {canSend ? (
+            <ShortcutText
+              command="composer.send"
+              suffix="send"
+              className="pr-1 text-xs text-muted-foreground"
+            />
+          ) : null}
           <button
             type="button"
             onClick={handleSend}
@@ -1583,23 +1682,17 @@ export function MessageReader({
   const readerActions = useRef<{ reply?: () => void; replyAll?: () => void; forward?: () => void }>(
     {},
   );
-  useEffect(() => {
-    const down = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e)) return;
-      if (e.key === "r") {
-        e.preventDefault();
-        readerActions.current.reply?.();
-      } else if (e.key === "a") {
-        e.preventDefault();
-        readerActions.current.replyAll?.();
-      } else if (e.key === "f") {
-        e.preventDefault();
-        readerActions.current.forward?.();
-      }
-    };
-    window.addEventListener("keydown", down);
-    return () => window.removeEventListener("keydown", down);
-  }, []);
+  const junkShortcut = useShortcutLabel("message.junk");
+  const readerAction = (name: "reply" | "replyAll" | "forward") => () => {
+    const action = readerActions.current[name];
+    if (!action) return false;
+    action();
+  };
+  useCommandHandlers({
+    "message.reply": readerAction("reply"),
+    "message.replyAll": readerAction("replyAll"),
+    "message.forward": readerAction("forward"),
+  });
   // Cleared every render; the message-open path below re-populates it, so the
   // shortcuts are inert when no message is on screen.
   readerActions.current = {};
@@ -1966,17 +2059,17 @@ export function MessageReader({
             ) : null}
           </div>
 
-          <HintTooltip label="Reply" hint="R" side="bottom">
+          <HintTooltip label="Reply" shortcut="message.reply" side="bottom">
             <IconBtn label="Reply" onClick={handleReply}>
               <ReplyIcon className="size-4" />
             </IconBtn>
           </HintTooltip>
-          <HintTooltip label="Reply all" hint="A" side="bottom">
+          <HintTooltip label="Reply all" shortcut="message.replyAll" side="bottom">
             <IconBtn label="Reply all" onClick={handleReplyAll}>
               <ReplyAllIcon className="size-4" />
             </IconBtn>
           </HintTooltip>
-          <HintTooltip label="Forward" hint="F" side="bottom">
+          <HintTooltip label="Forward" shortcut="message.forward" side="bottom">
             <IconBtn label="Forward" onClick={handleForward}>
               <ForwardIcon className="size-4" />
             </IconBtn>
@@ -1985,7 +2078,7 @@ export function MessageReader({
           {groupDivider}
 
           {isTrashed ? (
-            <HintTooltip label="Restore from Trash" hint="#" side="bottom">
+            <HintTooltip label="Restore from Trash" shortcut="message.trash" side="bottom">
               <IconBtn label="Restore from Trash" onClick={handleUntrash}>
                 <RotateCcwIcon className="size-4" />
               </IconBtn>
@@ -1995,7 +2088,7 @@ export function MessageReader({
                 ? rows.some((m) => m.labelIds.includes("INBOX"))
                 : message.labelIds.includes("INBOX")
             ) ? (
-            <HintTooltip label="Archive" hint="E" side="bottom">
+            <HintTooltip label="Archive" shortcut="message.archive" side="bottom">
               <IconBtn
                 label="Archive"
                 onClick={() => {
@@ -2007,14 +2100,14 @@ export function MessageReader({
               </IconBtn>
             </HintTooltip>
           ) : (
-            <HintTooltip label="Move to Inbox" hint="E" side="bottom">
+            <HintTooltip label="Move to Inbox" shortcut="message.archive" side="bottom">
               <IconBtn label="Move to Inbox" onClick={handleUnarchive}>
                 <ArchiveRestoreIcon className="size-4" />
               </IconBtn>
             </HintTooltip>
           )}
           {isTrashed ? null : (
-            <HintTooltip label="Move to Trash" hint="#" side="bottom">
+            <HintTooltip label="Move to Trash" shortcut="message.trash" side="bottom">
               <IconBtn
                 label="Move to Trash"
                 onClick={() => {
@@ -2031,7 +2124,7 @@ export function MessageReader({
               <FolderIcon className="size-4" />
             </IconBtn>
           </LabelPickerMenu>
-          <HintTooltip label={isFlagged ? "Unflag" : "Flag"} hint="S" side="bottom">
+          <HintTooltip label={isFlagged ? "Unflag" : "Flag"} shortcut="message.star" side="bottom">
             <IconBtn label={isFlagged ? "Unflag" : "Flag"} onClick={handleToggleFlag}>
               <FlagIcon className={cn("size-4", isFlagged ? "fill-current text-(--red)" : "")} />
             </IconBtn>
@@ -2051,13 +2144,17 @@ export function MessageReader({
                 {isUnread ? "Mark as read" : "Mark as unread"}
               </DropdownMenuItem>
               {isJunk ? (
-                <DropdownMenuItem icon={<ShieldCheckIcon />} accelerator="!" onSelect={handleJunk}>
+                <DropdownMenuItem
+                  icon={<ShieldCheckIcon />}
+                  accelerator={junkShortcut}
+                  onSelect={handleJunk}
+                >
                   Not junk
                 </DropdownMenuItem>
               ) : isTrashed ? null : (
                 <DropdownMenuItem
                   icon={<ArchiveXIcon />}
-                  accelerator="!"
+                  accelerator={junkShortcut}
                   onSelect={() => {
                     onAdvance?.();
                     handleJunk();

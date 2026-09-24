@@ -986,7 +986,7 @@ export function HermesChatPanel({
           </IconBtn>
         </HintTooltip>
         <span className="min-w-0 flex-1" />
-        <HintTooltip label="Hide Hermes panel" hint="⌘I" side="bottom">
+        <HintTooltip label="Hide Hermes panel" shortcut="assistant.toggle" side="bottom">
           <IconBtn label="Toggle Hermes panel" active onClick={onClose}>
             <PanelRightIcon className="size-4" />
           </IconBtn>

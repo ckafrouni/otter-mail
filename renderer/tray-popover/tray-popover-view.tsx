@@ -248,8 +248,9 @@ export function TrayPopoverView() {
               onSelectAccount={setMailbox}
             />
           ) : (
-            <span className="px-(--sidebar-row-content-inset) text-sm font-semibold tracking-tight">
-              Otter Mail
+            <span className="inline-flex items-baseline gap-1 px-(--sidebar-row-content-inset) text-sm font-medium tracking-tight">
+              <span className="text-foreground">Otter</span>
+              <span className="text-muted-foreground">Mail</span>
             </span>
           )}
         </div>

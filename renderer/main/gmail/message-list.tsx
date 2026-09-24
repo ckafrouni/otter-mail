@@ -52,6 +52,7 @@ import { renderLabelMenuNodes } from "./label-picker-menu";
 import { INBOX_VIEW_ID, STARRED_VIEW_ID, SENT_VIEW_ID, DRAFTS_VIEW_ID } from "./custom-views";
 import { buildLabelTree } from "./label-tree";
 import { isTypingTarget } from "./keyboard";
+import { useCommandHandlers } from "../keybindings/dispatch";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
 import { SYSTEM_LABEL_NAMES, labelDisplayName } from "./label-names";
 import { decodeEntities } from "./text";
@@ -962,9 +963,21 @@ export function MessageList({
     moveContextLabelId,
   });
   shortcutState.current = { visibleMessages, selectedMessageId, accountId, moveContextLabelId };
-  useEffect(() => {
-    const down = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e)) return;
+  // Keyboard commands on the open/selected row (Settings › Keybindings).
+  // Each handler returns false when it doesn't apply, so the key passes on.
+  const rowCommand =
+    (
+      fn: (ctx: {
+        rows: GmailMessageSummary[];
+        idx: number;
+        row: GmailMessageSummary | undefined;
+        owner: string;
+        threadId: string;
+        select: (m: GmailMessageSummary) => void;
+        advance: () => void;
+      }) => boolean | void,
+    ) =>
+    (e: KeyboardEvent) => {
       // Held-down key repeats can outpace rendering and pile up in the event
       // queue, replaying moves long after the key is released — drop repeats
       // that have been waiting more than a beat.
@@ -974,135 +987,107 @@ export function MessageList({
         selectedMessageId: selId,
         accountId: fallbackAccount,
       } = shortcutState.current;
-      if (rows.length === 0) return;
+      if (rows.length === 0) return false;
       const idx = rows.findIndex((m) => m.id === selId);
-      const selectedRow = idx >= 0 ? rows[idx] : undefined;
+      const row = idx >= 0 ? rows[idx] : undefined;
       const select = (m: GmailMessageSummary) =>
         onSelectMessage(m.id, m.accountId ?? fallbackAccount);
-      const advance = () => {
-        const next = pickAdvanceTarget(rows, idx);
-        if (next) select(next);
-        else onDeselect();
-      };
-      const owner = selectedRow ? (selectedRow.accountId ?? fallbackAccount) : "";
-      const selThreadId = selectedRow ? selectedRow.threadId || selectedRow.id : "";
-
-      switch (e.key) {
-        case "j":
-        case "ArrowDown": {
-          // preventDefault even at the end of the list — arrows must never
-          // fall through to scrolling.
-          e.preventDefault();
-          const next = idx === -1 ? rows[0] : rows[idx + 1];
+      return fn({
+        rows,
+        idx,
+        row,
+        owner: row ? (row.accountId ?? fallbackAccount) : "",
+        threadId: row ? row.threadId || row.id : "",
+        select,
+        advance: () => {
+          const next = pickAdvanceTarget(rows, idx);
           if (next) select(next);
-          break;
-        }
-        case "k":
-        case "ArrowUp": {
-          e.preventDefault();
-          const prev = idx === -1 ? rows[0] : rows[idx - 1];
-          if (prev) select(prev);
-          break;
-        }
-        case "e": {
-          if (!selectedRow) return;
-          e.preventDefault();
-          // Archived rows un-archive; rows still in the inbox archive (and
-          // advance, since they leave the current view).
-          const rowInInbox = selectedRow.labelIds.includes("INBOX");
-          if (rowInInbox) advance();
-          void listModifyThread.mutateAsync({
-            accountId: owner,
-            threadId: selThreadId,
-            addLabelIds: rowInInbox ? undefined : ["INBOX"],
-            removeLabelIds: rowInInbox ? ["INBOX"] : undefined,
-          });
-          break;
-        }
-        // Delete (and fn+Delete) mirror Gmail's #.
-        case "#":
-        case "Backspace":
-        case "Delete": {
-          e.preventDefault();
-          if (checkedRef.current.size > 0) {
-            trashCheckedRef.current();
-            break;
-          }
-          if (!selectedRow) return;
-          // Trashed rows restore in place; live rows trash and advance.
-          if (selectedRow.labelIds.includes("TRASH")) {
-            void listUntrashThread.mutateAsync({ accountId: owner, threadId: selThreadId });
-          } else {
-            advance();
-            void listTrashThread.mutateAsync({ accountId: owner, threadId: selThreadId });
-          }
-          break;
-        }
-        case "!": {
-          if (!selectedRow) return;
-          e.preventDefault();
-          // Junk rows come back to the inbox; either way the row leaves the view.
-          const rowJunk = selectedRow.labelIds.includes("SPAM");
-          advance();
-          void listModifyThread.mutateAsync({
-            accountId: owner,
-            threadId: selThreadId,
-            addLabelIds: rowJunk ? ["INBOX"] : ["SPAM"],
-            removeLabelIds: rowJunk ? ["SPAM"] : ["INBOX"],
-          });
-          break;
-        }
-        case "s": {
-          if (!selectedRow) return;
-          e.preventDefault();
-          void listModifyMessage.mutateAsync({
-            accountId: owner,
-            messageId: selectedRow.id,
-            addLabelIds: selectedRow.starred ? undefined : ["STARRED"],
-            removeLabelIds: selectedRow.starred ? ["STARRED"] : undefined,
-          });
-          break;
-        }
-        case "U": {
-          if (!selectedRow) return;
-          e.preventDefault();
-          void listModifyMessage.mutateAsync({
-            accountId: owner,
-            messageId: selectedRow.id,
-            addLabelIds: ["UNREAD"],
-          });
-          // Gmail returns to the list on mark-unread; also keeps the open
-          // reader from immediately re-marking it read.
-          onDeselect();
-          break;
-        }
-        case "I": {
-          if (!selectedRow) return;
-          e.preventDefault();
-          void listModifyThread.mutateAsync({
-            accountId: owner,
-            threadId: selThreadId,
-            removeLabelIds: ["UNREAD"],
-          });
-          break;
-        }
-        case "l": {
-          if (!selectedRow) return;
-          e.preventDefault();
-          setLabelOverlay("label");
-          break;
-        }
-        case "v": {
-          if (!selectedRow || !shortcutState.current.moveContextLabelId) return;
-          e.preventDefault();
-          setLabelOverlay("move");
-          break;
-        }
-      }
+          else onDeselect();
+        },
+      });
     };
-    window.addEventListener("keydown", down);
-    return () => window.removeEventListener("keydown", down);
-  }, []);
+  useCommandHandlers({
+    // Handled even at the ends of the list — arrows must never scroll it.
+    "list.next": rowCommand(({ rows, idx, select }) => {
+      const next = idx === -1 ? rows[0] : rows[idx + 1];
+      if (next) select(next);
+    }),
+    "list.previous": rowCommand(({ rows, idx, select }) => {
+      const prev = idx === -1 ? rows[0] : rows[idx - 1];
+      if (prev) select(prev);
+    }),
+    "message.archive": rowCommand(({ row, owner, threadId, advance }) => {
+      if (!row) return false;
+      // Archived rows un-archive; rows still in the inbox archive (and
+      // advance, since they leave the current view).
+      const rowInInbox = row.labelIds.includes("INBOX");
+      if (rowInInbox) advance();
+      void listModifyThread.mutateAsync({
+        accountId: owner,
+        threadId,
+        addLabelIds: rowInInbox ? undefined : ["INBOX"],
+        removeLabelIds: rowInInbox ? ["INBOX"] : undefined,
+      });
+    }),
+    "message.trash": rowCommand(({ row, owner, threadId, advance }) => {
+      if (checkedRef.current.size > 0) {
+        trashCheckedRef.current();
+        return;
+      }
+      if (!row) return false;
+      // Trashed rows restore in place; live rows trash and advance.
+      if (row.labelIds.includes("TRASH")) {
+        void listUntrashThread.mutateAsync({ accountId: owner, threadId });
+      } else {
+        advance();
+        void listTrashThread.mutateAsync({ accountId: owner, threadId });
+      }
+    }),
+    "message.junk": rowCommand(({ row, owner, threadId, advance }) => {
+      if (!row) return false;
+      // Junk rows come back to the inbox; either way the row leaves the view.
+      const rowJunk = row.labelIds.includes("SPAM");
+      advance();
+      void listModifyThread.mutateAsync({
+        accountId: owner,
+        threadId,
+        addLabelIds: rowJunk ? ["INBOX"] : ["SPAM"],
+        removeLabelIds: rowJunk ? ["SPAM"] : ["INBOX"],
+      });
+    }),
+    "message.star": rowCommand(({ row, owner }) => {
+      if (!row) return false;
+      void listModifyMessage.mutateAsync({
+        accountId: owner,
+        messageId: row.id,
+        addLabelIds: row.starred ? undefined : ["STARRED"],
+        removeLabelIds: row.starred ? ["STARRED"] : undefined,
+      });
+    }),
+    "message.markUnread": rowCommand(({ row, owner }) => {
+      if (!row) return false;
+      void listModifyMessage.mutateAsync({
+        accountId: owner,
+        messageId: row.id,
+        addLabelIds: ["UNREAD"],
+      });
+      // Gmail returns to the list on mark-unread; also keeps the open
+      // reader from immediately re-marking it read.
+      onDeselect();
+    }),
+    "message.markRead": rowCommand(({ row, owner, threadId }) => {
+      if (!row) return false;
+      void listModifyThread.mutateAsync({ accountId: owner, threadId, removeLabelIds: ["UNREAD"] });
+    }),
+    "message.label": rowCommand(({ row }) => {
+      if (!row) return false;
+      setLabelOverlay("label");
+    }),
+    "message.move": rowCommand(({ row }) => {
+      if (!row || !shortcutState.current.moveContextLabelId) return false;
+      setLabelOverlay("move");
+    }),
+  });
 
   // Infinite scroll: pull the next page whenever the bottom comes within
   // reach — on scroll, and after each render so short pages keep filling

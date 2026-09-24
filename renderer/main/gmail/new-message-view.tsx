@@ -13,6 +13,8 @@ import { useSendMessage } from "./hooks";
 import { parseAddressEntry, splitAddressList } from "./address";
 import { getAccountColor } from "./account-style";
 import { IconBtn, HintTooltip } from "./ui";
+import { matchesCommand } from "../keybindings/dispatch";
+import { ShortcutText } from "../keybindings/store";
 import { RichTextArea, textToHtml, type RichTextRef } from "./rich-text";
 import {
   AttachmentChips,
@@ -184,7 +186,7 @@ export function NewMessageView({
         <div
           className="rounded-2xl border border-(--chat-composer-outline) bg-(--chat-composer-surface) shadow-composer transition-colors focus-within:border-input dark:shadow-none dark:inset-shadow-2xs dark:inset-shadow-(color:--chat-composer-highlight)"
           onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            if (matchesCommand(e.nativeEvent, "composer.send")) {
               e.preventDefault();
               handleSend();
             }
@@ -320,7 +322,13 @@ export function NewMessageView({
               </IconBtn>
             </HintTooltip>
             <span className="flex-1" />
-            {canSend ? <span className="pr-1 text-xs text-muted-foreground">⌘↩ send</span> : null}
+            {canSend ? (
+              <ShortcutText
+                command="composer.send"
+                suffix="send"
+                className="pr-1 text-xs text-muted-foreground"
+              />
+            ) : null}
             <button
               type="button"
               onClick={handleSend}

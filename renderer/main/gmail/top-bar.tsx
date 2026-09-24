@@ -13,6 +13,8 @@ import { COMBINED_ACCOUNT_ID } from "./custom-views";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
 import { gmailApi } from "./api";
 import type { GmailAccount } from "./types";
+import type { KeybindingCommand } from "../keybindings/commands";
+import { shortcutLabelFor, useKeybindingsState } from "../keybindings/store";
 
 /**
  * Every column owns the slice of the title band above it, so the pane
@@ -38,7 +40,7 @@ export function WindowTitle({
         className,
       )}
     >
-      <HintTooltip label={sidebarOpen ? "Hide sidebar" : "Show sidebar"} hint="⌘B">
+      <HintTooltip label={sidebarOpen ? "Hide sidebar" : "Show sidebar"} shortcut="sidebar.toggle">
         <IconBtn label="Toggle sidebar" onClick={onToggleSidebar}>
           {sidebarOpen ? (
             <PanelLeftCloseIcon className="size-4" />
@@ -47,8 +49,10 @@ export function WindowTitle({
           )}
         </IconBtn>
       </HintTooltip>
-      <span className="select-none whitespace-nowrap text-sm font-semibold tracking-tight text-foreground">
-        Otter Mail
+      {/* Wordmark in Otter Code's style: brand word, then the product muted. */}
+      <span className="inline-flex min-w-0 select-none items-baseline gap-1 whitespace-nowrap text-sm font-medium tracking-tight">
+        <span className="text-foreground">Otter</span>
+        <span className="truncate text-muted-foreground">Mail</span>
       </span>
     </div>
   );
@@ -85,6 +89,9 @@ export function MailboxSwitcher({
   onSelectAccount: (accountId: string) => void;
   className?: string;
 }) {
+  const { resolved: keybindings } = useKeybindingsState();
+  const jump = (digit: number) =>
+    shortcutLabelFor(keybindings, `mailbox.jump.${digit}` as KeybindingCommand) ?? "";
   const isCombined = selectedAccountId === COMBINED_ACCOUNT_ID;
   const selectedAccount = isCombined
     ? null
@@ -96,13 +103,13 @@ export function MailboxSwitcher({
       : "Mailbox";
   const options: { id: string; account: GmailAccount | null; name: string; shortcut: string }[] = [
     ...(accounts.length > 1
-      ? [{ id: COMBINED_ACCOUNT_ID, account: null, name: "All mailboxes", shortcut: "⌘1" }]
+      ? [{ id: COMBINED_ACCOUNT_ID, account: null, name: "All mailboxes", shortcut: jump(1) }]
       : []),
     ...accounts.map((account, i) => ({
       id: account.id,
       account,
       name: getAccountDisplayName(account),
-      shortcut: `⌘${accounts.length > 1 ? i + 2 : 1}`,
+      shortcut: jump(accounts.length > 1 ? i + 2 : 1),
     })),
   ];
 
@@ -221,7 +228,7 @@ export function TitleTrailing({
     <>
       <DefaultMailButton />
       {showPanelToggle ? (
-        <HintTooltip label="Show Hermes panel" hint="⌘I" side="bottom">
+        <HintTooltip label="Show Hermes panel" shortcut="assistant.toggle" side="bottom">
           <IconBtn label="Toggle Hermes panel" onClick={onToggleChat}>
             <PanelRightIcon className="size-4" />
           </IconBtn>

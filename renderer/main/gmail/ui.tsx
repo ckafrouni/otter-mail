@@ -12,6 +12,8 @@ import {
 import { createPortal } from "react-dom";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import type { KeybindingCommand } from "../keybindings/commands";
+import { useShortcutLabel } from "../keybindings/store";
 
 // Last input modality. Menus and selects hand focus back to their trigger on
 // close; WebKit paints that restored focus as keyboard focus (a blue ring)
@@ -127,15 +129,20 @@ type TooltipPlacement = { top: number; left: number; side: "top" | "bottom" };
 /** Hover/focus hint for a control. Wraps its child without adding layout. */
 export function HintTooltip({
   label,
-  hint,
+  hint: fixedHint,
+  shortcut,
   side = "top",
   children,
 }: {
   label: string;
   hint?: string;
+  /** Shows this command's live keybinding as the hint. */
+  shortcut?: KeybindingCommand;
   side?: "top" | "bottom";
   children: ReactNode;
 }) {
+  const liveHint = useShortcutLabel(shortcut);
+  const hint = fixedHint ?? liveHint;
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const [placement, setPlacement] = useState<TooltipPlacement | null>(null);
   const timer = useRef<number | null>(null);

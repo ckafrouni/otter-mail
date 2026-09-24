@@ -6,11 +6,17 @@ import { MessageReader } from "./gmail/message-reader";
 import { NewMessageView } from "./gmail/new-message-view";
 import { CommandPalette } from "./gmail/command-palette";
 import { HermesChatPanel } from "./gmail/hermes-chat";
-import { ShortcutsHelpDialog } from "./gmail/shortcuts-help-dialog";
 import { TitleControls, TitleTrailing, WindowTitle } from "./gmail/top-bar";
 import { SettingsPage, type SettingsRoute } from "./settings/settings-page";
 import { SettingsNav, settingsSectionLabel } from "./settings/settings-nav";
 import { isTypingTarget } from "./gmail/keyboard";
+import {
+  useCommandHandlers,
+  useKeybindingContext,
+  useKeybindingDispatcher,
+} from "./keybindings/dispatch";
+import { MAILBOX_JUMP_COMMANDS } from "./keybindings/commands";
+import { onKeybindingsReload } from "./keybindings/store";
 import {
   useAccounts,
   useAddAccount,
@@ -128,7 +134,6 @@ export function HomeView() {
   const [mailtoPrefill, setMailtoPrefill] = useState<MailtoTarget | null>(null);
   const [mailtoSeq, setMailtoSeq] = useState(0);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
   // In-app settings page; null = mail. Opened from the sidebar footer, ⌘,
   // (menu accelerator → backend broadcast), or any window's deep link.
   const [settingsRoute, setSettingsRoute] = useState<SettingsRoute | null>(null);
@@ -217,56 +222,7 @@ export function HomeView() {
     }
   };
 
-  useEffect(() => {
-    const down = (e: KeyboardEvent) => {
-      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        setPaletteOpen((o) => !o);
-        return;
-      }
-      // ⌘B toggles the sidebar — outside text fields, where it means bold.
-      if (e.key === "b" && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
-        if (isTypingTarget(e)) return;
-        e.preventDefault();
-        setSidebarOpen((open) => {
-          localStorage.setItem("gmail:sidebar-open", open ? "0" : "1");
-          return !open;
-        });
-        return;
-      }
-      // ⌘I toggles the Hermes chat panel — but only outside a text field, so
-      // it keeps meaning italic in the composer/rich-text editor.
-      if (e.key === "i" && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
-        if (isTypingTarget(e)) return;
-        e.preventDefault();
-        setChatOpen((open) => {
-          localStorage.setItem("gmail:chat-open", open ? "0" : "1");
-          return !open;
-        });
-      }
-    };
-    window.addEventListener("keydown", down);
-    return () => window.removeEventListener("keydown", down);
-  }, []);
-
-  // ⌘F and "/" focus the top-bar search field.
   const searchRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    const down = (e: KeyboardEvent) => {
-      if (e.key === "f" && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        searchRef.current?.focus();
-        return;
-      }
-      if (e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e)) return;
-      if (e.key === "/") {
-        e.preventDefault();
-        searchRef.current?.focus();
-      }
-    };
-    window.addEventListener("keydown", down);
-    return () => window.removeEventListener("keydown", down);
-  }, []);
 
   // ⌘1 = Combined mailbox, ⌘2…⌘9 = accounts in rail order. The ref is
   // populated below once handleSelectAccount exists.
@@ -274,24 +230,6 @@ export function HomeView() {
     ids: [],
     select: () => {},
   });
-  useEffect(() => {
-    const down = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
-      const digit = Number(e.key);
-      if (!Number.isInteger(digit) || digit < 1 || digit > 9) return;
-      const { ids, select } = accountSwitchRef.current;
-      if (ids.length === 0) return;
-      e.preventDefault();
-      if (digit === 1) {
-        select(ids.length > 1 ? COMBINED_ACCOUNT_ID : ids[0]);
-      } else {
-        const target = ids[digit - 2];
-        if (target) select(target);
-      }
-    };
-    window.addEventListener("keydown", down);
-    return () => window.removeEventListener("keydown", down);
-  }, []);
 
   const undoModifyMessage = useModifyMessage();
   const undoModifyThread = useModifyThread();
@@ -318,58 +256,62 @@ export function HomeView() {
     }
   };
 
-  // Gmail-style global shortcuts: c compose, u back to list, ? help, z undo,
-  // and "g then i/t/s/d" go-to combos. Handlers read the latest state via a
-  // ref so the listener mounts once.
-  const shortcutCtx = useRef({ isCombined: false });
-  shortcutCtx.current = { isCombined };
-  const pendingG = useRef(0);
-  useEffect(() => {
-    const down = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e)) return;
-      const { isCombined: combined } = shortcutCtx.current;
-
-      if (e.key === "g") {
-        pendingG.current = Date.now();
-        return;
-      }
-      if (Date.now() - pendingG.current < 1500) {
-        pendingG.current = 0;
-        const go = (labelId: string) => {
-          e.preventDefault();
-          setSelectedLabelId(labelId);
-          setSelectedMessageId(null);
-          setReaderAccountId(null);
-          setSearchQuery("");
-        };
-        if (e.key === "i") return go(combined ? INBOX_VIEW_ID : "INBOX");
-        if (e.key === "t") return go(combined ? SENT_VIEW_ID : "SENT");
-        if (e.key === "s") return go(combined ? STARRED_VIEW_ID : "STARRED");
-        if (e.key === "d") return go(combined ? DRAFTS_VIEW_ID : "DRAFT");
-        return;
-      }
-
-      if (e.key === "c") {
-        e.preventDefault();
-        setComposeOpen(true);
-      } else if (e.key === "u" || e.key === "Escape") {
-        e.preventDefault();
-        setSelectedMessageId(null);
-        setReaderAccountId(null);
-      } else if (e.key === "?") {
-        e.preventDefault();
-        setHelpOpen(true);
-      } else if (e.key === "z") {
-        const action = takeUndo();
-        if (action) {
-          e.preventDefault();
-          undoRunner.current(action);
-        }
-      }
-    };
-    window.addEventListener("keydown", down);
-    return () => window.removeEventListener("keydown", down);
-  }, []);
+  // Keyboard commands (Settings › Keybindings; defaults in keybindings/commands.ts).
+  useKeybindingDispatcher();
+  // Hand edits to keybindings.json apply live; say so (and flag bad entries).
+  useEffect(
+    () =>
+      onKeybindingsReload(({ initial, external, issueCount }) => {
+        if (!external) return;
+        if (issueCount > 0)
+          toast.error(
+            `${issueCount} keybinding${issueCount === 1 ? "" : "s"} in keybindings.json couldn't be used`,
+          );
+        else if (!initial) toast.success("Keybindings updated");
+      }),
+    [],
+  );
+  useKeybindingContext("settingsOpen", settingsRoute !== null);
+  useKeybindingContext("messageOpen", selectedMessageId !== null);
+  const goTo = (combinedViewId: string, labelId: string) => {
+    setSelectedLabelId(isCombined ? combinedViewId : labelId);
+    setSelectedMessageId(null);
+    setReaderAccountId(null);
+    setSearchQuery("");
+  };
+  const jumpToMailbox = (digit: number) => {
+    const { ids, select } = accountSwitchRef.current;
+    if (ids.length === 0) return false;
+    // ⌘1 = Combined (or the only account), ⌘2… = accounts in sidebar order.
+    if (digit === 1) select(ids.length > 1 ? COMBINED_ACCOUNT_ID : ids[0]);
+    else if (ids[digit - 2]) select(ids[digit - 2]);
+    else return false;
+  };
+  useCommandHandlers({
+    "commandPalette.toggle": () => setPaletteOpen((o) => !o),
+    "sidebar.toggle": () => toggleSidebar(),
+    "assistant.toggle": () => toggleChat(),
+    "search.focus": () => searchRef.current?.focus(),
+    "compose.new": () => setComposeOpen(true),
+    "keybindings.show": () =>
+      setSettingsRoute({ pane: "keybindings", viewId: null, mailbox: null }),
+    "mail.undo": () => {
+      const action = takeUndo();
+      if (!action) return false;
+      undoRunner.current(action);
+    },
+    "go.inbox": () => goTo(INBOX_VIEW_ID, "INBOX"),
+    "go.sent": () => goTo(SENT_VIEW_ID, "SENT"),
+    "go.starred": () => goTo(STARRED_VIEW_ID, "STARRED"),
+    "go.drafts": () => goTo(DRAFTS_VIEW_ID, "DRAFT"),
+    "message.close": () => {
+      setSelectedMessageId(null);
+      setReaderAccountId(null);
+    },
+    ...Object.fromEntries(
+      MAILBOX_JUMP_COMMANDS.map((command, i) => [command, () => jumpToMailbox(i + 1)]),
+    ),
+  });
 
   // Once accounts are known, restore the last location or apply the default
   // (Combined when 2+ accounts, else the first account).
@@ -779,7 +721,6 @@ export function HomeView() {
                       pane={settingsRoute.pane}
                       onSelect={(pane) => setSettingsRoute({ pane, viewId: null, mailbox: null })}
                       onBack={() => setSettingsRoute(null)}
-                      onOpenHelp={() => setHelpOpen(true)}
                     />
                   </>
                 ) : (
@@ -920,8 +861,6 @@ export function HomeView() {
           ) : null}
         </div>
       </div>
-
-      <ShortcutsHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
 
       {accounts.length > 0 ? (
         <CommandPalette

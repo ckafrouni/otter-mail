@@ -18,8 +18,13 @@ import { listMailApps, setDefaultMailHandler } from "../services/default-mail.js
 import { configureAutoSync, syncAllAccounts } from "../services/mail-sync.js";
 import { takePendingMailto } from "../services/mailto-target.js";
 import { getSettings } from "../services/settings-store.js";
+import {
+  readKeybindings,
+  watchKeybindings,
+  writeKeybindings,
+} from "../services/keybindings-store.js";
 
-import { app, ipcMain, logger } from "@glaze/core/backend";
+import { app, ipcMain, logger, shell } from "@glaze/core/backend";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -48,6 +53,7 @@ export function registerHandlers(): void {
       p?.pane === "appearance" ||
       p?.pane === "accounts" ||
       p?.pane === "views" ||
+      p?.pane === "keybindings" ||
       p?.pane === "assistant"
         ? p.pane
         : "general";
@@ -61,6 +67,21 @@ export function registerHandlers(): void {
   });
 
   ipcMain.handle("window:getSettingsTarget", async () => takeSettingsTarget());
+
+  // Keybindings: userData/keybindings.json, watched so hand edits apply live.
+  watchKeybindings();
+  ipcMain.handle("keybindings:read", async () => readKeybindings());
+  ipcMain.handle("keybindings:write", async (_event, params: unknown) => {
+    const result = await writeKeybindings((params as { rules?: unknown } | undefined)?.rules);
+    ipcMain.broadcast("keybindings:updated");
+    return result;
+  });
+  ipcMain.handle("keybindings:openFile", async () => {
+    const { path: filePath } = await readKeybindings();
+    const error = await shell.openPath(filePath);
+    if (error) throw new Error(error);
+    return { ok: true };
+  });
 
   // A conversation the menu-bar popover asked the main window to open.
   ipcMain.handle("window:takePendingOpenMessage", async () => takePendingOpenMessage());

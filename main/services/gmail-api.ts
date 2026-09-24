@@ -392,6 +392,7 @@ export function isHistoryExpiredError(err: unknown): boolean {
 interface MimePart {
   mimeType?: string;
   filename?: string;
+  headers?: { name: string; value: string }[];
   body?: { data?: string; attachmentId?: string; size?: number };
   parts?: MimePart[];
 }
@@ -408,7 +409,13 @@ function walkParts(
   result: {
     bodyHtml: string | null;
     bodyText: string | null;
-    attachments: { id: string; filename: string; mimeType: string; size: number }[];
+    attachments: {
+      id: string;
+      filename: string;
+      mimeType: string;
+      size: number;
+      contentId?: string;
+    }[];
   },
 ): void {
   for (const part of parts) {
@@ -420,6 +427,9 @@ function walkParts(
         filename: part.filename,
         mimeType,
         size: part.body.size ?? 0,
+        // Inline images are referenced from the HTML as `cid:<Content-ID>`.
+        contentId:
+          getHeaderValue(part.headers ?? [], "Content-ID").replace(/^<|>$/g, "") || undefined,
       });
       continue;
     }
@@ -456,7 +466,13 @@ export async function getMessage(
   const bodyResult: {
     bodyHtml: string | null;
     bodyText: string | null;
-    attachments: { id: string; filename: string; mimeType: string; size: number }[];
+    attachments: {
+      id: string;
+      filename: string;
+      mimeType: string;
+      size: number;
+      contentId?: string;
+    }[];
   } = { bodyHtml: null, bodyText: null, attachments: [] };
 
   const payload = msg.payload;

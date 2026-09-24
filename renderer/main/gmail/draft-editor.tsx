@@ -8,6 +8,8 @@ import { gmailApi } from "./api";
 import { RichTextArea, textToHtml, type RichTextRef } from "./rich-text";
 import { RecipientInput } from "./recipient-input";
 import { IconBtn, HintTooltip } from "./ui";
+import { matchesCommand } from "../keybindings/dispatch";
+import { ShortcutText } from "../keybindings/store";
 import { parseAddressEntry, splitAddressList } from "./address";
 import {
   CollapsedRow,
@@ -430,7 +432,7 @@ export function DraftEditor({
         <div
           className="rounded-2xl border border-(--chat-composer-outline) bg-(--chat-composer-surface) shadow-composer transition-colors focus-within:border-input dark:shadow-none dark:inset-shadow-2xs dark:inset-shadow-(color:--chat-composer-highlight)"
           onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            if (matchesCommand(e.nativeEvent, "composer.send")) {
               e.preventDefault();
               handleSend();
             }
@@ -538,7 +540,13 @@ export function DraftEditor({
               )
             ) : null}
             <span className="flex-1" />
-            {canSend ? <span className="pr-1 text-xs text-muted-foreground">⌘↩ send</span> : null}
+            {canSend ? (
+              <ShortcutText
+                command="composer.send"
+                suffix="send"
+                className="pr-1 text-xs text-muted-foreground"
+              />
+            ) : null}
             <button
               type="button"
               onClick={handleSend}

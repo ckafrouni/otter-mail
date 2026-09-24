@@ -41,6 +41,7 @@ import {
 } from "../gmail/advance-direction";
 import { Btn, IconBtn, cn } from "../gmail/ui";
 import { AppearancePane } from "./appearance-pane";
+import { KeybindingsPane } from "./keybindings-pane";
 import { SettingsPageContainer, SettingsRow, SettingsSection, TextInput } from "./settings-ui";
 
 /** Where the settings page is. */
@@ -741,6 +742,7 @@ export function SettingsPage({
   onNavigate: (route: SettingsRoute) => void;
 }) {
   if (route.pane === "appearance") return <AppearancePane />;
+  if (route.pane === "keybindings") return <KeybindingsPane />;
   if (route.pane === "accounts") return <AccountsPane />;
   if (route.pane === "assistant") return <AssistantPane />;
   if (route.pane === "views") {

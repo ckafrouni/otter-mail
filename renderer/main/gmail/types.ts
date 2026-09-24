@@ -63,7 +63,14 @@ export type GmailMessageDetail = GmailMessageSummary & {
   bodyText: string | null;
   cc?: string;
   bcc?: string;
-  attachments: { id: string; filename: string; mimeType: string; size: number }[];
+  attachments: {
+    id: string;
+    filename: string;
+    mimeType: string;
+    size: number;
+    /** Content-ID (no angle brackets) — inline images reference it as `cid:…`. */
+    contentId?: string;
+  }[];
 };
 
 /** One picked label, scoped to a specific account (per-account, by exact id). */
