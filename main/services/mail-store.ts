@@ -597,6 +597,32 @@ export function getUndownloadedMessageIds(accountId: string): string[] {
   return rows.map((r) => r.id);
 }
 
+/** The subset of `ids` not cached yet for the account (sync skips the rest). */
+export function filterUnknownIds(accountId: string, ids: string[]): string[] {
+  if (ids.length === 0) return [];
+  const d = getDb();
+  const known = new Set<string>();
+  for (let i = 0; i < ids.length; i += 500) {
+    const chunk = ids.slice(i, i + 500);
+    const rows = d
+      .prepare(
+        `SELECT id FROM messages WHERE accountId = ? AND id IN (${chunk.map(() => "?").join(", ")})`,
+      )
+      .all(accountId, ...chunk) as unknown as { id: string }[];
+    for (const r of rows) known.add(r.id);
+  }
+  return ids.filter((id) => !known.has(id));
+}
+
+/** Messages cached for an account (full-sync progress after a resume). */
+export function countAllMessages(accountId: string): number {
+  const d = getDb();
+  const row = d
+    .prepare("SELECT COUNT(*) AS n FROM messages WHERE accountId = ?")
+    .get(accountId) as unknown as { n: number };
+  return row?.n ?? 0;
+}
+
 export function getMessageIdsForLabel(accountId: string, labelId: string): string[] {
   const d = getDb();
   const rows = d

@@ -35,6 +35,7 @@ import {
   pickComposeAttachments,
   fetchReplyHeaders,
   fetchMetadataForIds,
+  listMessageIdsPage,
   MAX_ATTACHMENT_TOTAL_BYTES,
   findDraftIdByMessageId,
   updateLabel,
@@ -48,7 +49,7 @@ import { updateDockBadge } from "../services/notifier.js";
 import { refreshTray, createTray, destroyTray } from "../services/tray.js";
 import { getSettings, updateSettings, type AppSettings } from "../services/settings-store.js";
 import * as viewsStore from "../services/views-store.js";
-import type { ComposeAttachment, MailView, ViewRule } from "../gmail/types.js";
+import type { ComposeAttachment, GmailMessageSummary, MailView, ViewRule } from "../gmail/types.js";
 
 const LOCAL_PAGE_SIZE = 50;
 
@@ -115,6 +116,67 @@ function applyLocalLabelChange(
     for (const u of undo) mailStore.applyLabelChange(accountId, u.id, u.reAdd, u.reRemove);
     updateDockBadge();
   };
+}
+
+// ── Live paging while an account's first full sync is still running ────────
+// Lists read the local cache, which on a big mailbox fills in over a long
+// time. When a page comes up short for an account that isn't fully synced,
+// pull that label's next page straight from Gmail (per account+label cursor)
+// so scrolling keeps going. Budgeted to stay well under the renderer's 5s IPC
+// timeout; the renderer simply asks again for the rest.
+
+type LiveCursor = { pageToken?: string; exhausted: boolean };
+const liveCursors = new Map<string, LiveCursor>();
+const LIVE_BUDGET_MS = 2500;
+const LIVE_PAGE_SIZE = 50;
+
+const liveKey = (accountId: string, labelId: string | null) => `${accountId}:${labelId ?? "*"}`;
+
+function needsLive(accountId: string, labelId: string | null): boolean {
+  if (mailStore.getSyncState(accountId).fullSyncDone) return false;
+  return !(liveCursors.get(liveKey(accountId, labelId))?.exhausted ?? false);
+}
+
+/** Fetches and caches the next live page of a label (null = all mail). */
+async function fillFromGmail(accountId: string, labelId: string | null): Promise<void> {
+  const key = liveKey(accountId, labelId);
+  const cursor = liveCursors.get(key) ?? { exhausted: false };
+  if (cursor.exhausted) return;
+  const page = await listMessageIdsPage(accountId, {
+    labelIds: labelId ? [labelId] : [],
+    pageToken: cursor.pageToken,
+    maxResults: LIVE_PAGE_SIZE,
+  });
+  const fresh = mailStore.filterUnknownIds(accountId, page.ids);
+  if (fresh.length > 0)
+    mailStore.upsertMessages(accountId, await fetchMetadataForIds(accountId, fresh));
+  liveCursors.set(key, { pageToken: page.nextPageToken, exhausted: !page.nextPageToken });
+  console.log("[gmail:livePage]", { labelId, listed: page.ids.length, fetched: fresh.length });
+}
+
+/**
+ * Re-reads `read()` after live fills until the page is full, Gmail has no
+ * more, or the time budget runs out. `more` = keep offering a next page.
+ */
+async function pageWithLiveFill(
+  sources: { accountId: string; labelId: string | null }[],
+  maxResults: number,
+  read: () => { messages: GmailMessageSummary[]; hasMore: boolean },
+): Promise<{ messages: GmailMessageSummary[]; more: boolean }> {
+  const started = Date.now();
+  let page = read();
+  const pending = () => sources.filter((src) => needsLive(src.accountId, src.labelId));
+  while (!page.hasMore && page.messages.length < maxResults && pending().length > 0) {
+    if (Date.now() - started > LIVE_BUDGET_MS) break;
+    try {
+      await Promise.all(pending().map((src) => fillFromGmail(src.accountId, src.labelId)));
+    } catch (err) {
+      console.log("[gmail:livePage] failed", { error: String(err) });
+      break;
+    }
+    page = read();
+  }
+  return { messages: page.messages, more: page.hasMore || pending().length > 0 };
 }
 
 const RECONCILE_COOLDOWN_MS = 60_000;
@@ -363,17 +425,6 @@ export function registerGmailHandlers(): void {
       const labelId = labelIds?.[0] ?? "INBOX";
       const offset = pageToken ? Number.parseInt(pageToken, 10) || 0 : 0;
 
-      // Cold cache for this label: warm up with one live page so the user
-      // isn't staring at an empty list while the full sync runs.
-      if (offset === 0 && mailStore.countMessagesForLabel(accountId, labelId) === 0) {
-        try {
-          const live = await listMessages(accountId, { labelIds: [labelId], maxResults });
-          mailStore.upsertMessages(accountId, live.messages);
-        } catch (warmErr) {
-          console.log("[gmail:listMessages] warm-up failed", { error: String(warmErr) });
-        }
-      }
-
       // Gmail's counter says there's unread mail we don't have yet (e.g. the
       // first full sync is still running): pull it in so the list and its
       // Unread filter show what the badge counts.
@@ -381,10 +432,14 @@ export function registerGmailHandlers(): void {
 
       mailSync.syncAccount(accountId);
 
-      const page = mailStore.getThreadsPage(accountId, labelId, offset, maxResults);
+      const page = await pageWithLiveFill([{ accountId, labelId }], maxResults, () =>
+        mailStore.getThreadsPage(accountId, labelId, offset, maxResults),
+      );
       return {
         messages: page.messages,
-        nextPageToken: page.hasMore ? String(offset + maxResults) : undefined,
+        // Continue after the rows actually returned: short pages grow as the
+        // cache fills, and a fixed stride would skip what arrived in between.
+        nextPageToken: page.more ? String(offset + page.messages.length) : undefined,
       };
     } catch (err) {
       console.log("[gmail:listMessages] error", { error: String(err) });
@@ -455,10 +510,13 @@ export function registerGmailHandlers(): void {
 
       void mailSync.syncAllAccounts();
 
-      const page = mailStore.getCombinedThreadsByRules(rules, offset, maxResults);
+      const sources = rules.map((r) => ({ accountId: r.accountId, labelId: r.allOf[0] ?? null }));
+      const page = await pageWithLiveFill(sources, maxResults, () =>
+        mailStore.getCombinedThreadsByRules(rules, offset, maxResults),
+      );
       return {
         messages: page.messages,
-        nextPageToken: page.hasMore ? String(offset + maxResults) : undefined,
+        nextPageToken: page.more ? String(offset + page.messages.length) : undefined,
       };
     } catch (err) {
       console.log("[gmail:listCombinedMessages] error", { error: String(err) });

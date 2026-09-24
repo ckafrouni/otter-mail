@@ -154,39 +154,70 @@ async function runSync(accountId: string): Promise<void> {
   updateDockBadge();
 }
 
+const META_CHUNK = 100;
+
+/**
+ * First-run mailbox sync, newest first. Resumable: the Gmail page cursor and
+ * the starting history id are kept in kv after every page, so a failure (rate
+ * limits, sleep, quit) continues where it stopped instead of starting over,
+ * and ids already cached are skipped. Metadata is written every 100 messages
+ * so lists fill in steadily on very large mailboxes.
+ */
 async function fullSync(accountId: string): Promise<void> {
-  // Capture the history cursor BEFORE the (long) full sync so a later
-  // incremental pass can replay anything that changed in the meantime.
-  let seedHistoryId: string | null = null;
+  const cursorKey = `fullSyncCursor:${accountId}`;
+  const seedKey = `fullSyncSeed:${accountId}`;
+
+  // The history cursor from BEFORE the first attempt, so the incremental pass
+  // afterwards replays everything that changed while the full sync ran.
+  let seedHistoryId = store.getKv(seedKey) || null;
+  let total: number | null = null;
   try {
-    seedHistoryId = (await getProfile(accountId)).historyId || null;
+    const profile = await getProfile(accountId);
+    total = profile.messagesTotal || null;
+    if (!seedHistoryId) {
+      seedHistoryId = profile.historyId || null;
+      if (seedHistoryId) store.setKv(seedKey, seedHistoryId);
+    }
   } catch {
-    seedHistoryId = null;
+    // keep going without a total; the seed is retried next run
   }
 
-  update(accountId, { phase: "full", synced: 0 });
-
-  let pageToken: string | undefined;
-  let synced = 0;
+  let pageToken = store.getKv(cursorKey) || undefined;
+  let synced = store.countAllMessages(accountId);
+  update(accountId, { phase: "full", synced, total });
+  if (pageToken) logger.info("mail-sync", `full sync resuming for ${accountId} at ${synced}`);
 
   do {
-    const page = await listMessageIdsPage(accountId, { pageToken, maxResults: 500 });
-
-    if (page.resultSizeEstimate && ensureStatus(accountId).total === null) {
-      update(accountId, { total: page.resultSizeEstimate });
+    let page: Awaited<ReturnType<typeof listMessageIdsPage>>;
+    try {
+      page = await listMessageIdsPage(accountId, { pageToken, maxResults: 500 });
+    } catch (err) {
+      // A stale saved cursor: start the listing over (cached ids are skipped).
+      if (pageToken && err instanceof Error && err.message.includes("Gmail API error: 400")) {
+        store.setKv(cursorKey, "");
+        pageToken = undefined;
+        continue;
+      }
+      throw err;
     }
 
-    if (page.ids.length > 0) {
-      const summaries = await fetchMetadataForIds(accountId, page.ids);
+    if (total === null && page.resultSizeEstimate)
+      update(accountId, { total: page.resultSizeEstimate });
+
+    const fresh = store.filterUnknownIds(accountId, page.ids);
+    for (let i = 0; i < fresh.length; i += META_CHUNK) {
+      const summaries = await fetchMetadataForIds(accountId, fresh.slice(i, i + META_CHUNK));
       store.upsertMessages(accountId, summaries);
       synced += summaries.length;
       update(accountId, { synced });
     }
 
     pageToken = page.nextPageToken;
+    store.setKv(cursorKey, pageToken ?? "");
   } while (pageToken);
 
   store.setSyncState(accountId, { fullSyncDone: true, historyId: seedHistoryId });
+  store.setKv(seedKey, "");
   store.setKv(`spamTrashBackfilled:${accountId}`, "1");
 }
 
@@ -238,8 +269,12 @@ async function backfillSpamTrash(accountId: string): Promise<void> {
  * run only touches messages still missing a body. Individual failures (e.g. a
  * message deleted since metadata sync) are skipped and retried next run.
  */
+/** Bodies fetched per sync run (newest first): huge mailboxes backfill over
+    several runs instead of holding the sync — and new mail — for hours. */
+const BODIES_PER_RUN = 300;
+
 async function backfillBodies(accountId: string): Promise<void> {
-  const ids = store.getUndownloadedMessageIds(accountId);
+  const ids = store.getUndownloadedMessageIds(accountId).slice(0, BODIES_PER_RUN);
   if (ids.length === 0) return;
 
   update(accountId, { phase: "bodies", synced: 0, total: ids.length });
