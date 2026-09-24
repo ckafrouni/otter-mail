@@ -323,8 +323,9 @@ export const gmailApi = {
   getSettingsTarget: (): Promise<SettingsTarget | null> => ipc("window:getSettingsTarget"),
 
   /** Cmd+click: open a single message in its own window. */
-  openMessageWindow: (accountId: string, messageId: string): Promise<void> =>
-    ipc("window:openMessage", { accountId, messageId }),
+  /** A conversation the menu-bar popover asked this window to open, if any. */
+  takePendingOpenMessage: (): Promise<{ accountId: string; messageId: string } | null> =>
+    ipc("window:takePendingOpenMessage"),
 
   takePendingMailto: (): Promise<MailtoTarget | null> => ipc("app:takePendingMailto"),
 

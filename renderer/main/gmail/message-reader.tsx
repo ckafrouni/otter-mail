@@ -6,7 +6,6 @@ import {
   ArchiveXIcon,
   DownloadIcon,
   EllipsisIcon,
-  ExternalLinkIcon,
   FlagIcon,
   FolderIcon,
   ForwardIcon,
@@ -2068,12 +2067,6 @@ export function MessageReader({
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                icon={<ExternalLinkIcon />}
-                onSelect={() => void gmailApi.openMessageWindow(accountId, message.id)}
-              >
-                Open in new window
-              </DropdownMenuItem>
               <DropdownMenuItem icon={<BotMessageSquareIcon />} onSelect={() => onOpenChat?.()}>
                 Chat about this in Hermes
               </DropdownMenuItem>

@@ -12,7 +12,7 @@ import { setSettingsTarget, takeSettingsTarget } from "../windows/settings-windo
 import { registerGmailHandlers } from "./gmail.js";
 import { registerTrayPopoverHandlers } from "./tray-popover.js";
 import * as assistantChat from "../services/assistant-chat.js";
-import { openMessageWindow } from "../windows/message-window.js";
+import { takePendingOpenMessage } from "../services/open-message-target.js";
 import { focusMainWindow } from "../services/tray.js";
 import { listMailApps, setDefaultMailHandler } from "../services/default-mail.js";
 import { configureAutoSync, syncAllAccounts } from "../services/mail-sync.js";
@@ -62,13 +62,8 @@ export function registerHandlers(): void {
 
   ipcMain.handle("window:getSettingsTarget", async () => takeSettingsTarget());
 
-  // Cmd+click a message → standalone single-message window.
-  ipcMain.handle("window:openMessage", async (_event, params: unknown) => {
-    const p = params as Record<string, unknown>;
-    const accountId = typeof p?.accountId === "string" ? p.accountId : "";
-    const messageId = typeof p?.messageId === "string" ? p.messageId : "";
-    if (accountId && messageId) await openMessageWindow(accountId, messageId);
-  });
+  // A conversation the menu-bar popover asked the main window to open.
+  ipcMain.handle("window:takePendingOpenMessage", async () => takePendingOpenMessage());
 
   // Default-mail-app plumbing: the renderer pulls pending mailto targets on
   // mount and on the compose:mailto broadcast; Settings offers a "set as

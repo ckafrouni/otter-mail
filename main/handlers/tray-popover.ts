@@ -17,7 +17,7 @@ import {
 import { syncAllAccounts } from "../services/mail-sync.js";
 import { focusMainWindow } from "../services/tray.js";
 import { hideTrayPopover } from "../windows/tray-popover-window.js";
-import { openMessageWindow } from "../windows/message-window.js";
+import { setPendingOpenMessage } from "../services/open-message-target.js";
 import type { GmailAccount, GmailMessageSummary } from "../gmail/types.js";
 
 const PREVIEW_LIMIT = 15;
@@ -60,8 +60,11 @@ export function registerTrayPopoverHandlers(): void {
     try {
       const accountId = assertString(p?.accountId, "accountId");
       const messageId = assertString(p?.messageId, "messageId");
-      await openMessageWindow(accountId, messageId);
+      // Opens in the main window's reader (there is no standalone window).
+      setPendingOpenMessage({ accountId, messageId });
       hideTrayPopover();
+      await focusMainWindow();
+      ipcMain.broadcast("mail:open");
     } catch (err) {
       logger.info("tray-popover", `openThread failed: ${String(err)}`);
       throw err;

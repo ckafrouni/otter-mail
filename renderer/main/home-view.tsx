@@ -506,6 +506,19 @@ export function HomeView() {
     return unsub;
   }, []);
 
+  // A conversation clicked in the menu-bar popover opens here, in the reader.
+  const openFromTrayRef = useRef<(accountId: string, messageId: string) => void>(() => {});
+  useEffect(() => {
+    const pull = async () => {
+      const target = await gmailApi.takePendingOpenMessage().catch(() => null);
+      if (!target) return;
+      console.log("[HomeView:openFromTray]", { messageId: target.messageId });
+      openFromTrayRef.current(target.accountId, target.messageId);
+    };
+    void pull();
+    return window.glazeAPI.glaze.ipc.onNotification("mail:open", () => void pull());
+  }, []);
+
   // "New Message" triggered from the menu-bar tray icon.
   useEffect(() => {
     return window.glazeAPI.glaze.ipc.onNotification("compose:new", () => setComposeOpen(true));
@@ -627,6 +640,18 @@ export function HomeView() {
       setSearchQuery("");
     }
     setSelectedMessageId(message.id);
+    setReaderAccountId(owner);
+  };
+
+  openFromTrayRef.current = (owner, messageId) => {
+    setComposeOpen(false);
+    setSettingsRoute(null);
+    if (!isCombined && owner !== effectiveAccountId) {
+      setSelectedAccountId(owner);
+      setSelectedLabelId("INBOX");
+      setSearchQuery("");
+    }
+    setSelectedMessageId(messageId);
     setReaderAccountId(owner);
   };
 

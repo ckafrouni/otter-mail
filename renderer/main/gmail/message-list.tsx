@@ -31,7 +31,6 @@ import {
   XIcon,
 } from "lucide-react";
 import { IconBtn, HintTooltip, buttonClass, cn } from "./ui";
-import { gmailApi } from "./api";
 import {
   useMessages,
   useCombinedMessages,
@@ -56,6 +55,7 @@ import { isTypingTarget } from "./keyboard";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
 import { SYSTEM_LABEL_NAMES, labelDisplayName } from "./label-names";
 import { decodeEntities } from "./text";
+import { parseAddressEntry, splitAddressList } from "./address";
 import type { GmailAccount, GmailLabel, GmailMessageSummary, ViewRule } from "./types";
 import { pickAdvanceTarget } from "./advance-direction";
 
@@ -317,6 +317,18 @@ function MessageRow({
   }, [selected]);
 
   const unread = message.threadUnread ?? message.unread;
+  // The thread's latest message is an unsent draft: flag it like Gmail does,
+  // and name who it's going to instead of yourself.
+  const isDraft = message.labelIds.includes("DRAFT");
+  const draftTo = isDraft
+    ? splitAddressList(message.to)
+        .map((entry) => {
+          const { name, email } = parseAddressEntry(entry);
+          return name || email.split("@")[0];
+        })
+        .filter(Boolean)
+        .join(", ")
+    : "";
 
   return (
     <div className="px-2 py-0.5">
@@ -326,7 +338,6 @@ function MessageRow({
             ref={rowRef}
             type="button"
             onClick={onRowClick}
-            onDoubleClick={() => void gmailApi.openMessageWindow(ownerAccountId, message.id)}
             // shift-click must not start a text selection
             onMouseDown={(e) => {
               if (e.shiftKey) e.preventDefault();
@@ -344,7 +355,9 @@ function MessageRow({
               className={[
                 "flex min-w-0 flex-1 flex-col gap-px transition-opacity",
                 // Read mail recedes; hover or selection brings it back.
-                !unread && !selected ? "opacity-65 group-hover:opacity-100 dark:opacity-55" : "",
+                !unread && !selected && !isDraft
+                  ? "opacity-65 group-hover:opacity-100 dark:opacity-55"
+                  : "",
               ].join(" ")}
             >
               <div className="flex items-center justify-between gap-2">
@@ -353,13 +366,26 @@ function MessageRow({
                     <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
                   ) : null}
                   {message.labelIds.includes("IMPORTANT") ? <ImportantMarker muted /> : null}
+                  {isDraft ? (
+                    <span className="shrink-0 text-sm font-semibold leading-snug text-destructive-foreground">
+                      Draft
+                    </span>
+                  ) : null}
                   <span
                     className={[
                       "min-w-0 truncate text-sm leading-snug",
-                      unread ? "font-semibold text-foreground" : "font-medium text-foreground",
+                      isDraft
+                        ? "text-muted-foreground"
+                        : unread
+                          ? "font-semibold text-foreground"
+                          : "font-medium text-foreground",
                     ].join(" ")}
                   >
-                    {message.fromName || message.fromEmail}
+                    {isDraft
+                      ? draftTo
+                        ? `to ${draftTo}`
+                        : ""
+                      : message.fromName || message.fromEmail}
                   </span>
                 </span>
                 <div className="flex shrink-0 items-center gap-1.5">
@@ -440,13 +466,6 @@ function MessageRow({
             onSelect={() => handleStarToggle()}
           >
             {message.starred ? "Unflag" : "Flag"}
-          </ContextMenuItem>
-          <ContextMenuSeparator />
-          <ContextMenuItem
-            icon="macwindow.on.rectangle"
-            onSelect={() => void gmailApi.openMessageWindow(ownerAccountId, message.id)}
-          >
-            Open in new window
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem icon="bubble.left" onSelect={onChatAssistant}>
@@ -751,12 +770,7 @@ export function MessageList({
   };
 
   const handleRowClick = (e: React.MouseEvent, message: GmailMessageSummary) => {
-    // Cmd/Ctrl+click opens the message in its own window (browser-style);
-    // Option+click toggles the multi-selection (moved off Cmd for this).
-    if (e.metaKey || e.ctrlKey) {
-      void gmailApi.openMessageWindow(message.accountId ?? accountId, message.id);
-      return;
-    }
+    // Option+click toggles the multi-selection.
     if (e.altKey) {
       toggleChecked(message.id);
       return;
