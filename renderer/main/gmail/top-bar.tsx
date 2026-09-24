@@ -205,7 +205,33 @@ function DefaultMailButton() {
   );
 }
 
-/** Title band of the content column: optional breadcrumb, sync status, the panel toggle. */
+/**
+ * Right end of the content column's title band: default-mail nudge and the
+ * Hermes panel toggle. Views that own the band (the reader) render it at the
+ * end of their own header so the toggle never moves.
+ */
+export function TitleTrailing({
+  showPanelToggle,
+  onToggleChat,
+}: {
+  showPanelToggle: boolean;
+  onToggleChat: () => void;
+}) {
+  return (
+    <>
+      <DefaultMailButton />
+      {showPanelToggle ? (
+        <HintTooltip label="Show Hermes panel" hint="⌘I" side="bottom">
+          <IconBtn label="Toggle Hermes panel" onClick={onToggleChat}>
+            <PanelRightIcon className="size-4" />
+          </IconBtn>
+        </HintTooltip>
+      ) : null}
+    </>
+  );
+}
+
+/** Title band of the content column: optional breadcrumb, sync status, trailing controls. */
 export function TitleControls({
   leading,
   syncing,
@@ -234,18 +260,8 @@ export function TitleControls({
           <span className="max-w-64 truncate text-xs text-muted-foreground">{syncLabel}</span>
         </div>
       ) : null}
-
       <span className="min-w-0 flex-1" />
-
-      <DefaultMailButton />
-
-      {showPanelToggle ? (
-        <HintTooltip label="Show Hermes panel" hint="⌘I" side="bottom">
-          <IconBtn label="Toggle Hermes panel" onClick={onToggleChat}>
-            <PanelRightIcon className="size-4" />
-          </IconBtn>
-        </HintTooltip>
-      ) : null}
+      <TitleTrailing showPanelToggle={showPanelToggle} onToggleChat={onToggleChat} />
     </div>
   );
 }

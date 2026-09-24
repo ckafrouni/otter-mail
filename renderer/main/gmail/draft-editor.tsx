@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { toast } from "@glaze/core/components";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileIcon, PaperclipIcon, SendHorizontalIcon, Trash2Icon, XIcon } from "lucide-react";
@@ -35,11 +36,14 @@ export function DraftEditor({
   detail,
   threadMessages,
   onDone,
+  titleTrailing,
 }: {
   accountId: string;
   detail: GmailMessageDetail;
   threadMessages: GmailMessageSummary[];
   onDone: () => void;
+  /** Right end of the window's title band (panel toggle). */
+  titleTrailing?: ReactNode;
 }) {
   const qc = useQueryClient();
   const [to, setTo] = useState(detail.to ?? "");
@@ -352,7 +356,10 @@ export function DraftEditor({
   return (
     <div className="relative flex h-full min-w-0 flex-col" {...dropProps}>
       <ComposeDropOverlay visible={isDragging} />
-      <div className="drag-region flex h-11 shrink-0 items-center gap-2 border-b border-border px-4">
+      <div
+        data-toolbar=""
+        className="drag-region flex h-(--workspace-topbar-height) shrink-0 items-center gap-2 border-b border-border px-4"
+      >
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium leading-tight text-foreground">
             {subject.trim() || "Draft"}
@@ -368,11 +375,14 @@ export function DraftEditor({
                   : "saves automatically"}
           </div>
         </div>
-        <HintTooltip label="Close" hint="Esc">
+        <HintTooltip label="Close" hint="Esc" side="bottom">
           <IconBtn label="Close" onClick={onDone}>
-            <XIcon className="size-3.5" />
+            <XIcon className="size-4" />
           </IconBtn>
         </HintTooltip>
+        {titleTrailing ? (
+          <span className="ml-1 flex items-center gap-1">{titleTrailing}</span>
+        ) : null}
       </div>
 
       {conversation.length > 0 ? (

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -14,6 +14,8 @@ import {
   ArchiveXIcon,
   ChevronDownIcon,
   DownloadIcon,
+  EllipsisIcon,
+  ExternalLinkIcon,
   FlagIcon,
   FolderIcon,
   ForwardIcon,
@@ -53,7 +55,14 @@ import { decodeEntities } from "./text";
 import { LabelPickerMenu } from "./label-picker-menu";
 import { parseAddressEntry, splitAddressList } from "./address";
 import { isTypingTarget } from "./keyboard";
-import { IconBtn, HintTooltip, buttonClass } from "./ui";
+import { IconBtn, HintTooltip, buttonClass, cn } from "./ui";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "./menu";
 import { RichTextArea, textToHtml, type RichTextRef } from "./rich-text";
 import { RecipientInput } from "./recipient-input";
 import {
@@ -88,6 +97,8 @@ type MessageReaderProps = {
   /** Sender hover-card quick actions. */
   onComposeTo?: (email: string) => void;
   onSearchSender?: (email: string) => void;
+  /** Right end of the window's title band (panel toggle), drawn in this header. */
+  titleTrailing?: ReactNode;
 };
 
 export type DownloadAttachment = (
@@ -266,7 +277,80 @@ function fixWhiteOnWhiteText(doc: Document | null | undefined) {
  * for the srcdoc document as soon as it is PARSED and fit from there; `load` and
  * the per-image listeners are then just later refinements for late-arriving art.
  */
+/** Containers mail clients wrap the quoted reply history in. */
+const QUOTE_SELECTOR = [
+  ".gmail_quote",
+  "blockquote[type='cite']",
+  ".yahoo_quoted",
+  "#appendonsend",
+  "div[id^='divRplyFwdMsg']",
+  "#mail-editor-reference-message-container",
+  ".moz-cite-prefix",
+].join(",");
+
+/**
+ * Finds the quoted history in a rendered email and returns the elements to
+ * hide (outermost only, plus a leading "On … wrote:" line and, for Outlook,
+ * everything after its reply marker). Nothing is returned when hiding would
+ * leave (almost) no readable text.
+ */
+function findQuotedHistory(doc: Document): HTMLElement[] {
+  const body = doc.body;
+  if (!body) return [];
+  const found = Array.from(doc.querySelectorAll<HTMLElement>(QUOTE_SELECTOR));
+  const outer = found.filter((el) => !found.some((o) => o !== el && o.contains(el)));
+  if (outer.length === 0) return [];
+  const hidden = new Set<HTMLElement>();
+  for (const el of outer) {
+    hidden.add(el);
+    const prev = el.previousElementSibling as HTMLElement | null;
+    const prevText = prev?.textContent?.trim() ?? "";
+    if (prev && prevText.length < 300 && /wrote:$/i.test(prevText)) hidden.add(prev);
+    if (el.id === "appendonsend" || el.id.startsWith("divRplyFwdMsg")) {
+      let next = el.nextElementSibling as HTMLElement | null;
+      while (next) {
+        hidden.add(next);
+        next = next.nextElementSibling as HTMLElement | null;
+      }
+    }
+  }
+  const quoted = Array.from(hidden).reduce((n, el) => n + (el.textContent?.trim().length ?? 0), 0);
+  const total = body.textContent?.trim().length ?? 0;
+  return total - quoted >= 20 ? Array.from(hidden) : [];
+}
+
+/** "•••" toggle for trimmed quoted history, as in Gmail. */
+function QuoteToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  return (
+    <HintTooltip label={open ? "Hide quoted text" : "Show quoted text"}>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={open ? "Hide quoted text" : "Show quoted text"}
+        onClick={onToggle}
+        className="mt-2 inline-flex h-5 cursor-pointer items-center rounded-full bg-accent-surface px-2 text-muted-foreground outline-none transition-colors hover:bg-input hover:text-foreground focus-visible:ring-2 focus-visible:ring-focus-ring"
+      >
+        <EllipsisIcon className="size-4" />
+      </button>
+    </HintTooltip>
+  );
+}
+
 function HtmlBody({ html, onQuoteText }: { html: string; onQuoteText?: (text: string) => void }) {
+  // Quoted history is hidden inside the frame; the toggle lives outside it
+  // (WKWebView doesn't reliably deliver clicks from the sandboxed frame).
+  const quotedRef = useRef<HTMLElement[]>([]);
+  const [hasQuote, setHasQuote] = useState(false);
+  const [quoteOpen, setQuoteOpen] = useState(false);
+  const refitRef = useRef<() => void>(() => {});
+  const toggleQuote = () => {
+    const show = !quoteOpen;
+    for (const el of quotedRef.current) {
+      el.style.display = show ? (el.dataset.otterDisplay ?? "") : "none";
+    }
+    setQuoteOpen(show);
+    requestAnimationFrame(() => refitRef.current());
+  };
   const frameRef = useRef<HTMLIFrameElement>(null);
   const quoteRef = useRef(onQuoteText);
   quoteRef.current = onQuoteText;
@@ -303,6 +387,15 @@ function HtmlBody({ html, onQuoteText }: { html: string; onQuoteText?: (text: st
       ro.observe(doc.body);
       neutralizeDarkScheme(doc);
       fixWhiteOnWhiteText(doc);
+      const quoted = findQuotedHistory(doc);
+      quotedRef.current = quoted;
+      for (const el of quoted) {
+        el.dataset.otterDisplay = el.style.display;
+        el.style.display = "none";
+      }
+      setHasQuote(quoted.length > 0);
+      setQuoteOpen(false);
+      refitRef.current = fit;
       // Some remote images won't load in the iframe — anything served with
       // `Cross-Origin-Resource-Policy: same-origin` (Anthropic/Cloudflare, …) is
       // blocked by WebKit since the frame's origin isn't the image's. Re-fetch
@@ -419,13 +512,55 @@ function HtmlBody({ html, onQuoteText }: { html: string; onQuoteText?: (text: st
   // Marketing/HTML mail is designed for a white canvas — give it a light card
   // inside the dark conversation, like an unfurled preview card.
   return (
-    <iframe
-      ref={frameRef}
-      sandbox="allow-same-origin"
-      srcDoc={MESSAGE_BODY_PRELUDE + html}
-      className="w-full rounded-lg border border-border bg-white"
-      title="Message body"
-    />
+    <div>
+      <iframe
+        ref={frameRef}
+        sandbox="allow-same-origin"
+        srcDoc={MESSAGE_BODY_PRELUDE + html}
+        className="w-full rounded-lg bg-white"
+        title="Message body"
+      />
+      {hasQuote ? <QuoteToggle open={quoteOpen} onToggle={toggleQuote} /> : null}
+    </div>
+  );
+}
+
+/** Splits a plain-text body at its quoted history ("On … wrote:", "> …", Outlook marker). */
+function splitPlainQuote(text: string): [string, string] {
+  const lines = text.split("\n");
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    const quoteRunFollows = lines
+      .slice(i)
+      .every((l) => l.trim() === "" || l.trimStart().startsWith(">"));
+    if (
+      /^On .+wrote:$/i.test(line) ||
+      /^-{2,}\s*Original Message\s*-{2,}$/i.test(line) ||
+      (line.startsWith(">") && quoteRunFollows)
+    ) {
+      const main = lines.slice(0, i).join("\n").trimEnd();
+      if (main.trim().length < 20) return [text, ""];
+      return [main, lines.slice(i).join("\n")];
+    }
+  }
+  return [text, ""];
+}
+
+function PlainBody({ text }: { text: string }) {
+  const [main, quote] = splitPlainQuote(text);
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground/90">
+        {main}
+      </pre>
+      {quote ? <QuoteToggle open={open} onToggle={() => setOpen((o) => !o)} /> : null}
+      {quote && open ? (
+        <pre className="mt-2 whitespace-pre-wrap border-l-2 border-border pl-3 font-sans text-sm leading-relaxed text-muted-foreground">
+          {quote}
+        </pre>
+      ) : null}
+    </div>
   );
 }
 
@@ -444,11 +579,7 @@ function MessageBody({
   }
   if (bodyText) {
     // Flush inside the message card (the card is the surface now).
-    return (
-      <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground/90">
-        {bodyText}
-      </pre>
-    );
+    return <PlainBody text={bodyText} />;
   }
   return <span className="text-sm text-muted-foreground">(No message body)</span>;
 }
@@ -744,11 +875,12 @@ function AttachmentList({
 // renders the same conversation above its composer.
 export function DayDivider({ timestamp }: { timestamp: number }) {
   return (
-    <div className="relative flex items-center justify-center py-3">
-      <div className="absolute inset-x-0 top-1/2 h-px bg-border" />
-      <span className="relative rounded-sm border border-border bg-card px-2 py-0.5 text-2xs font-medium text-muted-foreground">
+    <div className="flex items-center gap-3 px-5 pb-1.5 pt-4">
+      <span className="h-px flex-1 bg-border/60" aria-hidden />
+      <span className="text-xs font-medium text-muted-foreground/70">
         {formatDayLabel(timestamp)}
       </span>
+      <span className="h-px flex-1 bg-border/60" aria-hidden />
     </div>
   );
 }
@@ -757,42 +889,64 @@ export function CollapsedRow({
   accountId,
   summary,
   onExpand,
+  standalone = true,
 }: {
   accountId: string;
   summary: GmailMessageSummary;
   onExpand: () => void;
+  /** Own card (default), or a bare row inside a grouped conversation card. */
+  standalone?: boolean;
 }) {
-  return (
-    <div className="px-4 py-1">
-      <button
-        type="button"
-        onClick={onExpand}
-        aria-label="Expand message"
-        className="flex w-full items-center gap-2.5 rounded-xl border border-border bg-card px-3.5 py-2.5 text-left transition-colors hover:bg-accent-surface"
+  const row = (
+    <button
+      type="button"
+      onClick={onExpand}
+      aria-label="Expand message"
+      className={cn(
+        "flex w-full cursor-pointer items-center gap-2.5 px-3.5 py-2.5 text-left outline-none transition-colors hover:bg-accent-surface/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring",
+        standalone && "rounded-xl border border-border/60 bg-card/40",
+      )}
+    >
+      <SenderAvatar
+        name={summary.fromName}
+        email={summary.fromEmail}
+        accountId={accountId}
+        size="sm"
+      />
+      <span
+        className={[
+          "shrink-0 text-sm leading-snug",
+          summary.unread ? "font-semibold text-foreground" : "font-semibold text-foreground/90",
+        ].join(" ")}
       >
-        <SenderAvatar
-          name={summary.fromName}
-          email={summary.fromEmail}
-          accountId={accountId}
-          size="sm"
-        />
-        <span
-          className={[
-            "shrink-0 text-sm leading-snug",
-            summary.unread ? "font-semibold text-foreground" : "font-semibold text-foreground/90",
-          ].join(" ")}
-        >
-          {summary.fromName || summary.fromEmail}
+        {summary.fromName || summary.fromEmail}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground/70">
+        {decodeEntities(summary.snippet)}
+      </span>
+      <span className="shrink-0 text-xs tabular-nums text-muted-foreground/55">
+        {formatTime(summary.date)}
+      </span>
+    </button>
+  );
+  return standalone ? <div className="px-4 py-1">{row}</div> : row;
+}
+
+/** "N more messages" fold inside a grouped run of collapsed messages. */
+function FoldRow({ count, onUnfold }: { count: number; onUnfold: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onUnfold}
+      className="flex w-full cursor-pointer items-center gap-2.5 px-3.5 py-2 text-left text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-accent-surface/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring"
+    >
+      <span className="flex size-6 shrink-0 items-center justify-center">
+        <span className="flex h-5 min-w-5 items-center justify-center rounded-full border border-border px-1.5 tabular-nums">
+          {count}
         </span>
-        <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground/70">
-          {decodeEntities(summary.snippet)}
-        </span>
-        <span className="te-num shrink-0 text-3xs text-muted-foreground/70">
-          {formatTime(summary.date)}
-        </span>
-        <ChevronDownIcon className="size-3.5 shrink-0 -rotate-90 text-muted-foreground/70" />
-      </button>
-    </div>
+      </span>
+      more messages
+    </button>
   );
 }
 
@@ -844,7 +998,7 @@ export function ExpandedRow({
 
   return (
     <div className="px-4 py-1">
-      <div className="group rounded-xl border border-border bg-card px-4 py-3.5">
+      <div className="group rounded-xl border border-border/60 bg-card/40 px-4 py-3.5">
         {/* Post-style header: avatar + sender + time */}
         <div className="flex items-start gap-2.5">
           <SenderHoverCard
@@ -881,7 +1035,7 @@ export function ExpandedRow({
                 </span>
               </SenderHoverCard>
               <span
-                className="te-num shrink-0 text-3xs text-muted-foreground/70"
+                className="shrink-0 text-xs tabular-nums text-muted-foreground/55"
                 title={formatFullDate(summary.date)}
               >
                 {formatTime(summary.date)}
@@ -1297,8 +1451,20 @@ function InlineComposer({
   );
 }
 
-function ReaderShell({ children }: { children: ReactNode }) {
-  return <div className="flex h-full min-w-0 flex-col">{children}</div>;
+function ReaderShell({ children, trailing }: { children: ReactNode; trailing?: ReactNode }) {
+  return (
+    <div className="flex h-full min-w-0 flex-col">
+      {trailing ? (
+        <div
+          data-toolbar=""
+          className="drag-region flex h-(--workspace-topbar-height) shrink-0 items-center justify-end gap-1 px-4"
+        >
+          {trailing}
+        </div>
+      ) : null}
+      {children}
+    </div>
+  );
 }
 
 export function MessageReader({
@@ -1310,6 +1476,7 @@ export function MessageReader({
   onQuote,
   onComposeTo,
   onSearchSender,
+  titleTrailing,
 }: MessageReaderProps) {
   // Reply/reply-all/forward handlers exist only when a message is open; the
   // render below refreshes this ref so the once-mounted listener stays current.
@@ -1357,6 +1524,9 @@ export function MessageReader({
   const [inline, setInline] = useState<InlineMode | null>(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set());
+  // Long runs of collapsed messages fold into "N more messages" until opened.
+  const [unfolded, setUnfolded] = useState(false);
+  useEffect(() => setUnfolded(false), [messageId]);
   const seededRef = useRef<string | null>(null);
   const readerAccounts = useAccounts();
 
@@ -1434,7 +1604,7 @@ export function MessageReader({
 
   if (messageQuery.isLoading || threadQuery.isLoading) {
     return (
-      <ReaderShell>
+      <ReaderShell trailing={titleTrailing}>
         <div className="flex flex-col gap-3 p-5">
           <div className="h-5 w-64 animate-skeleton rounded-sm bg-secondary" />
           <div className="h-4 w-48 animate-skeleton rounded-sm bg-accent-surface" />
@@ -1446,7 +1616,7 @@ export function MessageReader({
 
   if (!message) {
     return (
-      <ReaderShell>
+      <ReaderShell trailing={titleTrailing}>
         <div className="flex flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
           <span className="text-sm font-medium text-foreground">Could not load message</span>
           <span className="text-sm text-muted-foreground">
@@ -1466,6 +1636,7 @@ export function MessageReader({
         detail={message}
         threadMessages={threadMessages}
         onDone={onDeselect ?? (() => {})}
+        titleTrailing={titleTrailing}
       />
     );
   }
@@ -1656,69 +1827,75 @@ export function MessageReader({
   return (
     <>
       <div className="flex h-full min-w-0 flex-col">
-        {/* Conversation header */}
-        <div className="drag-region flex h-11 shrink-0 items-center gap-1 border-b border-border px-4">
-          <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="truncate text-sm font-medium leading-tight text-foreground">
-                {message.subject || "(no subject)"}
+        {/* Conversation header = the title band: subject + labels, the
+            everyday actions, a "more" menu, then the window's panel toggle. */}
+        <div
+          data-toolbar=""
+          className="drag-region flex h-(--workspace-topbar-height) shrink-0 items-center gap-1 border-b border-border px-4"
+        >
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <span
+              className="truncate text-sm font-medium text-foreground"
+              title={isThread ? `${rows.length} messages` : formatFullDate(message.date)}
+            >
+              {message.subject || "(no subject)"}
+            </span>
+            {message.labelIds.includes("INBOX") ||
+            message.labelIds.some(isCategoryLabelId) ||
+            messageLabels.length > 0 ? (
+              <span className="flex min-w-0 shrink items-center gap-1 overflow-hidden">
+                {message.labelIds.includes("INBOX") ? <InboxChip onRemove={handleArchive} /> : null}
+                {message.labelIds.filter(isCategoryLabelId).map((id) => (
+                  <CategoryChip key={id} id={id} />
+                ))}
+                {messageLabels.map((label) => (
+                  <LabelChip
+                    key={label.id}
+                    label={label}
+                    onRemove={() => {
+                      console.log("[MessageReader:removeLabelChip]", { labelId: label.id });
+                      void modifyMessage.mutateAsync({
+                        accountId,
+                        messageId: message.id,
+                        removeLabelIds: [label.id],
+                      });
+                    }}
+                  />
+                ))}
               </span>
-              {message.labelIds.includes("INBOX") ||
-              message.labelIds.some(isCategoryLabelId) ||
-              messageLabels.length > 0 ? (
-                <span className="flex max-w-[45%] shrink-0 items-center gap-1 overflow-hidden">
-                  {message.labelIds.includes("INBOX") ? (
-                    <InboxChip onRemove={handleArchive} />
-                  ) : null}
-                  {message.labelIds.filter(isCategoryLabelId).map((id) => (
-                    <CategoryChip key={id} id={id} />
-                  ))}
-                  {messageLabels.map((label) => (
-                    <LabelChip
-                      key={label.id}
-                      label={label}
-                      onRemove={() => {
-                        console.log("[MessageReader:removeLabelChip]", { labelId: label.id });
-                        void modifyMessage.mutateAsync({
-                          accountId,
-                          messageId: message.id,
-                          removeLabelIds: [label.id],
-                        });
-                      }}
-                    />
-                  ))}
-                </span>
-              ) : null}
-            </div>
-            <div className="truncate text-xs leading-tight text-muted-foreground">
-              {isThread ? `${rows.length} messages` : formatFullDate(message.date)}
-            </div>
+            ) : null}
           </div>
 
-          <HintTooltip label="Reply" hint="R">
+          <HintTooltip label="Reply" hint="R" side="bottom">
             <IconBtn label="Reply" onClick={handleReply}>
-              <ReplyIcon className="size-3.5" />
+              <ReplyIcon className="size-4" />
             </IconBtn>
           </HintTooltip>
-          <HintTooltip label="Reply all" hint="A">
+          <HintTooltip label="Reply all" hint="A" side="bottom">
             <IconBtn label="Reply all" onClick={handleReplyAll}>
-              <ReplyAllIcon className="size-3.5" />
+              <ReplyAllIcon className="size-4" />
             </IconBtn>
           </HintTooltip>
-          <HintTooltip label="Forward" hint="F">
+          <HintTooltip label="Forward" hint="F" side="bottom">
             <IconBtn label="Forward" onClick={handleForward}>
-              <ForwardIcon className="size-3.5" />
+              <ForwardIcon className="size-4" />
             </IconBtn>
           </HintTooltip>
 
           {groupDivider}
 
-          {isTrashed ? null : (
+          {isTrashed ? (
+            <HintTooltip label="Restore from Trash" hint="#" side="bottom">
+              <IconBtn label="Restore from Trash" onClick={handleUntrash}>
+                <RotateCcwIcon className="size-4" />
+              </IconBtn>
+            </HintTooltip>
+          ) : (
               isThread
                 ? rows.some((m) => m.labelIds.includes("INBOX"))
                 : message.labelIds.includes("INBOX")
             ) ? (
-            <HintTooltip label="Archive" hint="E">
+            <HintTooltip label="Archive" hint="E" side="bottom">
               <IconBtn
                 label="Archive"
                 onClick={() => {
@@ -1726,31 +1903,18 @@ export function MessageReader({
                   handleArchive();
                 }}
               >
-                <ArchiveIcon className="size-3.5" />
+                <ArchiveIcon className="size-4" />
               </IconBtn>
             </HintTooltip>
           ) : (
-            <HintTooltip label="Move to Inbox" hint="E">
+            <HintTooltip label="Move to Inbox" hint="E" side="bottom">
               <IconBtn label="Move to Inbox" onClick={handleUnarchive}>
-                <ArchiveRestoreIcon className="size-3.5" />
+                <ArchiveRestoreIcon className="size-4" />
               </IconBtn>
             </HintTooltip>
           )}
-          {isTrashed || isJunk ? (
-            <HintTooltip label="Delete Forever">
-              <IconBtn label="Delete Forever" onClick={() => setConfirmDeleteOpen(true)}>
-                <Trash2Icon className="size-4 text-(--red)" />
-              </IconBtn>
-            </HintTooltip>
-          ) : null}
-          {isTrashed ? (
-            <HintTooltip label="Restore from Trash" hint="#">
-              <IconBtn label="Restore from Trash" onClick={handleUntrash}>
-                <RotateCcwIcon className="size-3.5" />
-              </IconBtn>
-            </HintTooltip>
-          ) : (
-            <HintTooltip label="Move to Trash" hint="#">
+          {isTrashed ? null : (
+            <HintTooltip label="Move to Trash" hint="#" side="bottom">
               <IconBtn
                 label="Move to Trash"
                 onClick={() => {
@@ -1758,66 +1922,78 @@ export function MessageReader({
                   handleTrash();
                 }}
               >
-                <Trash2Icon className="size-3.5" />
+                <Trash2Icon className="size-4" />
               </IconBtn>
             </HintTooltip>
           )}
-          {isJunk ? (
-            <HintTooltip label="Not Junk — move to Inbox" hint="!">
-              <IconBtn label="Not Junk" onClick={handleJunk}>
-                <ShieldCheckIcon className="size-3.5" />
-              </IconBtn>
-            </HintTooltip>
-          ) : (
-            <HintTooltip label="Move to Junk" hint="!">
-              <IconBtn
-                label="Move to Junk"
-                onClick={() => {
-                  onAdvance?.();
-                  handleJunk();
-                }}
-              >
-                <ArchiveXIcon className="size-3.5" />
-              </IconBtn>
-            </HintTooltip>
-          )}
-
-          {groupDivider}
-
           <LabelPickerMenu accountId={accountId} messageId={message.id} labelIds={message.labelIds}>
             <IconBtn label="Move to label">
-              <span className="flex items-center gap-0.5">
-                <FolderIcon className="size-3.5" />
-                <ChevronDownIcon className="size-3" />
-              </span>
+              <FolderIcon className="size-4" />
             </IconBtn>
           </LabelPickerMenu>
-
-          {groupDivider}
-
-          <HintTooltip label={isFlagged ? "Unflag" : "Flag"} hint="S">
+          <HintTooltip label={isFlagged ? "Unflag" : "Flag"} hint="S" side="bottom">
             <IconBtn label={isFlagged ? "Unflag" : "Flag"} onClick={handleToggleFlag}>
-              <FlagIcon
-                className={["size-4 text-(--red)", isFlagged ? "fill-current" : ""].join(" ")}
-              />
-            </IconBtn>
-          </HintTooltip>
-          <HintTooltip label={isUnread ? "Mark as read" : "Mark as unread"}>
-            <IconBtn
-              label={isUnread ? "Mark as read" : "Mark as unread"}
-              onClick={handleToggleRead}
-            >
-              {isUnread ? <MailOpenIcon className="size-3.5" /> : <MailIcon className="size-3.5" />}
+              <FlagIcon className={cn("size-4", isFlagged ? "fill-current text-(--red)" : "")} />
             </IconBtn>
           </HintTooltip>
 
-          {groupDivider}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <IconBtn label="More actions">
+                <EllipsisIcon className="size-4" />
+              </IconBtn>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                icon={isUnread ? <MailOpenIcon /> : <MailIcon />}
+                onSelect={handleToggleRead}
+              >
+                {isUnread ? "Mark as read" : "Mark as unread"}
+              </DropdownMenuItem>
+              {isJunk ? (
+                <DropdownMenuItem icon={<ShieldCheckIcon />} accelerator="!" onSelect={handleJunk}>
+                  Not junk
+                </DropdownMenuItem>
+              ) : isTrashed ? null : (
+                <DropdownMenuItem
+                  icon={<ArchiveXIcon />}
+                  accelerator="!"
+                  onSelect={() => {
+                    onAdvance?.();
+                    handleJunk();
+                  }}
+                >
+                  Move to junk
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                icon={<ExternalLinkIcon />}
+                onSelect={() => void gmailApi.openMessageWindow(accountId, message.id)}
+              >
+                Open in new window
+              </DropdownMenuItem>
+              <DropdownMenuItem icon={<BotMessageSquareIcon />} onSelect={() => onOpenChat?.()}>
+                Chat about this in Hermes
+              </DropdownMenuItem>
+              {isTrashed || isJunk ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    icon={<Trash2Icon />}
+                    color="red"
+                    onSelect={() => setConfirmDeleteOpen(true)}
+                  >
+                    Delete forever…
+                  </DropdownMenuItem>
+                </>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-          <HintTooltip label="Chat about this in Hermes">
-            <IconBtn label="Open in Hermes chat" onClick={() => onOpenChat?.()}>
-              <BotMessageSquareIcon className="size-3.5" />
-            </IconBtn>
-          </HintTooltip>
+          {titleTrailing ? (
+            <span className="ml-1 flex items-center gap-1">{titleTrailing}</span>
+          ) : null}
         </div>
 
         {isTrashed ? (
@@ -1842,15 +2018,32 @@ export function MessageReader({
 
         {/* Conversation */}
         <div className="min-h-0 flex-1 overflow-y-auto pb-2" onMouseUp={onParentMouseUp}>
-          {rows.map((m, i) => {
-            const prev = rows[i - 1];
-            const newDay = !prev || dayKey(prev.date) !== dayKey(m.date);
-            const isExpanded = expandedIds.has(m.id) || rows.length === 1;
-            return (
-              <div key={m.id}>
-                {newDay ? <DayDivider timestamp={m.date} /> : null}
-                {isExpanded ? (
+          {(() => {
+            // Day dividers, expanded messages, and runs of collapsed messages
+            // (one grouped card per run; long runs fold to "N more").
+            type Segment =
+              | { kind: "day"; ts: number }
+              | { kind: "open"; m: GmailMessageSummary }
+              | { kind: "closed"; ms: GmailMessageSummary[] };
+            const segments: Segment[] = [];
+            rows.forEach((m, i) => {
+              const prev = rows[i - 1];
+              if (!prev || dayKey(prev.date) !== dayKey(m.date)) {
+                segments.push({ kind: "day", ts: m.date });
+              }
+              const open = expandedIds.has(m.id) || rows.length === 1;
+              const last = segments[segments.length - 1];
+              if (open) segments.push({ kind: "open", m });
+              else if (last?.kind === "closed") last.ms.push(m);
+              else segments.push({ kind: "closed", ms: [m] });
+            });
+            return segments.map((seg) => {
+              if (seg.kind === "day") return <DayDivider key={`d-${seg.ts}`} timestamp={seg.ts} />;
+              if (seg.kind === "open") {
+                const m = seg.m;
+                return (
                   <ExpandedRow
+                    key={m.id}
                     accountId={accountId}
                     summary={m}
                     onCollapse={rows.length === 1 ? undefined : () => toggleExpanded(m.id)}
@@ -1859,16 +2052,31 @@ export function MessageReader({
                     onComposeTo={onComposeTo}
                     onSearchSender={onSearchSender}
                   />
-                ) : (
-                  <CollapsedRow
-                    accountId={accountId}
-                    summary={m}
-                    onExpand={() => toggleExpanded(m.id)}
-                  />
-                )}
-              </div>
-            );
-          })}
+                );
+              }
+              const fold = !unfolded && seg.ms.length > 3;
+              const visible = fold ? [seg.ms[0], seg.ms[seg.ms.length - 1]] : seg.ms;
+              return (
+                <div key={`c-${seg.ms[0].id}`} className="px-4 py-1">
+                  <div className="overflow-hidden rounded-xl border border-border/60 bg-card/40 [&>*+*]:border-t [&>*+*]:border-border/50">
+                    {visible.map((m, idx) => (
+                      <Fragment key={m.id}>
+                        {fold && idx === 1 ? (
+                          <FoldRow count={seg.ms.length - 2} onUnfold={() => setUnfolded(true)} />
+                        ) : null}
+                        <CollapsedRow
+                          accountId={accountId}
+                          summary={m}
+                          standalone={false}
+                          onExpand={() => toggleExpanded(m.id)}
+                        />
+                      </Fragment>
+                    ))}
+                  </div>
+                </div>
+              );
+            });
+          })()}
         </div>
 
         {/* In-thread composer, hidden until replying/forwarding */}

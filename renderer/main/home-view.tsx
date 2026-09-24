@@ -7,7 +7,7 @@ import { NewMessageView } from "./gmail/new-message-view";
 import { CommandPalette } from "./gmail/command-palette";
 import { HermesChatPanel } from "./gmail/hermes-chat";
 import { ShortcutsHelpDialog } from "./gmail/shortcuts-help-dialog";
-import { TitleControls, WindowTitle } from "./gmail/top-bar";
+import { TitleControls, TitleTrailing, WindowTitle } from "./gmail/top-bar";
 import { SettingsPage, type SettingsRoute } from "./settings/settings-page";
 import { SettingsNav, settingsSectionLabel } from "./settings/settings-nav";
 import { isTypingTarget } from "./gmail/keyboard";
@@ -678,6 +678,13 @@ export function HomeView() {
     console.log("[HomeView:syncNow]");
     for (const id of accountIds) void gmailApi.syncAccount(id).catch(() => {});
   };
+  // With a conversation open, its header is the title band (subject, actions
+  // and the panel toggle in one row) instead of an empty band above it.
+  const readerOwnsBand =
+    !settingsRoute && !(composeOpen && composeAccountId) && !!readerAccount && !!selectedMessageId;
+  const titleTrailing = (
+    <TitleTrailing showPanelToggle={!chatOpen && !settingsRoute} onToggleChat={toggleChat} />
+  );
   const titleControls = (
     <TitleControls
       leading={
@@ -789,7 +796,7 @@ export function HomeView() {
             </>
           ) : null}
           <div className={`${PANE_MAIN} flex min-w-0 flex-1 flex-col`}>
-            {titleControls}
+            {readerOwnsBand ? null : titleControls}
             <div className="flex min-h-0 flex-1 flex-col">
               {settingsRoute ? (
                 <SettingsPage route={settingsRoute} onNavigate={setSettingsRoute} />
@@ -806,6 +813,7 @@ export function HomeView() {
                 />
               ) : readerAccount ? (
                 <MessageReader
+                  titleTrailing={titleTrailing}
                   accountId={readerAccount}
                   messageId={selectedMessageId}
                   onDeselect={() => {
