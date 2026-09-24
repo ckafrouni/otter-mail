@@ -1,7 +1,13 @@
 import type React from "react";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
+import { Dialog, Text } from "@glaze/core/components";
 import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+  DropdownMenuSeparator,
   ContextMenu,
   ContextMenuTrigger,
   ContextMenuContent,
@@ -9,15 +15,6 @@ import {
   ContextMenuCheckboxItem,
   ContextMenuSeparator,
   ContextMenuSub,
-  Dialog,
-  Text,
-} from "@glaze/core/components";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuCheckboxItem,
-  DropdownMenuSeparator,
 } from "./menu";
 import {
   ArchiveIcon,
@@ -366,21 +363,6 @@ function MessageRow({
                   </span>
                 </span>
                 <div className="flex shrink-0 items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onChatAssistant();
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    aria-label="Open in Hermes chat"
-                    className={[
-                      "shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
-                      "text-muted-foreground hover:text-foreground",
-                    ].join(" ")}
-                  >
-                    <BotMessageSquareIcon className="size-3.5" />
-                  </button>
                   {threadCount > 1 ? (
                     <span className="text-xs tabular-nums text-muted-foreground">
                       {threadCount}
@@ -451,7 +433,7 @@ function MessageRow({
             icon={unread ? "envelope.open" : "envelope.badge"}
             onSelect={handleToggleRead}
           >
-            {unread ? "Mark as Read" : "Mark as Unread"}
+            {unread ? "Mark as read" : "Mark as unread"}
           </ContextMenuItem>
           <ContextMenuItem
             icon={message.starred ? "flag.slash" : "flag"}
@@ -464,14 +446,14 @@ function MessageRow({
             icon="macwindow.on.rectangle"
             onSelect={() => void gmailApi.openMessageWindow(ownerAccountId, message.id)}
           >
-            Open in New Window
+            Open in new window
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem icon="bubble.left" onSelect={onChatAssistant}>
             Open in Hermes chat
           </ContextMenuItem>
           <ContextMenuSeparator />
-          <ContextMenuSub label="Move to Label">
+          <ContextMenuSub label="Move to label">
             {labelTree.length === 0 ? (
               <ContextMenuItem disabled>No labels</ContextMenuItem>
             ) : (
@@ -488,26 +470,26 @@ function MessageRow({
               icon={inInbox ? "archivebox" : "tray.and.arrow.down"}
               onSelect={() => handleArchive()}
             >
-              {inInbox ? "Archive" : "Move to Inbox"}
+              {inInbox ? "Archive" : "Move to inbox"}
             </ContextMenuItem>
           )}
           {trashed ? null : (
             <ContextMenuItem icon={junk ? "checkmark.shield" : "xmark.bin"} onSelect={handleJunk}>
-              {junk ? "Not Junk" : "Move to Junk"}
+              {junk ? "Not junk" : "Move to junk"}
             </ContextMenuItem>
           )}
           {trashed ? (
             <ContextMenuItem icon="trash.slash" onSelect={() => handleTrash()}>
-              Restore from Trash
+              Restore from trash
             </ContextMenuItem>
           ) : (
             <ContextMenuItem icon="trash" color="red" onSelect={() => handleTrash()}>
-              Move to Trash
+              Move to trash
             </ContextMenuItem>
           )}
           {trashed || junk ? (
             <ContextMenuItem icon="trash.fill" color="red" onSelect={onDeleteForever}>
-              Delete Forever…
+              Delete forever…
             </ContextMenuItem>
           ) : null}
         </ContextMenuContent>

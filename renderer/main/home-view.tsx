@@ -674,9 +674,31 @@ export function HomeView() {
 
   // Full-height columns: each pane owns its slice of the title band, so the
   // separators run from the very top of the window.
+  // Manual refresh: spin from the click until every account's sync settles
+  // (any phase — the passive indicator only shows long full/body syncs), and
+  // for at least a beat so a fast incremental sync still reads as feedback.
+  const [manualSyncing, setManualSyncing] = useState(false);
   const syncNow = () => {
+    if (manualSyncing) return;
     console.log("[HomeView:syncNow]");
-    for (const id of accountIds) void gmailApi.syncAccount(id).catch(() => {});
+    setManualSyncing(true);
+    const startedAt = Date.now();
+    void (async () => {
+      try {
+        await Promise.all(accountIds.map((id) => gmailApi.syncAccount(id).catch(() => null)));
+        for (let i = 0; i < 150; i++) {
+          const statuses = await Promise.all(
+            accountIds.map((id) => gmailApi.getSyncStatus(id).catch(() => null)),
+          );
+          if (!statuses.some((st) => st?.syncing)) break;
+          await new Promise((r) => setTimeout(r, 400));
+        }
+      } finally {
+        const remaining = 700 - (Date.now() - startedAt);
+        if (remaining > 0) await new Promise((r) => setTimeout(r, remaining));
+        setManualSyncing(false);
+      }
+    })();
   };
   // With a conversation open, its header is the title band (subject, actions
   // and the panel toggle in one row) instead of an empty band above it.
@@ -741,7 +763,7 @@ export function HomeView() {
                     }
                     onOpenPalette={() => setPaletteOpen(true)}
                     onSync={syncNow}
-                    syncing={globalSync.syncing}
+                    syncing={globalSync.syncing || manualSyncing}
                     selectedAccountId={effectiveAccountId}
                     onSelectAccount={handleSelectAccount}
                     selectedLabelId={selectedLabelId}

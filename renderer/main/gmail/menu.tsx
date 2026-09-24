@@ -1,5 +1,5 @@
 import type { ComponentProps, ReactNode } from "react";
-import { DropdownMenu as Menu } from "radix-ui";
+import { ContextMenu as ContextPrimitive, DropdownMenu as Menu } from "radix-ui";
 import { CheckIcon, ChevronRightIcon } from "lucide-react";
 import { cn, restoreFocusForKeyboardOnly } from "./ui";
 
@@ -107,10 +107,19 @@ export function DropdownMenuLabel({ className, ...props }: ComponentProps<typeof
 }
 
 /** Submenu with a text trigger (`label`), like the native menu's API. */
-export function DropdownMenuSub({ label, children }: { label: string; children: ReactNode }) {
+export function DropdownMenuSub({
+  label,
+  inset,
+  children,
+}: {
+  label: string;
+  /** Indent past the check column, when siblings are checkbox items. */
+  inset?: boolean;
+  children: ReactNode;
+}) {
   return (
     <Menu.Sub>
-      <Menu.SubTrigger className={cn(ROW, "data-[state=open]:bg-accent-surface")}>
+      <Menu.SubTrigger className={cn(ROW, inset && "ps-7", "data-[state=open]:bg-accent-surface")}>
         <span className="min-w-0 flex-1 truncate">{label}</span>
         <ChevronRightIcon className="ms-auto size-3.5 text-muted-foreground" />
       </Menu.SubTrigger>
@@ -120,5 +129,131 @@ export function DropdownMenuSub({ label, children }: { label: string; children: 
         </Menu.SubContent>
       </Menu.Portal>
     </Menu.Sub>
+  );
+}
+
+/*
+ * Right-click menus with the same look, replacing the Glaze native context
+ * menu. Same part names as before; SF Symbol icon names (strings) from the
+ * native API are ignored, React icons render like dropdown items.
+ */
+
+export const ContextMenu = ContextPrimitive.Root;
+
+/** Without `asChild` the trigger adds no box (display: contents), like the native one. */
+export function ContextMenuTrigger({
+  asChild,
+  className,
+  ...props
+}: ComponentProps<typeof ContextPrimitive.Trigger>) {
+  return (
+    <ContextPrimitive.Trigger
+      asChild={asChild}
+      className={asChild ? className : cn("contents", className)}
+      {...props}
+    />
+  );
+}
+
+export function ContextMenuContent({
+  className,
+  ...props
+}: ComponentProps<typeof ContextPrimitive.Content>) {
+  return (
+    <ContextPrimitive.Portal>
+      <ContextPrimitive.Content
+        collisionPadding={8}
+        onCloseAutoFocus={restoreFocusForKeyboardOnly}
+        className={cn(POPUP, "max-h-(--radix-context-menu-content-available-height)", className)}
+        {...props}
+      />
+    </ContextPrimitive.Portal>
+  );
+}
+
+export function ContextMenuItem({
+  className,
+  icon,
+  accelerator,
+  color,
+  children,
+  ...props
+}: ComponentProps<typeof ContextPrimitive.Item> & {
+  icon?: ReactNode;
+  accelerator?: string;
+  color?: "red";
+}) {
+  return (
+    <ContextPrimitive.Item
+      className={cn(
+        ROW,
+        color === "red" &&
+          "text-destructive-foreground [&_svg:not([class*='text-'])]:text-destructive-foreground",
+        className,
+      )}
+      {...props}
+    >
+      {typeof icon === "string" ? null : icon}
+      <span className="min-w-0 flex-1 truncate">{children}</span>
+      {accelerator ? (
+        <kbd className="ms-auto font-sans text-xs tracking-widest text-muted-foreground">
+          {accelerator}
+        </kbd>
+      ) : null}
+    </ContextPrimitive.Item>
+  );
+}
+
+export function ContextMenuCheckboxItem({
+  className,
+  children,
+  ...props
+}: ComponentProps<typeof ContextPrimitive.CheckboxItem>) {
+  return (
+    <ContextPrimitive.CheckboxItem className={cn(ROW, "ps-7", className)} {...props}>
+      <span className="absolute start-2 flex size-4 items-center justify-center">
+        <ContextPrimitive.ItemIndicator>
+          <CheckIcon className="size-3.5 text-foreground" />
+        </ContextPrimitive.ItemIndicator>
+      </span>
+      <span className="min-w-0 flex-1 truncate">{children}</span>
+    </ContextPrimitive.CheckboxItem>
+  );
+}
+
+export function ContextMenuSeparator({ className }: { className?: string }) {
+  return <ContextPrimitive.Separator className={cn("mx-2 my-1 h-px bg-border", className)} />;
+}
+
+export function ContextMenuSub({
+  label,
+  inset,
+  children,
+}: {
+  label: string;
+  icon?: string;
+  /** Indent past the check column, when siblings are checkbox items. */
+  inset?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <ContextPrimitive.Sub>
+      <ContextPrimitive.SubTrigger
+        className={cn(ROW, inset && "ps-7", "data-[state=open]:bg-accent-surface")}
+      >
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        <ChevronRightIcon className="ms-auto size-3.5 text-muted-foreground" />
+      </ContextPrimitive.SubTrigger>
+      <ContextPrimitive.Portal>
+        <ContextPrimitive.SubContent
+          sideOffset={4}
+          alignOffset={-4}
+          collisionPadding={8}
+          className={cn(POPUP, "max-h-(--radix-context-menu-content-available-height)")}
+        >
+          {children}
+        </ContextPrimitive.SubContent>
+      </ContextPrimitive.Portal>
+    </ContextPrimitive.Sub>
   );
 }

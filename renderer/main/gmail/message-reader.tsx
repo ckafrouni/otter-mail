@@ -1,13 +1,5 @@
 import { Fragment, useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
-import {
-  ContextMenu,
-  ContextMenuTrigger,
-  ContextMenuContent,
-  ContextMenuItem,
-  Dialog,
-  Text,
-  toast,
-} from "@glaze/core/components";
+import { Dialog, Text, toast } from "@glaze/core/components";
 import {
   ArchiveIcon,
   ArchiveRestoreIcon,
@@ -62,6 +54,10 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
 } from "./menu";
 import { RichTextArea, textToHtml, type RichTextRef } from "./rich-text";
 import { RecipientInput } from "./recipient-input";
@@ -173,6 +169,87 @@ blockquote { border-left: 3px solid #d6d6d6; padding-left: 12px; margin: 4px 0; 
 </style>`;
 
 /**
+ * Dark-appearance canvas, the Apple Mail approach: the email sits on the
+ * message card itself (transparent page, light default text) and only parts
+ * that paint their own background keep their original look (see
+ * `adaptForDarkCanvas`). Email-supplied CSS still comes after and wins.
+ */
+const MESSAGE_BODY_PRELUDE_DARK = `<style>
+:root { color-scheme: dark; }
+html, body { background: transparent; }
+body {
+  margin: 0;
+  color: #e6e6e6;
+  font-family: -apple-system, system-ui, Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+a { color: #7cacf8; }
+blockquote { border-left: 3px solid #3a3a3a; padding-left: 12px; margin: 4px 0; color: #a3a3a3; }
+hr { border: none; border-top: 1px solid #333333; }
+</style>`;
+
+/** RGB → HSL (0–1 ranges). */
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  const [rn, gn, bn] = [r / 255, g / 255, b / 255];
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const h =
+    max === rn
+      ? (gn - bn) / d + (gn < bn ? 6 : 0)
+      : max === gn
+        ? (bn - rn) / d + 2
+        : (rn - gn) / d + 4;
+  return [h / 6, s, l];
+}
+
+/**
+ * On the dark canvas, text the email colored dark (black body copy, navy
+ * links, grey footers) would vanish. Only where such text sits directly on
+ * the canvas — no background of its own anywhere up its ancestry — flip its
+ * lightness (hue kept, so links stay blue and accents stay recognizable).
+ * Anything inside an element that paints a background or background image is
+ * a designed "island" (a white invite card, a newsletter body) and is left
+ * exactly as the sender styled it.
+ */
+function adaptForDarkCanvas(doc: Document | null | undefined) {
+  if (!doc?.body) return;
+  const onCanvas = (start: Element): boolean => {
+    let node: Element | null = start;
+    while (node && node !== doc.documentElement) {
+      const style = getComputedStyle(node);
+      if (style.backgroundImage !== "none") return false;
+      const bg = parseRgb(style.backgroundColor);
+      if (bg && bg.a > 0.05) return false;
+      node = node.parentElement;
+    }
+    return true;
+  };
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_ELEMENT);
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    const element = node as HTMLElement;
+    const hasOwnText = Array.from(element.childNodes).some(
+      (n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").trim().length > 0,
+    );
+    if (!hasOwnText) continue;
+    const color = parseRgb(getComputedStyle(element).color);
+    if (!color || color.a < 0.05) continue;
+    if (relativeLuminance(color.r, color.g, color.b) >= 0.18) continue; // already readable
+    if (!onCanvas(element)) continue;
+    const [h, sat, l] = rgbToHsl(color.r, color.g, color.b);
+    const lightness = Math.min(0.9, Math.max(0.72, 1 - l));
+    const hsl = `hsl(${Math.round(h * 360)} ${Math.round(sat * 85)}% ${Math.round(lightness * 100)}%)`;
+    element.style.setProperty("color", hsl, "important");
+  }
+}
+
+/**
  * The email canvas is always white, but the reader's WebView carries the app's
  * dark appearance, so `prefers-color-scheme` evaluates to `dark` INSIDE the
  * iframe (a CSS `color-scheme: light` on :root doesn't change that). Emails that
@@ -277,6 +354,19 @@ function fixWhiteOnWhiteText(doc: Document | null | undefined) {
  * for the srcdoc document as soon as it is PARSED and fit from there; `load` and
  * the per-image listeners are then just later refinements for late-arriving art.
  */
+/** Live dark/light appearance (follows the app's theme setting and the system). */
+function useDarkAppearance(): boolean {
+  const query = "(prefers-color-scheme: dark)";
+  const [dark, setDark] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const onChange = () => setDark(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return dark;
+}
+
 /** Containers mail clients wrap the quoted reply history in. */
 const QUOTE_SELECTOR = [
   ".gmail_quote",
@@ -354,6 +444,18 @@ function HtmlBody({ html, onQuoteText }: { html: string; onQuoteText?: (text: st
   const frameRef = useRef<HTMLIFrameElement>(null);
   const quoteRef = useRef(onQuoteText);
   quoteRef.current = onQuoteText;
+  const dark = useDarkAppearance();
+  // Light: white card, email's own dark-mode CSS disabled, white-on-white
+  // rescued. Dark: transparent canvas, email's dark CSS honored, dark-on-dark
+  // rescued, islands with their own background untouched.
+  const adaptColors = (doc: Document | null | undefined) => {
+    if (dark) {
+      adaptForDarkCanvas(doc);
+    } else {
+      neutralizeDarkScheme(doc);
+      fixWhiteOnWhiteText(doc);
+    }
+  };
 
   useEffect(() => {
     const iframe = frameRef.current;
@@ -385,8 +487,7 @@ function HtmlBody({ html, onQuoteText }: { html: string; onQuoteText?: (text: st
       ro?.disconnect();
       ro = new ResizeObserver(fit);
       ro.observe(doc.body);
-      neutralizeDarkScheme(doc);
-      fixWhiteOnWhiteText(doc);
+      adaptColors(doc);
       const quoted = findQuotedHistory(doc);
       quotedRef.current = quoted;
       for (const el of quoted) {
@@ -488,8 +589,7 @@ function HtmlBody({ html, onQuoteText }: { html: string; onQuoteText?: (text: st
     const poll = setInterval(() => {
       wire();
       if (ticks < 8) {
-        neutralizeDarkScheme(iframe.contentDocument);
-        fixWhiteOnWhiteText(iframe.contentDocument);
+        adaptColors(iframe.contentDocument);
       }
       fit();
       if (++ticks >= 40) clearInterval(poll);
@@ -507,17 +607,22 @@ function HtmlBody({ html, onQuoteText }: { html: string; onQuoteText?: (text: st
       ro?.disconnect();
       iframe.removeEventListener("load", onLoad);
     };
-  }, [html]);
+    // adaptColors only varies with `dark`, which is a dependency.
+  }, [html, dark]);
 
   // Marketing/HTML mail is designed for a white canvas — give it a light card
   // inside the dark conversation, like an unfurled preview card.
   return (
     <div>
       <iframe
+        key={dark ? "dark" : "light"}
         ref={frameRef}
         sandbox="allow-same-origin"
-        srcDoc={MESSAGE_BODY_PRELUDE + html}
-        className="w-full rounded-lg bg-white"
+        srcDoc={(dark ? MESSAGE_BODY_PRELUDE_DARK : MESSAGE_BODY_PRELUDE) + html}
+        // Matching the embedder's scheme keeps a dark frame transparent
+        // instead of getting an opaque canvas painted behind it.
+        style={{ colorScheme: dark ? "dark" : "light" }}
+        className={cn("w-full rounded-lg", dark ? "bg-transparent" : "bg-white")}
         title="Message body"
       />
       {hasQuote ? <QuoteToggle open={quoteOpen} onToggle={toggleQuote} /> : null}

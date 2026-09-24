@@ -27,7 +27,7 @@ export type LabelMenuKit = {
     onCheckedChange: (checked: boolean) => void;
     children: React.ReactNode;
   }>;
-  Sub: React.ComponentType<{ label: string; children: React.ReactNode }>;
+  Sub: React.ComponentType<{ label: string; inset?: boolean; children: React.ReactNode }>;
   Separator: React.ComponentType;
 };
 
@@ -58,7 +58,7 @@ export function renderLabelMenuNodes(
     }
     const selfId = node.label?.id;
     return (
-      <kit.Sub key={node.key} label={node.segment}>
+      <kit.Sub key={node.key} label={node.segment} inset>
         {selfId ? (
           <>
             <kit.CheckboxItem

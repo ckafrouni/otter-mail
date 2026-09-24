@@ -5,18 +5,14 @@ import {
   type DragEvent as ReactDragEvent,
   type ReactNode,
 } from "react";
+import { Dialog, Field, Input, Text, toast } from "@glaze/core/components";
 import {
   ContextMenu,
   ContextMenuTrigger,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
-  Dialog,
-  Field,
-  Input,
-  Text,
-  toast,
-} from "@glaze/core/components";
+} from "./menu";
 import {
   InboxIcon,
   StarIcon,
@@ -313,16 +309,16 @@ function ViewRow({
       </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem icon="pencil" onSelect={onEdit}>
-          Edit View…
+          Edit view…
         </ContextMenuItem>
         <ContextMenuSeparator />
         {view.kind === "custom" ? (
           <ContextMenuItem icon="trash" color="red" onSelect={onDelete}>
-            Delete View
+            Delete view
           </ContextMenuItem>
         ) : (
           <ContextMenuItem icon="arrow.counterclockwise" onSelect={onReset}>
-            Reset to Default
+            Reset to default
           </ContextMenuItem>
         )}
       </ContextMenuContent>
@@ -442,11 +438,11 @@ function LabelNode({
               Rename…
             </ContextMenuItem>
             <ContextMenuItem icon="paintpalette" onSelect={() => actions.onRecolor(label)}>
-              Change Color…
+              Change color…
             </ContextMenuItem>
             <ContextMenuSeparator />
             <ContextMenuItem icon="trash" color="red" onSelect={() => actions.onDelete(label)}>
-              Delete Label
+              Delete label
             </ContextMenuItem>
           </ContextMenuContent>
         </ContextMenu>
