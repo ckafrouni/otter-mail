@@ -663,6 +663,28 @@ export function countMessagesForLabel(accountId: string, labelId: string): numbe
   return row?.n ?? 0;
 }
 
+/** Unread messages cached locally under a label. */
+export function countUnreadForLabel(accountId: string, labelId: string): number {
+  const d = getDb();
+  const row = d
+    .prepare(
+      `SELECT COUNT(*) AS n FROM message_labels ml
+         JOIN messages m ON m.accountId = ml.accountId AND m.id = ml.messageId
+        WHERE ml.accountId = ? AND ml.labelId = ? AND m.unread = 1`,
+    )
+    .get(accountId, labelId) as unknown as { n: number };
+  return row?.n ?? 0;
+}
+
+/** The label's unread counter as last reported by Gmail (or recomputed locally). */
+export function getLabelUnread(accountId: string, labelId: string): number {
+  const d = getDb();
+  const row = d
+    .prepare("SELECT unread FROM labels WHERE accountId = ? AND id = ?")
+    .get(accountId, labelId) as unknown as { unread: number | null } | undefined;
+  return row?.unread ?? 0;
+}
+
 // ── Combined (cross-account) reads ──────────────────────────────────────────
 
 const HAS_LABEL =

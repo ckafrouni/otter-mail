@@ -52,6 +52,32 @@ import type { ComposeAttachment, MailView, ViewRule } from "../gmail/types.js";
 
 const LOCAL_PAGE_SIZE = 50;
 
+const RECONCILE_COOLDOWN_MS = 60_000;
+const lastUnreadReconcile = new Map<string, number>();
+
+/** Fetches a label's unread messages live when the cache has fewer than Gmail counts. */
+async function reconcileUnread(accountId: string, labelId: string): Promise<void> {
+  const expected = mailStore.getLabelUnread(accountId, labelId);
+  if (expected === 0 || mailStore.countUnreadForLabel(accountId, labelId) >= expected) return;
+  const key = `${accountId}:${labelId}`;
+  if (Date.now() - (lastUnreadReconcile.get(key) ?? 0) < RECONCILE_COOLDOWN_MS) return;
+  lastUnreadReconcile.set(key, Date.now());
+  try {
+    const live = await listMessages(accountId, {
+      labelIds: [labelId, "UNREAD"],
+      maxResults: Math.min(expected, 100),
+    });
+    mailStore.upsertMessages(accountId, live.messages);
+    console.log("[gmail:listMessages] reconciled unread", {
+      labelId,
+      expected,
+      fetched: live.messages.length,
+    });
+  } catch (err) {
+    console.log("[gmail:listMessages] unread reconcile failed", { error: String(err) });
+  }
+}
+
 function parseRules(raw: unknown): ViewRule[] {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -278,6 +304,11 @@ export function registerGmailHandlers(): void {
           console.log("[gmail:listMessages] warm-up failed", { error: String(warmErr) });
         }
       }
+
+      // Gmail's counter says there's unread mail we don't have yet (e.g. the
+      // first full sync is still running): pull it in so the list and its
+      // Unread filter show what the badge counts.
+      if (offset === 0) await reconcileUnread(accountId, labelId);
 
       mailSync.syncAccount(accountId);
 
