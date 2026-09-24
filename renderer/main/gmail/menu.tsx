@@ -16,7 +16,15 @@ const POPUP =
 const ROW =
   "relative flex min-h-7 cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1 text-sm outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-64 data-[highlighted]:bg-accent-surface data-[highlighted]:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground";
 
-export const DropdownMenu = Menu.Root;
+/** Menus are non-modal. A modal Radix menu sets `pointer-events: none` on
+ *  <body>; when one of its items opens a Glaze Dialog (a separate Radix copy
+ *  that can't see this menu's layer), the dialog records that "none" as the
+ *  original value and restores it on close — leaving the whole window
+ *  unclickable (e.g. Delete Forever from a Trash row). Outside clicks still
+ *  dismiss the menu. */
+export function DropdownMenu(props: ComponentProps<typeof Menu.Root>) {
+  return <Menu.Root modal={false} {...props} />;
+}
 
 export function DropdownMenuTrigger(props: ComponentProps<typeof Menu.Trigger>) {
   return <Menu.Trigger {...props} />;
@@ -138,7 +146,10 @@ export function DropdownMenuSub({
  * native API are ignored, React icons render like dropdown items.
  */
 
-export const ContextMenu = ContextPrimitive.Root;
+/** Non-modal for the same reason as {@link DropdownMenu}. */
+export function ContextMenu(props: ComponentProps<typeof ContextPrimitive.Root>) {
+  return <ContextPrimitive.Root modal={false} {...props} />;
+}
 
 /** Without `asChild` the trigger adds no box (display: contents), like the native one. */
 export function ContextMenuTrigger({
