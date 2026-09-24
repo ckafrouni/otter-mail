@@ -1,25 +1,28 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "@glaze/core/components";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "./menu";
-import {
-  ChevronDownIcon,
-  PaperclipIcon,
-  PenLineIcon,
-  SendHorizontalIcon,
-  Trash2Icon,
-  XIcon,
-} from "lucide-react";
+import { ChevronDownIcon, XIcon } from "lucide-react";
 import { useSendMessage } from "./hooks";
-import { parseAddressEntry, splitAddressList } from "./address";
+import { normalizeAddressList, parseAddressEntry, splitAddressList } from "./address";
 import { getAccountColor } from "./account-style";
 import { IconBtn, HintTooltip } from "./ui";
-import { matchesCommand } from "../keybindings/dispatch";
-import { ShortcutText } from "../keybindings/store";
+import {
+  CcBccToggles,
+  ComposeDocument,
+  ComposerCard,
+  ComposerField,
+  ComposerFooter,
+  SubjectInput,
+  DraftRemoteBanner,
+  draftStatus,
+} from "./composer-kit";
 import { RichTextArea, textToHtml, type RichTextRef } from "./rich-text";
 import {
   AttachmentChips,
   ComposeDropOverlay,
   attachmentSignature,
+  autosaveDelayMs,
+  loadMessageAttachments,
   filesToComposeAttachments,
   pickComposeAttachments,
   useComposeFileDrop,
@@ -28,8 +31,55 @@ import { useDraftAutosave } from "./use-draft-autosave";
 import { RecipientInput } from "./recipient-input";
 import type { ComposeAttachment, GmailAccount } from "./types";
 
+/** The From account picker (shown only with several accounts). */
+function FromPicker({
+  accounts,
+  value,
+  onChange,
+}: {
+  accounts: GmailAccount[];
+  value: GmailAccount;
+  onChange: (accountId: string) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="Send from"
+          className="-ml-1 flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1 py-0.5 text-sm text-foreground outline-none hover:bg-accent-surface focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          <span
+            className="size-2 shrink-0 rounded-full"
+            style={{ backgroundColor: getAccountColor(value) }}
+          />
+          <span className="truncate">{value.email}</span>
+          <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground/70" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        {accounts.map((account) => (
+          <DropdownMenuItem
+            key={account.id}
+            icon={
+              <span
+                className="size-2 shrink-0 rounded-full"
+                style={{ backgroundColor: getAccountColor(account) }}
+                aria-hidden
+              />
+            }
+            onSelect={() => onChange(account.id)}
+          >
+            {account.email}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 /**
- * "New chat" pane: replaces the reader when composing a fresh email —
+ * New message pane: replaces the reader when composing a fresh email —
  * recipients, subject, attachments, and body in the docked composer,
  * autosaving to a Gmail draft as you type.
  */
@@ -54,6 +104,7 @@ export function NewMessageView({
   const [subject, setSubject] = useState(prefill?.subject ?? "");
   const [text, setText] = useState(prefill?.body ?? "");
   const [attachments, setAttachments] = useState<ComposeAttachment[]>([]);
+  const [formatting, setFormatting] = useState(false);
   const toRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<RichTextRef>(null);
   const sendMessage = useSendMessage();
@@ -68,6 +119,22 @@ export function NewMessageView({
 
   const draft = useDraftAutosave({
     accountId: fromAccount?.id ?? null,
+    delayMs: autosaveDelayMs(attachments),
+    // Edited elsewhere (an agent, Gmail web): load that version in place.
+    onRemoteChange: async (detail) => {
+      setTo(detail.to ?? "");
+      setCc(detail.cc ?? "");
+      setBcc(detail.bcc ?? "");
+      setCcVisible(Boolean(detail.cc));
+      setBccVisible(Boolean(detail.bcc));
+      setSubject(detail.subject ?? "");
+      editorRef.current?.setHTML(detail.bodyHtml ?? textToHtml(detail.bodyText ?? ""));
+      setAttachments(
+        detail.attachments.length > 0
+          ? await loadMessageAttachments(fromAccount?.id ?? "", detail.id, detail.attachments)
+          : [],
+      );
+    },
     signal: JSON.stringify({
       fromId,
       to,
@@ -82,9 +149,9 @@ export function NewMessageView({
       const plain = editorRef.current?.getText() ?? text;
       const html = editorRef.current?.getHTML() ?? textToHtml(plain);
       return {
-        to,
-        cc: cc.trim() || undefined,
-        bcc: bcc.trim() || undefined,
+        to: normalizeAddressList(to),
+        cc: normalizeAddressList(cc) || undefined,
+        bcc: normalizeAddressList(bcc) || undefined,
         subject,
         body: plain,
         bodyHtml: `<div dir="auto">${html}</div>`,
@@ -130,9 +197,9 @@ export function NewMessageView({
     sendMessage
       .mutateAsync({
         accountId: fromAccount.id,
-        to,
-        cc: cc.trim() || undefined,
-        bcc: bcc.trim() || undefined,
+        to: normalizeAddressList(to),
+        cc: normalizeAddressList(cc) || undefined,
+        bcc: normalizeAddressList(bcc) || undefined,
         subject: subject.trim() || "(no subject)",
         body: editorRef.current?.getText() ?? text,
         bodyHtml: `<div dir="auto">${editorRef.current?.getHTML() ?? textToHtml(text)}</div>`,
@@ -147,200 +214,107 @@ export function NewMessageView({
       );
   };
 
+  const discard = () => {
+    onClose();
+    void draft.finalize({ deleteDraft: true });
+  };
+  const attach = () => {
+    void pickComposeAttachments(attachments).then((picked) => {
+      if (picked.length > 0) setAttachments((prev) => [...prev, ...picked]);
+    });
+  };
+
   return (
     <div className="relative flex h-full min-w-0 flex-col" {...dropProps}>
       <ComposeDropOverlay visible={isDragging} />
-      <div className="drag-region flex h-11 shrink-0 items-center gap-2 border-b border-border px-4">
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium leading-tight text-foreground">
-            New message
-          </div>
-          <div className="truncate text-xs leading-tight text-muted-foreground">
-            {draft.saveState === "saving"
-              ? "Draft · saving…"
-              : draft.saveState === "saved"
-                ? "Draft · saved"
-                : draft.saveState === "error"
-                  ? "Draft · couldn't save — retrying"
-                  : "Drafts save automatically"}
-          </div>
+      <div className="drag-region flex h-(--workspace-topbar-height) shrink-0 items-center gap-2 border-b border-border px-4">
+        <div className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+          {subject.trim() || "New message"}
         </div>
-        <HintTooltip label="Close (keeps the draft)" hint="Esc">
+        <HintTooltip label="Close (keeps the draft)" hint="Esc" side="bottom">
           <IconBtn label="Close" onClick={onClose}>
-            <XIcon className="size-3.5" />
+            <XIcon className="size-4" />
           </IconBtn>
         </HintTooltip>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1.5 overflow-hidden px-6 text-center">
-        <span className="flex size-11 items-center justify-center rounded-full border border-input">
-          <PenLineIcon className="size-5 text-muted-foreground" />
-        </span>
-        <span className="pt-1 text-sm font-medium text-foreground">Start a new conversation</span>
-        <span className="text-sm text-muted-foreground">
-          Add recipients and a subject, then say hi.
-        </span>
-      </div>
-
-      <div className="shrink-0 px-5 pb-4 pt-1" data-inline-compose="">
-        <div
-          className="rounded-2xl border border-(--chat-composer-outline) bg-(--chat-composer-surface) shadow-composer transition-colors focus-within:border-input dark:shadow-none dark:inset-shadow-2xs dark:inset-shadow-(color:--chat-composer-highlight)"
-          onKeyDown={(e) => {
-            if (matchesCommand(e.nativeEvent, "composer.send")) {
-              e.preventDefault();
-              handleSend();
-            }
-          }}
-        >
-          {accounts.length > 1 && fromAccount ? (
-            <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
-              <span className="shrink-0 text-xs font-medium text-muted-foreground">From</span>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label="Send from"
-                    className="flex min-w-0 items-center gap-1.5 rounded px-1 py-0.5 text-sm text-foreground/90 hover:bg-accent-surface"
-                  >
-                    <span
-                      className="size-2 shrink-0 rounded-full"
-                      style={{ backgroundColor: getAccountColor(fromAccount) }}
-                    />
-                    <span className="truncate">{fromAccount.email}</span>
-                    <ChevronDownIcon className="size-3 shrink-0 text-muted-foreground/70" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                  {accounts.map((account) => (
-                    <DropdownMenuItem
-                      key={account.id}
-                      icon={
-                        <span
-                          className="size-2 shrink-0 rounded-full"
-                          style={{ backgroundColor: getAccountColor(account) }}
-                          aria-hidden
-                        />
-                      }
-                      onSelect={() => setFromId(account.id)}
-                    >
-                      {account.email}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          ) : null}
-
-          <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
-            <span className="shrink-0 text-xs font-medium text-muted-foreground">To</span>
-            <RecipientInput
-              ref={toRef}
-              value={to}
-              onChange={setTo}
-              placeholder="recipient@example.com"
-              ariaLabel="To"
-            />
-            {!ccVisible ? (
-              <button
-                type="button"
-                onClick={() => setCcVisible(true)}
-                className="shrink-0 text-2xs text-muted-foreground/70 hover:text-foreground"
-              >
-                Cc
-              </button>
-            ) : null}
-            {!bccVisible ? (
-              <button
-                type="button"
-                onClick={() => setBccVisible(true)}
-                className="shrink-0 text-2xs text-muted-foreground/70 hover:text-foreground"
-              >
-                Bcc
-              </button>
-            ) : null}
-          </div>
-          {ccVisible ? (
-            <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
-              <span className="shrink-0 text-xs font-medium text-muted-foreground">Cc</span>
-              <RecipientInput value={cc} onChange={setCc} ariaLabel="Cc" />
-            </div>
-          ) : null}
-          {bccVisible ? (
-            <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
-              <span className="shrink-0 text-xs font-medium text-muted-foreground">Bcc</span>
-              <RecipientInput value={bcc} onChange={setBcc} ariaLabel="Bcc" />
-            </div>
-          ) : null}
-          <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
-            <span className="shrink-0 text-xs font-medium text-muted-foreground">Subject</span>
-            <input
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              placeholder="What's this about?"
-              aria-label="Subject"
-              className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-placeholder"
-            />
-          </div>
-
-          <RichTextArea
-            ref={editorRef}
-            placeholder="Write your message…"
-            ariaLabel="Message"
-            onTextChange={setText}
-            minHeightClass="min-h-[36vh]"
-            initialHTML={prefill?.body ? textToHtml(prefill.body) : undefined}
-            signatureHTML={fromAccount?.signature}
-          />
-          <AttachmentChips
-            attachments={attachments}
-            onRemove={(i) => setAttachments((prev) => prev.filter((_, j) => j !== i))}
-          />
-          <div className="flex items-center gap-1 px-2 pb-1.5">
-            <HintTooltip label="Attach files">
-              <IconBtn
-                label="Attach files"
-                className="size-7"
-                onClick={() => {
-                  void pickComposeAttachments(attachments).then((picked) => {
-                    if (picked.length > 0) setAttachments((prev) => [...prev, ...picked]);
-                  });
-                }}
-              >
-                <PaperclipIcon className="size-3.5" />
-              </IconBtn>
-            </HintTooltip>
-            <HintTooltip label="Delete draft">
-              <IconBtn
-                label="Delete draft"
-                className="size-7"
-                onClick={() => {
-                  onClose();
-                  void draft.finalize({ deleteDraft: true });
-                }}
-              >
-                <Trash2Icon className="size-3.5" />
-              </IconBtn>
-            </HintTooltip>
-            <span className="flex-1" />
-            {canSend ? (
-              <ShortcutText
-                command="composer.send"
-                suffix="send"
-                className="pr-1 text-xs text-muted-foreground"
+      <ComposerCard onSend={handleSend} variant="plain" className="min-h-0 flex-1">
+        <ComposeDocument
+          fields={
+            <>
+              <DraftRemoteBanner
+                remote={draft.remote}
+                mine={{ to, cc, subject, body: editorRef.current?.getText() ?? text }}
+                onTakeTheirs={draft.takeTheirs}
+                onKeepMine={draft.keepMine}
+                onSaveAsNew={draft.saveAsNew}
               />
-            ) : null}
-            <button
-              type="button"
-              onClick={handleSend}
-              disabled={!canSend}
-              aria-label="Send"
-              className="inline-flex h-7 w-9 items-center justify-center rounded-[var(--control-radius)] border border-primary bg-primary text-primary-foreground shadow-xs shadow-primary/24 transition-[box-shadow,scale] not-disabled:inset-shadow-[0_1px_rgb(255_255_255/16%)] hover:bg-primary/90 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-64"
-            >
-              <SendHorizontalIcon className="size-3.5" />
-            </button>
-          </div>
-        </div>
-      </div>
+              {accounts.length > 1 && fromAccount ? (
+                <ComposerField label="From">
+                  <FromPicker accounts={accounts} value={fromAccount} onChange={setFromId} />
+                </ComposerField>
+              ) : null}
+              <ComposerField
+                label="To"
+                trailing={
+                  <CcBccToggles
+                    showCc={ccVisible}
+                    showBcc={bccVisible}
+                    onShowCc={() => setCcVisible(true)}
+                    onShowBcc={() => setBccVisible(true)}
+                  />
+                }
+              >
+                <RecipientInput ref={toRef} value={to} onChange={setTo} ariaLabel="To" />
+              </ComposerField>
+              {ccVisible ? (
+                <ComposerField label="Cc">
+                  <RecipientInput value={cc} onChange={setCc} ariaLabel="Cc" />
+                </ComposerField>
+              ) : null}
+              {bccVisible ? (
+                <ComposerField label="Bcc">
+                  <RecipientInput value={bcc} onChange={setBcc} ariaLabel="Bcc" />
+                </ComposerField>
+              ) : null}
+              <ComposerField label="Subject">
+                <SubjectInput value={subject} onChange={setSubject} />
+              </ComposerField>
+            </>
+          }
+          editor={
+            <RichTextArea
+              ref={editorRef}
+              placeholder="Write your message…"
+              ariaLabel="Message"
+              onTextChange={setText}
+              showToolbar={formatting}
+              minHeightClass="min-h-[40vh]"
+              maxHeightClass="max-h-none"
+              initialHTML={prefill?.body ? textToHtml(prefill.body) : undefined}
+              signatureHTML={fromAccount?.signature}
+            />
+          }
+          attachments={
+            <AttachmentChips
+              attachments={attachments}
+              onRemove={(i) => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+            />
+          }
+          footer={
+            <ComposerFooter
+              onAttach={attach}
+              formatting={formatting}
+              onToggleFormatting={() => setFormatting((f) => !f)}
+              onDiscard={discard}
+              status={draftStatus(draft)}
+              statusTone={draft.saveState === "error" ? "error" : "muted"}
+              canSend={canSend}
+              onSend={handleSend}
+            />
+          }
+        />
+      </ComposerCard>
     </div>
   );
 }

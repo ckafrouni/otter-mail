@@ -4,8 +4,9 @@
  * (IPC timeout) can't lead to a second draft.
  */
 
-import { fetchMetadataForIds } from "../services/gmail-api.js";
+import { getAccount } from "../services/account-store.js";
 import * as mailStore from "../services/mail-store.js";
+import type { ComposeAttachment, GmailMessageSummary } from "../gmail/types.js";
 
 // ── Draft sessions (one per open composer) ──────────────────────────────────
 
@@ -31,15 +32,57 @@ export function queueDraftSave<T>(sessionId: string, save: () => Promise<T>): Pr
   return next;
 }
 
-/** Mirrors a saved draft into the cache so Drafts updates before the next
-    sync. Best effort: the draft is already saved in Gmail. */
+export type DraftContent = {
+  to: string;
+  cc?: string;
+  bcc?: string;
+  subject: string;
+  body: string;
+  bodyHtml?: string;
+  attachments?: ComposeAttachment[];
+};
+
+/**
+ * Mirrors a saved draft into the cache from what was just saved — no Gmail
+ * read-back, so a save costs one round trip — and records its draft id so
+ * reopening it needs no Gmail lookup. With attachments only the summary is
+ * mirrored (the cache's attachment list comes from Gmail's ids).
+ */
 export async function mirrorDraft(
   accountId: string,
-  res: { messageId?: string; threadId?: string },
+  res: { draftId: string; messageId?: string; threadId?: string },
+  content: DraftContent,
 ): Promise<void> {
   if (!res.messageId) return;
   try {
-    mailStore.upsertMessages(accountId, await fetchMetadataForIds(accountId, [res.messageId]));
+    const account = await getAccount(accountId);
+    const summary: GmailMessageSummary = {
+      id: res.messageId,
+      threadId: res.threadId ?? res.messageId,
+      fromName: account?.displayName || account?.name || "",
+      fromEmail: account?.email ?? accountId,
+      to: content.to,
+      subject: content.subject,
+      snippet: content.body.replace(/\s+/g, " ").trim().slice(0, 200),
+      date: Date.now(),
+      unread: false,
+      starred: false,
+      labelIds: ["DRAFT"],
+      hasAttachments: (content.attachments?.length ?? 0) > 0,
+    };
+    if (summary.hasAttachments) {
+      mailStore.upsertMessages(accountId, [summary]);
+    } else {
+      mailStore.upsertMessageDetail(accountId, {
+        ...summary,
+        cc: content.cc,
+        bcc: content.bcc,
+        bodyHtml: content.bodyHtml ?? null,
+        bodyText: content.body,
+        attachments: [],
+      });
+    }
+    mailStore.setDraftId(accountId, res.messageId, res.draftId);
     if (res.threadId) mailStore.deleteOtherDraftsInThread(accountId, res.threadId, res.messageId);
   } catch (err) {
     console.log("[gmail:saveDraft] saved; local mirror failed", { error: String(err) });

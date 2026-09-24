@@ -17,6 +17,21 @@ function attachmentBytes(a: ComposeAttachment): number {
   return a.size || Math.floor((a.base64.length * 3) / 4);
 }
 
+/** Loads a saved message's attachments into memory (drafts must re-send them
+    on every save, so they're needed before any edit is saved). */
+export async function loadMessageAttachments(
+  accountId: string,
+  messageId: string,
+  attachments: { id: string; filename: string; mimeType: string }[],
+): Promise<ComposeAttachment[]> {
+  const out: ComposeAttachment[] = [];
+  for (const att of attachments) {
+    const data = await gmailApi.getAttachmentData({ accountId, messageId, attachmentId: att.id });
+    out.push({ name: att.filename, mimeType: att.mimeType, size: data.size, base64: data.base64 });
+  }
+  return out;
+}
+
 /** Open the native file picker; the backend enforces the 25 MB total cap. */
 export async function pickComposeAttachments(
   existing: ComposeAttachment[],
@@ -138,6 +153,15 @@ export function ComposeDropOverlay({ visible }: { visible: boolean }) {
   );
 }
 
+/** Above this, autosave waits longer: every save re-uploads the attachments. */
+const HEAVY_ATTACHMENT_BYTES = 1024 * 1024;
+
+/** Autosave debounce for a draft carrying these attachments. */
+export function autosaveDelayMs(attachments: ComposeAttachment[] | null): number {
+  const bytes = (attachments ?? []).reduce((sum, a) => sum + attachmentBytes(a), 0);
+  return bytes > HEAVY_ATTACHMENT_BYTES ? 5000 : 1500;
+}
+
 /** Stable signature for autosave dirty-checks. */
 export function attachmentSignature(attachments: ComposeAttachment[] | null): string {
   return (attachments ?? []).map((a) => `${a.name}:${a.size}`).join("|");
@@ -152,11 +176,11 @@ export function AttachmentChips({
 }) {
   if (!attachments || attachments.length === 0) return null;
   return (
-    <div className="flex flex-wrap items-center gap-1.5 border-t border-border px-3 py-2">
+    <div className="flex flex-wrap items-center gap-1.5 px-4 pb-1 pt-2">
       {attachments.map((att, i) => (
         <span
           key={`${att.name}:${i}`}
-          className="flex h-6 max-w-64 items-center gap-1.5 rounded-md border border-border bg-secondary px-2 text-xs text-foreground"
+          className="flex h-7 max-w-64 items-center gap-1.5 rounded-lg border border-border/70 bg-secondary/60 pl-2 pr-1 text-xs text-foreground"
         >
           <button
             type="button"
@@ -167,7 +191,7 @@ export function AttachmentChips({
                 .openComposeAttachment({ name: att.name, base64: att.base64 })
                 .catch(() => toast.error("Could not open attachment"));
             }}
-            className="flex min-w-0 items-center gap-1.5 hover:text-foreground"
+            className="flex min-w-0 cursor-pointer items-center gap-1.5 hover:text-foreground"
           >
             <PaperclipIcon className="size-3 shrink-0 text-muted-foreground/70" />
             <span className="min-w-0 truncate">{att.name}</span>
@@ -177,7 +201,7 @@ export function AttachmentChips({
             type="button"
             aria-label={`Remove ${att.name}`}
             onClick={() => onRemove(i)}
-            className="shrink-0 text-muted-foreground/70 hover:text-foreground"
+            className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground/70 hover:bg-foreground/10 hover:text-foreground"
           >
             <XIcon className="size-3" />
           </button>

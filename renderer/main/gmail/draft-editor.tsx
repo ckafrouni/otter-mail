@@ -1,16 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { toast } from "@glaze/core/components";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileIcon, PaperclipIcon, SendHorizontalIcon, Trash2Icon, XIcon } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { XIcon } from "lucide-react";
 import { useGetAttachment, usePruneThreadRows, useSendMessage } from "./hooks";
 import { gmailApi } from "./api";
 import { RichTextArea, textToHtml, type RichTextRef } from "./rich-text";
 import { RecipientInput } from "./recipient-input";
+import { useDraftAutosave } from "./use-draft-autosave";
 import { IconBtn, HintTooltip } from "./ui";
-import { matchesCommand } from "../keybindings/dispatch";
-import { ShortcutText } from "../keybindings/store";
-import { parseAddressEntry, splitAddressList } from "./address";
+import { normalizeAddressList, parseAddressEntry, splitAddressList } from "./address";
+import {
+  CcBccToggles,
+  ComposeDocument,
+  ComposerCard,
+  ComposerField,
+  ComposerFooter,
+  SubjectInput,
+  DraftRemoteBanner,
+  draftStatus,
+} from "./composer-kit";
 import {
   CollapsedRow,
   DayDivider,
@@ -22,9 +31,11 @@ import {
   AttachmentChips,
   ComposeDropOverlay,
   attachmentSignature,
+  autosaveDelayMs,
   filesToComposeAttachments,
   pickComposeAttachments,
   useComposeFileDrop,
+  loadMessageAttachments,
 } from "./compose-attachments";
 import type { ComposeAttachment, GmailMessageDetail, GmailMessageSummary } from "./types";
 
@@ -47,7 +58,6 @@ export function DraftEditor({
   /** Right end of the window's title band (panel toggle). */
   titleTrailing?: ReactNode;
 }) {
-  const qc = useQueryClient();
   const [to, setTo] = useState(detail.to ?? "");
   const [cc, setCc] = useState(detail.cc ?? "");
   const [ccVisible, setCcVisible] = useState(!!detail.cc);
@@ -56,7 +66,7 @@ export function DraftEditor({
   const [subject, setSubject] = useState(detail.subject ?? "");
   const [text, setText] = useState(detail.bodyText ?? "");
   const [sending, setSending] = useState(false);
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [formatting, setFormatting] = useState(false);
   const editorRef = useRef<RichTextRef>(null);
 
   const sendMessage = useSendMessage();
@@ -117,30 +127,12 @@ export function DraftEditor({
     detail.attachments.length === 0 ? [] : null,
   );
   const [attachLoadFailed, setAttachLoadFailed] = useState(false);
-  // Baseline set once the originals are loaded, so merely opening a draft
-  // never re-uploads it.
-  const attSnapshotRef = useRef<string | null>(detail.attachments.length === 0 ? "" : null);
 
   const loadAttachments = async () => {
     setAttachLoadFailed(false);
     setAttachments(null);
     try {
-      const out: ComposeAttachment[] = [];
-      for (const att of detail.attachments) {
-        const data = await gmailApi.getAttachmentData({
-          accountId,
-          messageId: detail.id,
-          attachmentId: att.id,
-        });
-        out.push({
-          name: att.filename,
-          mimeType: att.mimeType,
-          size: data.size,
-          base64: data.base64,
-        });
-      }
-      attSnapshotRef.current ??= attachmentSignature(out);
-      setAttachments(out);
+      setAttachments(await loadMessageAttachments(accountId, detail.id, detail.attachments));
     } catch (err) {
       console.log("[DraftEditor:attachmentsLoadFailed]", { error: String(err) });
       setAttachLoadFailed(true);
@@ -153,109 +145,54 @@ export function DraftEditor({
     if (detail.attachments.length > 0) void loadAttachmentsRef.current();
   }, []);
 
-  // Which Gmail draft owns this message row (drafts.list lookup).
-  const draftIdRef = useRef<string | null>(null);
+  // Which Gmail draft owns this message row (known locally; Gmail as fallback).
   const draftIdQuery = useQuery({
     queryKey: ["gmail:draftId", accountId, detail.id],
     queryFn: () => gmailApi.getDraftForMessage(accountId, detail.id, detail.threadId),
     staleTime: Infinity,
     retry: false,
   });
-  useEffect(() => {
-    if (draftIdQuery.data && draftIdRef.current == null) {
-      draftIdRef.current = draftIdQuery.data.draftId;
-    }
-  }, [draftIdQuery.data]);
 
-  const refreshDraftLists = () => {
-    void qc.invalidateQueries({ queryKey: ["gmail:messages", accountId] });
-    void qc.invalidateQueries({ queryKey: ["gmail:combinedMessages"] });
-    void qc.invalidateQueries({ queryKey: ["gmail:combinedCounts"] });
-    void qc.invalidateQueries({ queryKey: ["gmail:thread", accountId] });
-    void qc.invalidateQueries({ queryKey: ["gmail:labels", accountId] });
-  };
-
-  // Autosave: debounced while editing, flushed on unmount, suppressed once
-  // sent/discarded.
-  const doneRef = useRef(false);
-  const savingRef = useRef(false);
-  const snapshotRef = useRef<string | null>(null);
-  // Baseline AFTER the editor seeds (child mount effects run first): the
-  // editor's own text extraction never matches bodyText byte-for-byte, and a
-  // bodyText baseline made merely opening a draft look dirty and re-save it.
-  useEffect(() => {
-    snapshotRef.current = JSON.stringify({
-      to,
-      cc,
-      bcc,
-      subject,
-      plain: (editorRef.current?.getText() ?? "").trim(),
-    });
-  }, []);
-
-  const save = async () => {
-    if (doneRef.current || savingRef.current || snapshotRef.current == null) return;
-    if (attachments == null || attSnapshotRef.current == null) return;
-    const plain = editorRef.current?.getText() ?? text;
-    const html = editorRef.current?.getHTML() ?? textToHtml(plain);
-    const serialized = JSON.stringify({ to, cc, bcc, subject, plain: plain.trim() });
-    const attSig = attachmentSignature(attachments);
-    if (serialized === snapshotRef.current && attSig === attSnapshotRef.current) return;
-    savingRef.current = true;
-    setSaveState("saving");
-    try {
-      const res = await gmailApi.saveDraft({
-        accountId,
-        draftId: draftIdRef.current ?? undefined,
-        to,
-        cc: cc.trim() || undefined,
-        bcc: bcc.trim() || undefined,
+  // Autosave over this draft, watching for edits made elsewhere (see
+  // useDraftAutosave). Ready once the draft id is known and its attachments
+  // are back in memory — a save without them would drop them server-side.
+  const draft = useDraftAutosave({
+    accountId,
+    threadId: detail.threadId || undefined,
+    delayMs: autosaveDelayMs(attachments),
+    enabled: draftIdQuery.isFetched && attachments != null,
+    initialDraftId: draftIdQuery.data?.draftId ?? null,
+    initialMessageId: detail.id,
+    signal: JSON.stringify({ to, cc, bcc, subject, text, att: attachmentSignature(attachments) }),
+    getPayload: () => {
+      if (attachments == null) return null;
+      const plain = editorRef.current?.getText() ?? text;
+      const html = editorRef.current?.getHTML() ?? textToHtml(plain);
+      return {
+        to: normalizeAddressList(to),
+        cc: normalizeAddressList(cc) || undefined,
+        bcc: normalizeAddressList(bcc) || undefined,
         subject,
         body: plain,
         bodyHtml: `<div dir="auto">${html}</div>`,
         attachments: attachments.length > 0 ? attachments : undefined,
-        threadId: detail.threadId || undefined,
-      });
-      draftIdRef.current = res.draftId;
-      snapshotRef.current = serialized;
-      attSnapshotRef.current = attSig;
-      setSaveState("saved");
-      // Lists refresh on close, not per save — every save mints a new message
-      // id, and refetching mid-edit made the selected row vanish.
-    } catch (err) {
-      console.log("[DraftEditor:saveFailed]", { error: String(err) });
-      setSaveState("error");
-      setTimeout(() => void triggerRef.current(), 5000);
-    } finally {
-      savingRef.current = false;
-    }
-  };
-  const saveRef = useRef(save);
-  saveRef.current = save;
-  const pendingSaveRef = useRef<Promise<void> | null>(null);
-  const trigger = () => {
-    const p = saveRef.current();
-    pendingSaveRef.current = p;
-    return p;
-  };
-  const triggerRef = useRef(trigger);
-  triggerRef.current = trigger;
-
-  useEffect(() => {
-    if (!draftIdQuery.isFetched) return;
-    const timer = setTimeout(() => void triggerRef.current(), 1500);
-    return () => clearTimeout(timer);
-  }, [to, cc, bcc, subject, text, attachments, draftIdQuery.isFetched]);
-
-  // Flush the last edits and refresh the draft lists once, on the way out.
-  const refreshRef = useRef(refreshDraftLists);
-  refreshRef.current = refreshDraftLists;
-  useEffect(
-    () => () => {
-      void Promise.resolve(triggerRef.current()).finally(() => refreshRef.current());
+      };
     },
-    [],
-  );
+    onRemoteChange: async (next) => {
+      setTo(next.to ?? "");
+      setCc(next.cc ?? "");
+      setBcc(next.bcc ?? "");
+      setCcVisible(Boolean(next.cc));
+      setBccVisible(Boolean(next.bcc));
+      setSubject(next.subject ?? "");
+      editorRef.current?.setHTML(next.bodyHtml ?? textToHtml(next.bodyText ?? ""));
+      setAttachments(
+        next.attachments.length > 0
+          ? await loadMessageAttachments(accountId, next.id, next.attachments)
+          : [],
+      );
+    },
+  });
 
   // Escape returns to the list (the draft keeps autosaving).
   useEffect(() => {
@@ -287,7 +224,7 @@ export function DraftEditor({
     // Reply drafts thread onto the newest non-draft message in the conversation.
     const others = threadMessages.filter((m) => !m.labelIds.includes("DRAFT"));
     const last = others[others.length - 1];
-    console.log("[DraftEditor:send]", { draftId: draftIdRef.current, threaded: !!last });
+    console.log("[DraftEditor:send]", { draftId: draftIdQuery.data?.draftId, threaded: !!last });
     // Optimistic: the draft row leaves the list and the editor closes now; a
     // failed send restores the row (the draft still exists server-side).
     pruneThreadRows(accountId, detail.threadId || detail.id);
@@ -295,9 +232,9 @@ export function DraftEditor({
     sendMessage
       .mutateAsync({
         accountId,
-        to,
-        cc: cc.trim() || undefined,
-        bcc: bcc.trim() || undefined,
+        to: normalizeAddressList(to),
+        cc: normalizeAddressList(cc) || undefined,
+        bcc: normalizeAddressList(bcc) || undefined,
         subject: subject.trim() || "(no subject)",
         body: plain,
         bodyHtml: html,
@@ -306,41 +243,20 @@ export function DraftEditor({
       })
       .then(
         async () => {
-          doneRef.current = true;
-          // The unmount flush may still be saving a backup — let it land first.
-          if (pendingSaveRef.current) await pendingSaveRef.current;
-          const draftId = draftIdRef.current;
-          if (draftId) {
-            try {
-              await gmailApi.deleteDraft(accountId, draftId);
-            } catch {
-              // the sent copy exists either way; sync reconciles the leftover
-            }
-          }
-          refreshDraftLists();
+          await draft.finalize({ deleteDraft: true });
           toast.success("Sent");
         },
-        () => {
-          refreshDraftLists();
-          toast.error("Couldn't send — kept in Drafts");
-        },
+        () => toast.error("Couldn't send — kept in Drafts"),
       );
   };
 
   const handleDiscard = () => {
-    doneRef.current = true;
-    console.log("[DraftEditor:discard]", { draftId: draftIdRef.current });
+    console.log("[DraftEditor:discard]", { draftId: draftIdQuery.data?.draftId });
+    // finalize first: it stops autosave, so closing doesn't flush a last save.
+    void draft.finalize({ deleteDraft: true });
     // Optimistic: the row disappears and the editor closes immediately.
     pruneThreadRows(accountId, detail.threadId || detail.id);
     onDone();
-    void (async () => {
-      try {
-        if (draftIdRef.current) await gmailApi.deleteDraft(accountId, draftIdRef.current);
-      } catch {
-        toast.error("Could not delete the draft");
-      }
-      refreshDraftLists();
-    })();
   };
 
   // Drop-to-attach is suspended until the draft's originals are back in memory
@@ -351,9 +267,105 @@ export function DraftEditor({
     });
   }, attachments == null);
 
-  const recipientRow = "flex items-center gap-2 border-b border-border px-3 py-1.5";
-  const fieldInput =
-    "min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-placeholder";
+  const attach = () => {
+    void pickComposeAttachments(attachments ?? []).then((picked) => {
+      if (picked.length > 0) setAttachments((prev) => [...(prev ?? []), ...picked]);
+    });
+  };
+
+  // One set of fields/editor/footer, laid out as a card under the thread, or
+  // as a full page for a standalone draft.
+  const inThread = conversation.length > 0;
+  const fields = (
+    <>
+      <ComposerField
+        label="To"
+        trailing={
+          <CcBccToggles
+            showCc={ccVisible}
+            showBcc={bccVisible}
+            onShowCc={() => setCcVisible(true)}
+            onShowBcc={() => setBccVisible(true)}
+          />
+        }
+      >
+        <RecipientInput value={to} onChange={setTo} ariaLabel="To" />
+      </ComposerField>
+      {ccVisible ? (
+        <ComposerField label="Cc">
+          <RecipientInput value={cc} onChange={setCc} ariaLabel="Cc" />
+        </ComposerField>
+      ) : null}
+      {bccVisible ? (
+        <ComposerField label="Bcc">
+          <RecipientInput value={bcc} onChange={setBcc} ariaLabel="Bcc" />
+        </ComposerField>
+      ) : null}
+      <ComposerField label="Subject">
+        <SubjectInput value={subject} onChange={setSubject} />
+      </ComposerField>
+    </>
+  );
+  const banner = (
+    <DraftRemoteBanner
+      remote={draft.remote}
+      mine={{ to, cc, subject, body: editorRef.current?.getText() ?? text }}
+      onTakeTheirs={draft.takeTheirs}
+      onKeepMine={draft.keepMine}
+      onSaveAsNew={draft.saveAsNew}
+    />
+  );
+  const editor = (
+    <RichTextArea
+      ref={editorRef}
+      placeholder="Write your message…"
+      ariaLabel="Message"
+      onTextChange={setText}
+      autoFocus
+      showToolbar={formatting}
+      minHeightClass={inThread ? "min-h-[140px]" : "min-h-[40vh]"}
+      maxHeightClass={inThread ? "max-h-[45vh]" : "max-h-none"}
+      initialHTML={detail.bodyHtml ?? (detail.bodyText ? textToHtml(detail.bodyText) : undefined)}
+    />
+  );
+  const attachmentChips = (
+    <AttachmentChips
+      attachments={attachments}
+      onRemove={(i) => setAttachments((prev) => (prev ?? []).filter((_, j) => j !== i))}
+    />
+  );
+  const footer = (
+    <ComposerFooter
+      onAttach={attach}
+      attachDisabled={attachments == null}
+      formatting={formatting}
+      onToggleFormatting={() => setFormatting((f) => !f)}
+      onDiscard={handleDiscard}
+      status={
+        attachments == null ? (
+          attachLoadFailed ? (
+            <>
+              Couldn't load attachments —{" "}
+              <button
+                type="button"
+                onClick={() => void loadAttachments()}
+                className="cursor-pointer underline hover:text-foreground"
+              >
+                retry
+              </button>
+            </>
+          ) : (
+            "Loading attachments…"
+          )
+        ) : (
+          draftStatus(draft)
+        )
+      }
+      statusTone={draft.saveState === "error" || attachLoadFailed ? "error" : "muted"}
+      canSend={canSend}
+      onSend={handleSend}
+    />
+  );
 
   return (
     <div className="relative flex h-full min-w-0 flex-col" {...dropProps}>
@@ -362,22 +374,10 @@ export function DraftEditor({
         data-toolbar=""
         className="drag-region flex h-(--workspace-topbar-height) shrink-0 items-center gap-2 border-b border-border px-4"
       >
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium leading-tight text-foreground">
-            {subject.trim() || "Draft"}
-          </div>
-          <div className="truncate text-xs leading-tight text-muted-foreground">
-            Draft ·{" "}
-            {saveState === "saving"
-              ? "saving…"
-              : saveState === "saved"
-                ? "saved"
-                : saveState === "error"
-                  ? "couldn't save — retrying"
-                  : "saves automatically"}
-          </div>
+        <div className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+          {subject.trim() || "Draft"}
         </div>
-        <HintTooltip label="Close" hint="Esc" side="bottom">
+        <HintTooltip label="Close (keeps the draft)" hint="Esc" side="bottom">
           <IconBtn label="Close" onClick={onDone}>
             <XIcon className="size-4" />
           </IconBtn>
@@ -387,178 +387,59 @@ export function DraftEditor({
         ) : null}
       </div>
 
-      {conversation.length > 0 ? (
-        <div ref={conversationRef} className="te-scroll min-h-0 flex-1 overflow-y-auto pb-2">
-          {conversation.map((m, i) => {
-            const prev = conversation[i - 1];
-            const newDay = !prev || dayKey(prev.date) !== dayKey(m.date);
-            const isExpanded = expandedIds.has(m.id);
-            return (
-              <div key={m.id}>
-                {newDay ? <DayDivider timestamp={m.date} /> : null}
-                {isExpanded ? (
-                  <ExpandedRow
-                    accountId={accountId}
-                    summary={m}
-                    onCollapse={() => toggleExpanded(m.id)}
-                    onDownload={handleDownloadAttachment}
-                  />
-                ) : (
-                  <CollapsedRow
-                    accountId={accountId}
-                    summary={m}
-                    onExpand={() => toggleExpanded(m.id)}
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
+      {inThread ? (
+        <>
+          <div ref={conversationRef} className="te-scroll min-h-0 flex-1 overflow-y-auto pb-2">
+            {conversation.map((m, i) => {
+              const prev = conversation[i - 1];
+              const newDay = !prev || dayKey(prev.date) !== dayKey(m.date);
+              const isExpanded = expandedIds.has(m.id);
+              return (
+                <div key={m.id}>
+                  {newDay ? <DayDivider timestamp={m.date} /> : null}
+                  {isExpanded ? (
+                    <ExpandedRow
+                      accountId={accountId}
+                      summary={m}
+                      onCollapse={() => toggleExpanded(m.id)}
+                      onDownload={handleDownloadAttachment}
+                    />
+                  ) : (
+                    <CollapsedRow
+                      accountId={accountId}
+                      summary={m}
+                      onExpand={() => toggleExpanded(m.id)}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="shrink-0 px-5 pb-4 pt-1" data-inline-compose="">
+            <ComposerCard onSend={handleSend}>
+              {banner}
+              {fields}
+              {editor}
+              {attachmentChips}
+              {footer}
+            </ComposerCard>
+          </div>
+        </>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1.5 overflow-hidden px-6 text-center">
-          <span className="flex size-11 items-center justify-center rounded-full border border-input">
-            <FileIcon className="size-5 text-muted-foreground" />
-          </span>
-          <span className="pt-1 text-sm font-medium text-foreground">
-            Pick up where you left off
-          </span>
-          <span className="text-sm text-muted-foreground">
-            Changes save back to this draft as you type.
-          </span>
-        </div>
+        <ComposerCard onSend={handleSend} variant="plain" className="min-h-0 flex-1">
+          <ComposeDocument
+            fields={
+              <>
+                {banner}
+                {fields}
+              </>
+            }
+            editor={editor}
+            attachments={attachmentChips}
+            footer={footer}
+          />
+        </ComposerCard>
       )}
-
-      <div className="shrink-0 px-5 pb-4 pt-1" data-inline-compose="">
-        <div
-          className="rounded-2xl border border-(--chat-composer-outline) bg-(--chat-composer-surface) shadow-composer transition-colors focus-within:border-input dark:shadow-none dark:inset-shadow-2xs dark:inset-shadow-(color:--chat-composer-highlight)"
-          onKeyDown={(e) => {
-            if (matchesCommand(e.nativeEvent, "composer.send")) {
-              e.preventDefault();
-              handleSend();
-            }
-          }}
-        >
-          <div className={recipientRow}>
-            <span className="shrink-0 text-xs font-medium text-muted-foreground">To</span>
-            <RecipientInput
-              value={to}
-              onChange={setTo}
-              placeholder="recipient@example.com"
-              ariaLabel="To"
-            />
-            {!ccVisible ? (
-              <button
-                type="button"
-                onClick={() => setCcVisible(true)}
-                className="shrink-0 text-2xs text-muted-foreground/70 hover:text-foreground"
-              >
-                Cc
-              </button>
-            ) : null}
-            {!bccVisible ? (
-              <button
-                type="button"
-                onClick={() => setBccVisible(true)}
-                className="shrink-0 text-2xs text-muted-foreground/70 hover:text-foreground"
-              >
-                Bcc
-              </button>
-            ) : null}
-          </div>
-          {ccVisible ? (
-            <div className={recipientRow}>
-              <span className="shrink-0 text-xs font-medium text-muted-foreground">Cc</span>
-              <RecipientInput value={cc} onChange={setCc} ariaLabel="Cc" />
-            </div>
-          ) : null}
-          {bccVisible ? (
-            <div className={recipientRow}>
-              <span className="shrink-0 text-xs font-medium text-muted-foreground">Bcc</span>
-              <RecipientInput value={bcc} onChange={setBcc} ariaLabel="Bcc" />
-            </div>
-          ) : null}
-          <div className={recipientRow}>
-            <span className="shrink-0 text-xs font-medium text-muted-foreground">Subject</span>
-            <input
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              placeholder="What's this about?"
-              aria-label="Subject"
-              className={fieldInput}
-            />
-          </div>
-
-          <RichTextArea
-            ref={editorRef}
-            placeholder="Write your message…"
-            ariaLabel="Message"
-            onTextChange={setText}
-            autoFocus
-            minHeightClass="min-h-[36vh]"
-            initialHTML={
-              detail.bodyHtml ?? (detail.bodyText ? textToHtml(detail.bodyText) : undefined)
-            }
-          />
-          <AttachmentChips
-            attachments={attachments}
-            onRemove={(i) => setAttachments((prev) => (prev ?? []).filter((_, j) => j !== i))}
-          />
-          <div className="flex items-center gap-1 px-2 pb-1.5">
-            <HintTooltip label="Attach files">
-              <IconBtn
-                label="Attach files"
-                className="size-7"
-                disabled={attachments == null}
-                onClick={() => {
-                  void pickComposeAttachments(attachments ?? []).then((picked) => {
-                    if (picked.length > 0) setAttachments((prev) => [...(prev ?? []), ...picked]);
-                  });
-                }}
-              >
-                <PaperclipIcon className="size-3.5" />
-              </IconBtn>
-            </HintTooltip>
-            <HintTooltip label="Delete draft">
-              <IconBtn label="Delete draft" className="size-7" onClick={handleDiscard}>
-                <Trash2Icon className="size-3.5" />
-              </IconBtn>
-            </HintTooltip>
-            {attachments == null ? (
-              attachLoadFailed ? (
-                <span className="pl-1 text-xs text-destructive-foreground">
-                  Couldn't load attachments —{" "}
-                  <button
-                    type="button"
-                    onClick={() => void loadAttachments()}
-                    className="underline hover:text-foreground"
-                  >
-                    retry
-                  </button>
-                </span>
-              ) : (
-                <span className="pl-1 text-xs text-muted-foreground">Loading attachments…</span>
-              )
-            ) : null}
-            <span className="flex-1" />
-            {canSend ? (
-              <ShortcutText
-                command="composer.send"
-                suffix="send"
-                className="pr-1 text-xs text-muted-foreground"
-              />
-            ) : null}
-            <button
-              type="button"
-              onClick={handleSend}
-              disabled={!canSend}
-              aria-label="Send"
-              className="inline-flex h-7 w-9 items-center justify-center rounded-[var(--control-radius)] border border-primary bg-primary text-primary-foreground shadow-xs shadow-primary/24 transition-[box-shadow,scale] not-disabled:inset-shadow-[0_1px_rgb(255_255_255/16%)] hover:bg-primary/90 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-64"
-            >
-              <SendHorizontalIcon className="size-3.5" />
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

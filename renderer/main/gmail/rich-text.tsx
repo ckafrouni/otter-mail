@@ -18,6 +18,7 @@ import {
   TextQuoteIcon,
   RemoveFormattingIcon,
 } from "lucide-react";
+import { cn } from "./ui";
 
 /** Marks the signature block inside the editor. */
 const SIGNATURE_ATTR = "data-signature";
@@ -27,6 +28,8 @@ const signatureBlock = (html: string) => `<br><br><div ${SIGNATURE_ATTR}="">${ht
 export type RichTextRef = {
   getHTML: () => string;
   getText: () => string;
+  /** Replaces the whole content (e.g. a draft version edited elsewhere). */
+  setHTML: (html: string) => void;
   clear: () => void;
   focus: () => void;
 };
@@ -96,13 +99,16 @@ export const RichTextArea = forwardRef<
     onBlur?: () => void;
     autoFocus?: boolean;
     minHeightClass?: string;
+    /** Caps the editor's height (it scrolls inside); omit for the inline cap. */
+    maxHeightClass?: string;
+    /** Shows the formatting toolbar (composers toggle it from their footer). */
+    showToolbar?: boolean;
     /** Seeds the editor once on mount (e.g. resuming a draft). */
     initialHTML?: string;
     /**
-     * Appended below `initialHTML` once on mount (e.g. an account's
-     * signature on a fresh compose) — never touched again for that mount,
-     * so switching "From" mid-compose doesn't swap it. The caret is placed
-     * before it so typing naturally lands above the signature.
+     * The account's signature, kept in its own block below the text: set on
+     * mount (caret placed above it) and swapped in place when it changes
+     * (switching "From"), never touching what the user typed.
      */
     signatureHTML?: string;
   }
@@ -114,6 +120,8 @@ export const RichTextArea = forwardRef<
     onBlur,
     autoFocus,
     minHeightClass,
+    maxHeightClass,
+    showToolbar = true,
     initialHTML,
     signatureHTML,
   },
@@ -142,6 +150,10 @@ export const RichTextArea = forwardRef<
   useImperativeHandle(ref, () => ({
     getHTML: () => editorRef.current?.innerHTML ?? "",
     getText: readText,
+    setHTML: (html: string) => {
+      if (editorRef.current) editorRef.current.innerHTML = html;
+      emitChange();
+    },
     clear: () => {
       if (editorRef.current) editorRef.current.innerHTML = "";
       emitChange();
@@ -268,8 +280,13 @@ export const RichTextArea = forwardRef<
   };
 
   return (
-    <div className="flex min-w-0 flex-col">
-      <div className="flex items-center gap-0.5 border-b border-border px-2 py-1">
+    <div className="flex min-w-0 flex-1 flex-col">
+      <div
+        className={cn(
+          "flex items-center gap-0.5 border-b border-border/50 px-3 py-1",
+          !showToolbar && "hidden",
+        )}
+      >
         <ToolBtn label="Bold (⌘B)" active={toolbar.bold} onClick={() => exec("bold")}>
           <BoldIcon className="size-3.5" />
         </ToolBtn>
@@ -311,7 +328,7 @@ export const RichTextArea = forwardRef<
       </div>
 
       {linkOpen ? (
-        <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
+        <div className="flex items-center gap-2 border-b border-border/50 px-4 py-1.5">
           <span className="shrink-0 text-xs font-medium text-muted-foreground">Link</span>
           <input
             value={linkUrl}
@@ -335,7 +352,7 @@ export const RichTextArea = forwardRef<
           <button
             type="button"
             onClick={applyLink}
-            className="te-label shrink-0 text-primary hover:brightness-110"
+            className="shrink-0 cursor-pointer text-xs font-medium text-primary hover:brightness-110"
           >
             Apply
           </button>
@@ -355,9 +372,10 @@ export const RichTextArea = forwardRef<
         onKeyDown={handleKeyDown}
         onBlur={onBlur}
         className={[
-          "te-scroll max-h-[55vh] w-full overflow-y-auto bg-transparent px-3 py-2.5",
+          "te-scroll w-full flex-1 overflow-y-auto bg-transparent px-4 py-3",
           "text-sm leading-relaxed text-foreground outline-none",
           minHeightClass ?? "min-h-[38px]",
+          maxHeightClass ?? "max-h-[55vh]",
         ].join(" ")}
       />
     </div>

@@ -882,16 +882,26 @@ export async function saveDraft(
 }
 
 /**
- * The draft id owning a message id, or null. Draft updates mint new message
- * ids, so a stale local row can miss by id — the thread id is stable across
- * updates and serves as the fallback match.
+ * The message currently backing a draft (every edit mints a new one), or null
+ * when the draft no longer exists (sent or deleted elsewhere).
  */
-export async function findDraftIdByMessageId(
+export async function getDraftVersion(accountId: string, draftId: string): Promise<string | null> {
+  try {
+    const res = (await gmailFetch(accountId, `/drafts/${draftId}?format=minimal`)) as {
+      message?: { id?: string };
+    };
+    return res.message?.id ?? null;
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("Gmail API error: 404")) return null;
+    throw err;
+  }
+}
+
+/** Every draft's id with its current message (up to 500 drafts). */
+export async function listDraftIds(
   accountId: string,
-  messageId: string,
-  threadId?: string,
-): Promise<string | null> {
-  let threadHit: string | null = null;
+): Promise<{ draftId: string; messageId: string; threadId?: string }[]> {
+  const out: { draftId: string; messageId: string; threadId?: string }[] = [];
   let pageToken: string | undefined;
   for (let page = 0; page < 5; page++) {
     const query = new URLSearchParams({ maxResults: "100" });
@@ -901,13 +911,30 @@ export async function findDraftIdByMessageId(
       nextPageToken?: string;
     };
     for (const d of res.drafts ?? []) {
-      if (d.message?.id === messageId) return d.id;
-      if (threadId && !threadHit && d.message?.threadId === threadId) threadHit = d.id;
+      if (d.message?.id)
+        out.push({ draftId: d.id, messageId: d.message.id, threadId: d.message.threadId });
     }
     if (!res.nextPageToken) break;
     pageToken = res.nextPageToken;
   }
-  return threadHit;
+  return out;
+}
+
+/**
+ * The draft id owning a message id, or null. Draft updates mint new message
+ * ids, so a stale row can miss — then a draft in the same thread is the
+ * best match.
+ */
+export async function findDraftIdByMessageId(
+  accountId: string,
+  messageId: string,
+  threadId?: string,
+): Promise<string | null> {
+  const drafts = await listDraftIds(accountId);
+  return (
+    drafts.find((d) => d.messageId === messageId)?.draftId ??
+    (threadId ? (drafts.find((d) => d.threadId === threadId)?.draftId ?? null) : null)
+  );
 }
 
 export async function deleteDraft(

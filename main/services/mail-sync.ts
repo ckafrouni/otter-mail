@@ -20,6 +20,7 @@ import {
   getAttachmentData,
   listHistory,
   isHistoryExpiredError,
+  listDraftIds,
 } from "./gmail-api.js";
 import { hasCachedAttachment } from "./attachment-cache.js";
 import { listAccounts } from "./account-store.js";
@@ -165,7 +166,9 @@ async function runSync(accountId: string): Promise<void> {
     // Download full bodies so the whole mailbox is readable offline.
     await backfillBodies(accountId);
 
-    // Local-first drafts: warm attachment bytes so the composer opens instantly.
+    // Local-first drafts: know every draft's id and warm its attachment bytes,
+    // so opening one needs no Gmail round trip.
+    await learnDraftIds(accountId);
     await prefetchDraftAttachments(accountId);
 
     assertActive(accountId);
@@ -274,6 +277,38 @@ async function fullSync(accountId: string): Promise<void> {
   store.setKv(seedKey, "");
   store.setKv(refreshKey, "");
   store.setKv(`spamTrashBackfilled:${accountId}`, "1");
+}
+
+/**
+ * One cheap drafts.list per run: records each cached draft's id (opening a
+ * draft then needs no Gmail lookup) and removes stale local draft rows — every
+ * draft edit mints a new message id, so older copies (and drafts sent or
+ * deleted elsewhere) would otherwise linger in Drafts and its count.
+ */
+async function learnDraftIds(accountId: string): Promise<void> {
+  const local = store.getMessageIdsForLabel(accountId, "DRAFT");
+  if (local.length === 0) return;
+  try {
+    const listedAt = Date.now();
+    const drafts = await listDraftIds(accountId);
+    assertActive(accountId);
+    for (const d of drafts) store.setDraftId(accountId, d.messageId, d.draftId);
+    // Only prune against a complete list (listDraftIds stops at 500).
+    if (drafts.length < 500) {
+      // Rows saved around the listing (a composer autosaving right now) may be
+      // newer than it — leave anything from the last minute alone.
+      const current = new Set(drafts.map((d) => d.messageId));
+      const stale = store
+        .getMessageDates(accountId, local)
+        .filter((m) => !current.has(m.id) && m.date < listedAt - 60_000)
+        .map((m) => m.id);
+      for (const id of stale) store.deleteMessage(accountId, id);
+      if (stale.length > 0) logger.info("mail-sync", `removed ${stale.length} stale draft rows`);
+    }
+  } catch (err) {
+    if (err instanceof SyncCancelled) throw err;
+    logger.info("mail-sync", `draft id refresh skipped: ${String(err)}`);
+  }
 }
 
 const PREFETCH_MAX_FILE_BYTES = 15 * 1024 * 1024;

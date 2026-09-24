@@ -107,6 +107,10 @@ function getDb(): DatabaseSync {
   if (!messageCols.has("referencesHeader")) {
     handle.exec("ALTER TABLE messages ADD COLUMN referencesHeader TEXT;");
   }
+  // Gmail draft id of a DRAFT message (drafts are edited/deleted by draft id).
+  if (!messageCols.has("draftId")) {
+    handle.exec("ALTER TABLE messages ADD COLUMN draftId TEXT;");
+  }
 
   // Full-text search: external-content FTS5 over messages, kept in sync via
   // triggers. On first creation, rebuild indexes every already-cached row.
@@ -317,6 +321,11 @@ export function upsertMessageDetail(accountId: string, detail: GmailMessageDetai
   );
 }
 
+/** Recounts the given labels' total/unread from the local cache. */
+export function recountLabels(accountId: string, labelIds: string[]): void {
+  recomputeLabelCounts(accountId, [...new Set(labelIds)]);
+}
+
 /**
  * Recomputes and persists `labels.unread`/`total` for the given label ids from
  * the local message cache. This is the only place besides a Gmail label sync
@@ -326,10 +335,6 @@ export function upsertMessageDetail(accountId: string, detail: GmailMessageDetai
  * is why sidebar/header unread badges could disagree with what the message
  * list actually showed until the app was relaunched.
  */
-/** Recounts the given labels' total/unread from the local cache. */
-export function recountLabels(accountId: string, labelIds: string[]): void {
-  recomputeLabelCounts(accountId, [...new Set(labelIds)]);
-}
 
 function recomputeLabelCounts(accountId: string, labelIds: string[]): void {
   if (labelIds.length === 0) return;
@@ -611,6 +616,31 @@ export function getUndownloadedMessageIds(accountId: string): string[] {
   return rows.map((r) => r.id);
 }
 
+// ── Draft ids ───────────────────────────────────────────────────────────────
+
+/** Records which Gmail draft owns a cached message (no-op if not cached). */
+export function setDraftId(accountId: string, messageId: string, draftId: string): void {
+  getDb()
+    .prepare("UPDATE messages SET draftId = ? WHERE accountId = ? AND id = ?")
+    .run(draftId, accountId, messageId);
+}
+
+/** The draft id owning a message: by message id, else a draft in its thread. */
+export function getDraftId(accountId: string, messageId: string, threadId?: string): string | null {
+  const d = getDb();
+  const own = d
+    .prepare("SELECT draftId FROM messages WHERE accountId = ? AND id = ?")
+    .get(accountId, messageId) as unknown as { draftId: string | null } | undefined;
+  if (own?.draftId) return own.draftId;
+  if (!threadId) return null;
+  const inThread = d
+    .prepare(
+      "SELECT draftId FROM messages WHERE accountId = ? AND threadId = ? AND draftId IS NOT NULL ORDER BY date DESC LIMIT 1",
+    )
+    .get(accountId, threadId) as unknown as { draftId: string } | undefined;
+  return inThread?.draftId ?? null;
+}
+
 /** The subset of `ids` not cached yet for the account (sync skips the rest). */
 export function filterUnknownIds(accountId: string, ids: string[]): string[] {
   if (ids.length === 0) return [];
@@ -654,6 +684,24 @@ export function pruneMessagesNotIn(accountId: string, keep: ReadonlySet<string>)
   }
   recomputeLabelCounts(accountId, [...touched]);
   return gone.length;
+}
+
+/** Dates of the given cached messages (e.g. to age-gate draft pruning). */
+export function getMessageDates(accountId: string, ids: string[]): { id: string; date: number }[] {
+  if (ids.length === 0) return [];
+  const d = getDb();
+  const out: { id: string; date: number }[] = [];
+  for (let i = 0; i < ids.length; i += 500) {
+    const chunk = ids.slice(i, i + 500);
+    out.push(
+      ...(d
+        .prepare(
+          `SELECT id, date FROM messages WHERE accountId = ? AND id IN (${chunk.map(() => "?").join(", ")})`,
+        )
+        .all(accountId, ...chunk) as unknown as { id: string; date: number }[]),
+    );
+  }
+  return out;
 }
 
 /** Messages cached for an account (full-sync progress after a resume). */

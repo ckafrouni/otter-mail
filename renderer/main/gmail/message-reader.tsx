@@ -12,6 +12,8 @@ import {
   ArchiveIcon,
   ArchiveRestoreIcon,
   ArchiveXIcon,
+  BotMessageSquareIcon,
+  ChevronDownIcon,
   DownloadIcon,
   EllipsisIcon,
   FlagIcon,
@@ -20,12 +22,9 @@ import {
   ImageIcon,
   MailIcon,
   MailOpenIcon,
-  PaperclipIcon,
-  BotMessageSquareIcon,
-  ReplyIcon,
   ReplyAllIcon,
+  ReplyIcon,
   RotateCcwIcon,
-  SendHorizontalIcon,
   ShieldCheckIcon,
   Trash2Icon,
   XIcon,
@@ -49,11 +48,24 @@ import {
 import { gmailApi } from "./api";
 import { CategoryChip, InboxChip, LabelChip, isCategoryLabelId } from "./label-chip";
 import { SenderAvatar } from "./sender-avatar";
+import {
+  CcBccToggles,
+  ComposerCard,
+  ComposerField,
+  ComposerFooter,
+  DraftRemoteBanner,
+  draftStatus,
+} from "./composer-kit";
 import { decodeEntities, htmlToText } from "./text";
 import { LabelPickerMenu } from "./label-picker-menu";
-import { parseAddressEntry, splitAddressList } from "./address";
-import { matchesCommand, useCommandHandlers } from "../keybindings/dispatch";
-import { ShortcutText, useShortcutLabel } from "../keybindings/store";
+import {
+  formatAddressEntry,
+  normalizeAddressList,
+  parseAddressEntry,
+  splitAddressList,
+} from "./address";
+import { useCommandHandlers } from "../keybindings/dispatch";
+import { useShortcutLabel } from "../keybindings/store";
 import { IconBtn, HintTooltip, buttonClass, cn } from "./ui";
 import {
   DropdownMenu,
@@ -75,6 +87,8 @@ import {
   filesToComposeAttachments,
   pickComposeAttachments,
   useComposeFileDrop,
+  autosaveDelayMs,
+  loadMessageAttachments,
 } from "./compose-attachments";
 import type { QuoteContext } from "./chat-context";
 import { DraftEditor } from "./draft-editor";
@@ -1285,7 +1299,7 @@ function computeReplyAll(
   const to: string[] = [];
   const cc: string[] = [];
   if (!fromSelf) {
-    to.push(last.fromEmail);
+    to.push(senderAddress(last));
     seen.add(last.fromEmail.toLowerCase());
   }
   for (const entry of splitAddressList(last.to)) {
@@ -1301,7 +1315,7 @@ function computeReplyAll(
     seen.add(email);
     cc.push(entry);
   }
-  if (to.length === 0) to.push(last.fromEmail);
+  if (to.length === 0) to.push(senderAddress(last));
   return { to: to.join(", "), cc: cc.length > 0 ? cc.join(", ") : undefined };
 }
 
@@ -1314,13 +1328,18 @@ const INLINE_MODE_LABEL: Record<InlineMode, string> = {
 };
 
 /** Reply-to-sender recipients for the latest message. */
+/** "Name <email>" for the sender, so replies show who they're going to. */
+function senderAddress(m: GmailMessageSummary): string {
+  return formatAddressEntry(m.fromName, m.fromEmail);
+}
+
 function computeReply(
   last: GmailMessageSummary,
   ownEmail: string,
 ): { to: string; cc: string | undefined } {
   const fromSelf = last.fromEmail.toLowerCase() === ownEmail.toLowerCase();
   // Replying to your own message targets its recipients instead of yourself.
-  return { to: fromSelf ? last.to : last.fromEmail, cc: undefined };
+  return { to: fromSelf ? last.to : senderAddress(last), cc: undefined };
 }
 
 /** "Re: x" / "Fwd: x" without stacking prefixes (any case; FW/Fwd alike). */
@@ -1340,6 +1359,48 @@ function forwardBlock(
   return `\n\n---------- Forwarded message ----------\nFrom: ${fromDisplay}\nDate: ${formatFullDate(source.date)}\nSubject: ${source.subject}\nTo: ${source.to}\n\n${body}`;
 }
 
+const INLINE_MODE_ICON: Record<InlineMode, typeof ReplyIcon> = {
+  reply: ReplyIcon,
+  replyAll: ReplyAllIcon,
+  forward: ForwardIcon,
+};
+
+/** "↩ Reply ⌄" — switches the inline composer between reply, reply all and forward. */
+function ModeSwitcher({
+  mode,
+  onChange,
+}: {
+  mode: InlineMode;
+  onChange: (mode: InlineMode) => void;
+}) {
+  const Icon = INLINE_MODE_ICON[mode];
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="Reply mode"
+          className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 text-sm font-medium text-foreground outline-none hover:bg-accent-surface focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          <Icon className="size-3.5 text-muted-foreground" />
+          {INLINE_MODE_LABEL[mode]}
+          <ChevronDownIcon className="size-3.5 text-muted-foreground/70" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        {(Object.keys(INLINE_MODE_LABEL) as InlineMode[]).map((m) => {
+          const ItemIcon = INLINE_MODE_ICON[m];
+          return (
+            <DropdownMenuItem key={m} icon={<ItemIcon />} onSelect={() => onChange(m)}>
+              {INLINE_MODE_LABEL[m]}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 /**
  * The in-thread composer: reply, reply-all, or forward the latest message
  * without leaving the conversation, autosaving to a thread draft as you type.
@@ -1347,6 +1408,7 @@ function forwardBlock(
 function InlineComposer({
   accountId,
   mode,
+  onModeChange,
   lastMessage,
   baseSubject,
   threadId,
@@ -1354,6 +1416,8 @@ function InlineComposer({
 }: {
   accountId: string;
   mode: InlineMode;
+  /** Switches Reply / Reply all / Forward in place (the text is kept). */
+  onModeChange: (mode: InlineMode) => void;
   lastMessage: GmailMessageSummary;
   baseSubject: string;
   threadId: string;
@@ -1366,6 +1430,9 @@ function InlineComposer({
   const [bcc, setBcc] = useState("");
   const [bccVisible, setBccVisible] = useState(false);
   const recipientsDirty = useRef(false);
+  const [formatting, setFormatting] = useState(false);
+  // Forward needs recipients typed in; replies show a one-line summary.
+  const [fieldsOpen, setFieldsOpen] = useState(mode === "forward");
   // null = still fetching the forwarded original's files.
   const [attachments, setAttachments] = useState<ComposeAttachment[] | null>(
     mode === "forward" ? null : [],
@@ -1380,6 +1447,16 @@ function InlineComposer({
   const lastDetail = lastDetailQuery.data;
 
   const ownEmail = accountsQuery.data?.find((a) => a.id === accountId)?.email ?? "";
+
+  // A mode switch recomputes recipients (and drops forwarded files).
+  const previousMode = useRef(mode);
+  useEffect(() => {
+    if (previousMode.current === mode) return;
+    recipientsDirty.current = false;
+    if (previousMode.current === "forward") setAttachments([]);
+    if (mode === "forward") setFieldsOpen(true);
+    previousMode.current = mode;
+  }, [mode]);
 
   // Prefill recipients per mode; refine once the detail arrives, unless the
   // user already edited the fields.
@@ -1452,15 +1529,32 @@ function InlineComposer({
   const draft = useDraftAutosave({
     accountId,
     threadId,
+    delayMs: autosaveDelayMs(attachments),
+    // Edited elsewhere (an agent, Gmail web): load that version in place.
+    // The subject stays derived from the conversation.
+    onRemoteChange: async (detail) => {
+      recipientsDirty.current = true;
+      setTo(detail.to ?? "");
+      setCc(detail.cc ?? "");
+      setBcc(detail.bcc ?? "");
+      setCcVisible(Boolean(detail.cc));
+      setBccVisible(Boolean(detail.bcc));
+      editorRef.current?.setHTML(detail.bodyHtml ?? textToHtml(detail.bodyText ?? ""));
+      setAttachments(
+        detail.attachments.length > 0
+          ? await loadMessageAttachments(accountId, detail.id, detail.attachments)
+          : [],
+      );
+    },
     signal: JSON.stringify({ to, cc, bcc, subject, text, att: attachmentSignature(attachments) }),
     getPayload: () => {
       if (!text.trim() || attachments == null) return null;
       const plain = editorRef.current?.getText() ?? text;
       const html = editorRef.current?.getHTML() ?? textToHtml(plain);
       return {
-        to,
-        cc: cc.trim() || undefined,
-        bcc: bcc.trim() || undefined,
+        to: normalizeAddressList(to),
+        cc: normalizeAddressList(cc) || undefined,
+        bcc: normalizeAddressList(bcc) || undefined,
         subject,
         body: plain,
         bodyHtml: `<div dir="auto">${html}</div>`,
@@ -1491,9 +1585,9 @@ function InlineComposer({
     sendMessage
       .mutateAsync({
         accountId,
-        to,
-        cc: cc.trim() || undefined,
-        bcc: bcc.trim() || undefined,
+        to: normalizeAddressList(to),
+        cc: normalizeAddressList(cc) || undefined,
+        bcc: normalizeAddressList(bcc) || undefined,
         subject,
         body,
         bodyHtml,
@@ -1520,136 +1614,121 @@ function InlineComposer({
         ? "Reply to everyone…"
         : "Add a note (optional)…";
 
+  const recipientSummary = [...splitAddressList(to), ...splitAddressList(cc)].map((entry) => {
+    const { name, email } = parseAddressEntry(entry);
+    return (name || email).split(" ")[0];
+  });
+  const attach = () => {
+    void pickComposeAttachments(attachments ?? []).then((picked) => {
+      if (picked.length > 0) setAttachments((prev) => [...(prev ?? []), ...picked]);
+    });
+  };
+  const discard = () => {
+    onClose();
+    void draft.finalize({ deleteDraft: true });
+  };
+  const editRecipients = (update: (value: string) => void) => (value: string) => {
+    recipientsDirty.current = true;
+    update(value);
+  };
+
   return (
     <div className="relative shrink-0 px-5 pb-4 pt-1" data-inline-compose="" {...dropProps}>
       <ComposeDropOverlay visible={isDragging} />
-      <div
-        className="rounded-2xl border border-(--chat-composer-outline) bg-(--chat-composer-surface) shadow-composer transition-colors focus-within:border-input dark:shadow-none dark:inset-shadow-2xs dark:inset-shadow-(color:--chat-composer-highlight)"
-        onKeyDown={(e) => {
-          if (matchesCommand(e.nativeEvent, "composer.send")) {
-            e.preventDefault();
-            handleSend();
-          }
-        }}
-      >
-        <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
-          <span className="inline-flex h-5 shrink-0 items-center rounded-sm border border-primary/40 bg-primary/10 px-1.5 text-2xs font-medium text-primary">
-            {INLINE_MODE_LABEL[mode]}
-          </span>
-          <span className="shrink-0 text-xs font-medium text-muted-foreground">To</span>
-          <RecipientInput
-            ref={toRef}
-            value={to}
-            onChange={(v) => {
-              recipientsDirty.current = true;
-              setTo(v);
-            }}
-            placeholder="recipient@example.com"
-            ariaLabel="To"
-          />
-          {!ccVisible ? (
+      <ComposerCard onSend={handleSend}>
+        <div className="flex min-h-10 items-center gap-1 border-b border-border/50 pl-2 pr-1.5">
+          <ModeSwitcher mode={mode} onChange={onModeChange} />
+          {!fieldsOpen ? (
             <button
               type="button"
-              onClick={() => setCcVisible(true)}
-              className="shrink-0 text-2xs text-muted-foreground/70 hover:text-foreground"
+              onClick={() => setFieldsOpen(true)}
+              className="min-w-0 flex-1 cursor-pointer truncate rounded-md px-1.5 py-1 text-left text-sm text-muted-foreground outline-none hover:bg-accent-surface/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-focus-ring"
             >
-              Cc
+              {recipientSummary.length > 0 ? (
+                <>
+                  to{" "}
+                  <span className="text-foreground">{recipientSummary.slice(0, 3).join(", ")}</span>
+                  {recipientSummary.length > 3 ? ` +${recipientSummary.length - 3}` : ""}
+                </>
+              ) : (
+                "Add recipients"
+              )}
             </button>
-          ) : null}
-          {!bccVisible ? (
-            <button
-              type="button"
-              onClick={() => setBccVisible(true)}
-              className="shrink-0 text-2xs text-muted-foreground/70 hover:text-foreground"
-            >
-              Bcc
-            </button>
-          ) : null}
-          <IconBtn
-            label="Discard"
-            className="size-6"
-            onClick={() => {
-              onClose();
-              void draft.finalize({ deleteDraft: true });
-            }}
-          >
-            <XIcon className="size-3.5" />
-          </IconBtn>
+          ) : (
+            <span className="flex-1" />
+          )}
+          <HintTooltip label="Close (keeps the draft)" hint="Esc">
+            <IconBtn label="Close" className="size-7" onClick={onClose}>
+              <XIcon className="size-3.5" />
+            </IconBtn>
+          </HintTooltip>
         </div>
-        {ccVisible ? (
-          <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
-            <span className="shrink-0 text-xs font-medium text-muted-foreground">Cc</span>
-            <RecipientInput
-              value={cc}
-              onChange={(v) => {
-                recipientsDirty.current = true;
-                setCc(v);
-              }}
-              ariaLabel="Cc"
-            />
-          </div>
-        ) : null}
-        {bccVisible ? (
-          <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
-            <span className="shrink-0 text-xs font-medium text-muted-foreground">Bcc</span>
-            <RecipientInput value={bcc} onChange={setBcc} ariaLabel="Bcc" />
-          </div>
+        <DraftRemoteBanner
+          remote={draft.remote}
+          mine={{ to, cc, subject, body: editorRef.current?.getText() ?? text }}
+          onTakeTheirs={draft.takeTheirs}
+          onKeepMine={draft.keepMine}
+          onSaveAsNew={draft.saveAsNew}
+        />
+        {fieldsOpen ? (
+          <>
+            <ComposerField
+              label="To"
+              trailing={
+                <CcBccToggles
+                  showCc={ccVisible}
+                  showBcc={bccVisible}
+                  onShowCc={() => setCcVisible(true)}
+                  onShowBcc={() => setBccVisible(true)}
+                />
+              }
+            >
+              <RecipientInput
+                ref={toRef}
+                value={to}
+                onChange={editRecipients(setTo)}
+                ariaLabel="To"
+              />
+            </ComposerField>
+            {ccVisible ? (
+              <ComposerField label="Cc">
+                <RecipientInput value={cc} onChange={editRecipients(setCc)} ariaLabel="Cc" />
+              </ComposerField>
+            ) : null}
+            {bccVisible ? (
+              <ComposerField label="Bcc">
+                <RecipientInput value={bcc} onChange={setBcc} ariaLabel="Bcc" />
+              </ComposerField>
+            ) : null}
+          </>
         ) : null}
         <RichTextArea
           ref={editorRef}
           placeholder={placeholder}
           ariaLabel={INLINE_MODE_LABEL[mode]}
           onTextChange={setText}
-          minHeightClass="min-h-[160px]"
+          showToolbar={formatting}
+          minHeightClass="min-h-[120px]"
+          maxHeightClass="max-h-[45vh]"
           signatureHTML={accountsQuery.data?.find((a) => a.id === accountId)?.signature}
         />
         <AttachmentChips
           attachments={attachments}
           onRemove={(i) => setAttachments((prev) => (prev ?? []).filter((_, j) => j !== i))}
         />
-        <div className="flex items-center gap-1 px-2 pb-1.5">
-          <HintTooltip label="Attach files">
-            <IconBtn
-              label="Attach files"
-              className="size-7"
-              onClick={() => {
-                void pickComposeAttachments(attachments ?? []).then((picked) => {
-                  if (picked.length > 0) setAttachments((prev) => [...(prev ?? []), ...picked]);
-                });
-              }}
-            >
-              <PaperclipIcon className="size-3.5" />
-            </IconBtn>
-          </HintTooltip>
-          {mode === "forward" && attachments == null ? (
-            <span className="pl-1 text-xs text-muted-foreground">Loading attachments…</span>
-          ) : null}
-          {draft.saveState === "saving" ? (
-            <span className="pl-1 text-xs text-muted-foreground">Saving draft…</span>
-          ) : draft.saveState === "saved" ? (
-            <span className="pl-1 text-xs text-muted-foreground">Draft saved</span>
-          ) : draft.saveState === "error" ? (
-            <span className="pl-1 text-xs text-destructive-foreground">Couldn't save draft</span>
-          ) : null}
-          <span className="flex-1" />
-          {canSend ? (
-            <ShortcutText
-              command="composer.send"
-              suffix="send"
-              className="pr-1 text-xs text-muted-foreground"
-            />
-          ) : null}
-          <button
-            type="button"
-            onClick={handleSend}
-            disabled={!canSend}
-            aria-label="Send"
-            className="inline-flex h-7 w-9 items-center justify-center rounded-[var(--control-radius)] border border-primary bg-primary text-primary-foreground shadow-xs shadow-primary/24 transition-[box-shadow,scale] not-disabled:inset-shadow-[0_1px_rgb(255_255_255/16%)] hover:bg-primary/90 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-64"
-          >
-            <SendHorizontalIcon className="size-3.5" />
-          </button>
-        </div>
-      </div>
+        <ComposerFooter
+          onAttach={attach}
+          formatting={formatting}
+          onToggleFormatting={() => setFormatting((f) => !f)}
+          onDiscard={discard}
+          status={
+            mode === "forward" && attachments == null ? "Loading attachments…" : draftStatus(draft)
+          }
+          statusTone={draft.saveState === "error" ? "error" : "muted"}
+          canSend={canSend}
+          onSend={handleSend}
+        />
+      </ComposerCard>
     </div>
   );
 }
@@ -2291,9 +2370,9 @@ export function MessageReader({
         {/* In-thread composer, hidden until replying/forwarding */}
         {lastRow && inline ? (
           <InlineComposer
-            key={inline}
             accountId={accountId}
             mode={inline}
+            onModeChange={setInline}
             lastMessage={lastRow}
             baseSubject={message.subject}
             threadId={message.threadId || message.id}

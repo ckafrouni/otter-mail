@@ -38,6 +38,7 @@ import {
   updateLabel,
   deleteLabel,
   proxyRemoteImage,
+  getDraftVersion,
 } from "../services/gmail-api.js";
 import * as mailStore from "../services/mail-store.js";
 import { IPC_WRITE_BUDGET_MS, atMost, runAsTask, settleGmailWrite, sleep } from "./ipc-budget.js";
@@ -774,25 +775,75 @@ export function registerGmailHandlers(): void {
     try {
       const accountId = assertString(p?.accountId, "accountId");
       const sessionKey = asString(p?.sessionKey);
+      const content = {
+        to: asString(p?.to) ?? "",
+        cc: asString(p?.cc),
+        bcc: asString(p?.bcc),
+        subject: asString(p?.subject) ?? "",
+        body: asString(p?.body) ?? "",
+        bodyHtml: asString(p?.bodyHtml),
+        attachments: parseAttachments(p?.attachments),
+      };
+      const expectMessageId = asString(p?.expectMessageId);
       const save = async () => {
+        const draftId =
+          asString(p?.draftId) ?? sessionDraftId(draftSessionId(accountId, sessionKey));
+        // Someone else (Hermes, Gmail web, a phone) may have edited this draft
+        // since the composer last saw it: never overwrite that silently.
+        if (draftId && expectMessageId) {
+          const current = await getDraftVersion(accountId, draftId);
+          if (current === null) return { gone: true as const, draftId };
+          if (current !== expectMessageId) {
+            return { conflict: true as const, draftId, messageId: current };
+          }
+        }
         const res = await saveDraft(accountId, {
-          draftId: asString(p?.draftId) ?? sessionDraftId(draftSessionId(accountId, sessionKey)),
-          to: asString(p?.to) ?? "",
-          cc: asString(p?.cc),
-          bcc: asString(p?.bcc),
-          subject: asString(p?.subject) ?? "",
-          body: asString(p?.body) ?? "",
-          bodyHtml: asString(p?.bodyHtml),
+          ...content,
+          draftId,
           threadId: asString(p?.threadId),
-          attachments: parseAttachments(p?.attachments),
         });
         rememberSessionDraft(draftSessionId(accountId, sessionKey), res.draftId);
-        await mirrorDraft(accountId, res);
+        await mirrorDraft(accountId, res, content);
         return { draftId: res.draftId, messageId: res.messageId, threadId: res.threadId };
       };
       return await queueDraftSave(draftSessionId(accountId, sessionKey), save);
     } catch (err) {
       console.log("[gmail:saveDraft] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:getDraftVersion — which message backs a draft right now (null = the
+  // draft is gone). Open composers poll this to notice edits made elsewhere.
+  ipcMain.handle("gmail:getDraftVersion", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    try {
+      const accountId = assertString(p?.accountId, "accountId");
+      const draftId = assertString(p?.draftId, "draftId");
+      return { messageId: await getDraftVersion(accountId, draftId) };
+    } catch (err) {
+      console.log("[gmail:getDraftVersion] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:loadDraftVersion — a draft's content at a given version, mirrored
+  // into the cache (the lists show the new version too).
+  ipcMain.handle("gmail:loadDraftVersion", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:loadDraftVersion]", { draftId: p?.draftId, messageId: p?.messageId });
+    try {
+      const accountId = assertString(p?.accountId, "accountId");
+      const draftId = assertString(p?.draftId, "draftId");
+      const messageId = assertString(p?.messageId, "messageId");
+      const detail = await getMessage(accountId, messageId);
+      mailStore.upsertMessageDetail(accountId, detail);
+      mailStore.setDraftId(accountId, messageId, draftId);
+      if (detail.threadId)
+        mailStore.deleteOtherDraftsInThread(accountId, detail.threadId, messageId);
+      return detail;
+    } catch (err) {
+      console.log("[gmail:loadDraftVersion] error", { error: String(err) });
       throw err;
     }
   });
@@ -803,7 +854,12 @@ export function registerGmailHandlers(): void {
     try {
       const accountId = assertString(p?.accountId, "accountId");
       const messageId = assertString(p?.messageId, "messageId");
-      const draftId = await findDraftIdByMessageId(accountId, messageId, asString(p?.threadId));
+      const threadId = asString(p?.threadId);
+      // Local first (recorded on save and by sync); Gmail lookup as fallback.
+      const known = mailStore.getDraftId(accountId, messageId, threadId);
+      if (known) return { draftId: known };
+      const draftId = await findDraftIdByMessageId(accountId, messageId, threadId);
+      if (draftId) mailStore.setDraftId(accountId, messageId, draftId);
       console.log("[gmail:getDraftForMessage]", { accountId, messageId, found: draftId != null });
       return { draftId };
     } catch (err) {

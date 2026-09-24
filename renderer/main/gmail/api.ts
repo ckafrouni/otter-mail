@@ -152,6 +152,9 @@ export type SaveDraftParams = {
   /** Stable per composer: the backend serializes its saves and remembers its
       draft id, so a timed-out first save never leads to a duplicate draft. */
   sessionKey?: string;
+  /** The draft version this edit is based on: the backend refuses to
+      overwrite a newer one (changed elsewhere) and reports a conflict. */
+  expectMessageId?: string;
   to: string;
   cc?: string;
   bcc?: string;
@@ -161,6 +164,13 @@ export type SaveDraftParams = {
   threadId?: string;
   attachments?: ComposeAttachment[];
 };
+
+export type SaveDraftResult =
+  | { draftId: string; messageId?: string; threadId?: string }
+  /** Edited elsewhere since `expectMessageId`: nothing was saved. */
+  | { conflict: true; draftId: string; messageId: string }
+  /** Sent or deleted elsewhere: nothing was saved. */
+  | { gone: true; draftId: string };
 
 export type GetAttachmentParams = {
   accountId: string;
@@ -286,17 +296,30 @@ export const gmailApi = {
   sendMessage: (params: SendMessageParams): Promise<{ ok: boolean }> =>
     ipc("gmail:sendMessage", params),
 
-  saveDraft: (
-    params: SaveDraftParams,
-  ): Promise<{ draftId: string; messageId?: string; threadId?: string }> =>
-    ipc("gmail:saveDraft", params),
+  saveDraft: (params: SaveDraftParams): Promise<SaveDraftResult> => ipc("gmail:saveDraft", params),
+
+  /** The message backing a draft right now; null = the draft is gone. */
+  getDraftVersion: (accountId: string, draftId: string): Promise<{ messageId: string | null }> =>
+    ipc("gmail:getDraftVersion", { accountId, draftId }),
+
+  /** A draft's content at a given version (also refreshes the cache). */
+  loadDraftVersion: (
+    accountId: string,
+    draftId: string,
+    messageId: string,
+  ): Promise<GmailMessageDetail> =>
+    ipc("gmail:loadDraftVersion", { accountId, draftId, messageId }),
 
   deleteDraft: (accountId: string, draftId: string): Promise<{ ok: boolean }> =>
     ipc("gmail:deleteDraft", { accountId, draftId }),
 
-  /** Deletes a composer session's draft when its id never reached the renderer. */
-  deleteSessionDraft: (accountId: string, sessionKey: string): Promise<{ ok: boolean }> =>
-    ipc("gmail:deleteDraft", { accountId, sessionKey }),
+  /** Deletes a composer's draft: by id when known, else whatever its session's
+      saves created (even if that id never reached the renderer). */
+  deleteSessionDraft: (
+    accountId: string,
+    sessionKey: string,
+    draftId?: string,
+  ): Promise<{ ok: boolean }> => ipc("gmail:deleteDraft", { accountId, sessionKey, draftId }),
 
   getDraftForMessage: (
     accountId: string,
