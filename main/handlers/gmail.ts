@@ -93,6 +93,30 @@ async function settleGmailWrite(
   return { ok: true, pending: true };
 }
 
+/** Applies a label change to the local cache and returns an exact undo: only
+ *  labels that actually changed on each message are restored, so undoing
+ *  "remove INBOX" never adds INBOX to a thread's sent replies. */
+function applyLocalLabelChange(
+  accountId: string,
+  messageIds: string[],
+  add: string[],
+  remove: string[],
+): () => void {
+  const undo = messageIds.flatMap((id) => {
+    const prior = mailStore.getMessageLabelIds(accountId, id);
+    if (!prior) return [];
+    const reAdd = remove.filter((l) => prior.includes(l));
+    const reRemove = add.filter((l) => !prior.includes(l));
+    mailStore.applyLabelChange(accountId, id, add, remove);
+    return [{ id, reAdd, reRemove }];
+  });
+  updateDockBadge();
+  return () => {
+    for (const u of undo) mailStore.applyLabelChange(accountId, u.id, u.reAdd, u.reRemove);
+    updateDockBadge();
+  };
+}
+
 const RECONCILE_COOLDOWN_MS = 60_000;
 const lastUnreadReconcile = new Map<string, number>();
 
@@ -581,17 +605,16 @@ export function registerGmailHandlers(): void {
       const messageId = assertString(p?.messageId, "messageId");
       const addLabelIds = asStringArray(p?.addLabelIds);
       const removeLabelIds = asStringArray(p?.removeLabelIds);
-      const add = addLabelIds ?? [];
-      const remove = removeLabelIds ?? [];
-      mailStore.applyLabelChange(accountId, messageId, add, remove);
-      updateDockBadge();
+      const revert = applyLocalLabelChange(
+        accountId,
+        [messageId],
+        addLabelIds ?? [],
+        removeLabelIds ?? [],
+      );
       return await settleGmailWrite(
         "gmail:modifyMessage",
         modifyMessage(accountId, messageId, { addLabelIds, removeLabelIds }),
-        () => {
-          mailStore.applyLabelChange(accountId, messageId, remove, add);
-          updateDockBadge();
-        },
+        revert,
       );
     } catch (err) {
       console.log("[gmail:modifyMessage] error", { error: String(err) });
@@ -639,17 +662,16 @@ export function registerGmailHandlers(): void {
       const threadId = assertString(p?.threadId, "threadId");
       const addLabelIds = asStringArray(p?.addLabelIds);
       const removeLabelIds = asStringArray(p?.removeLabelIds);
-      const add = addLabelIds ?? [];
-      const remove = removeLabelIds ?? [];
-      mailStore.applyLabelChangeToThread(accountId, threadId, add, remove);
-      updateDockBadge();
+      const revert = applyLocalLabelChange(
+        accountId,
+        mailStore.getThreadMessages(accountId, threadId).map((m) => m.id),
+        addLabelIds ?? [],
+        removeLabelIds ?? [],
+      );
       return await settleGmailWrite(
         "gmail:modifyThread",
         modifyThread(accountId, threadId, { addLabelIds, removeLabelIds }),
-        () => {
-          mailStore.applyLabelChangeToThread(accountId, threadId, remove, add);
-          updateDockBadge();
-        },
+        revert,
       );
     } catch (err) {
       console.log("[gmail:modifyThread] error", { error: String(err) });

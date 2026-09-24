@@ -394,6 +394,14 @@ export function deleteMessage(accountId: string, messageId: string): void {
 }
 
 /** Apply an optimistic label add/remove to a locally-cached message. */
+/** A cached message's current label ids, or null when it isn't cached. */
+export function getMessageLabelIds(accountId: string, messageId: string): string[] | null {
+  const row = getDb()
+    .prepare("SELECT labelIds FROM messages WHERE accountId = ? AND id = ?")
+    .get(accountId, messageId) as unknown as { labelIds: string } | undefined;
+  return row ? parseLabelIds(row.labelIds) : null;
+}
+
 export function applyLabelChange(
   accountId: string,
   messageId: string,
