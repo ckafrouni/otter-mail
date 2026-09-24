@@ -23,12 +23,13 @@ import {
   useAccountSync,
   useGlobalSyncStatus,
   useGmailWriteFailureToasts,
+  useExternalMailChanges,
   useModifyMessage,
   useModifyThread,
   useUntrashThread,
   useUntrashMessage,
 } from "./gmail/hooks";
-import { takeUndo, type UndoAction } from "./gmail/undo";
+import { beginUndoGroup, takeUndo, type UndoAction } from "./gmail/undo";
 import { getAccountColor, getAccountContrastColor } from "./gmail/account-style";
 import { gmailApi, type MailtoTarget } from "./gmail/api";
 import type { QuoteContext } from "./gmail/chat-context";
@@ -186,6 +187,7 @@ export function HomeView() {
 
   const globalSync = useGlobalSyncStatus(accountIds);
   useGmailWriteFailureToasts();
+  useExternalMailChanges();
 
   const sidebarPane = useStoredWidth("gmail:pane:sidebar", 256, 224, 400);
   const listPane = useStoredWidth("gmail:pane:list", 400, 300, 640);
@@ -238,24 +240,31 @@ export function HomeView() {
   const undoUntrashThread = useUntrashThread();
   const undoUntrashMessage = useUntrashMessage();
   const undoRunner = useRef<(action: UndoAction) => void>(() => {});
-  undoRunner.current = (action) => {
-    console.log("[HomeView:undo]", { kind: action.kind });
-    const done = () => toast.success("Undone");
-    const fail = () => toast.error("Could not undo");
+  const runUndo = (action: UndoAction): Promise<unknown> => {
     switch (action.kind) {
       case "modifyMessage":
-        void undoModifyMessage.mutateAsync(action.params).then(done, fail);
-        break;
+        return undoModifyMessage.mutateAsync(action.params);
       case "modifyThread":
-        void undoModifyThread.mutateAsync(action.params).then(done, fail);
-        break;
+        return undoModifyThread.mutateAsync(action.params);
       case "untrashThread":
-        void undoUntrashThread.mutateAsync(action.params).then(done, fail);
-        break;
+        return undoUntrashThread.mutateAsync(action.params);
       case "untrashMessage":
-        void undoUntrashMessage.mutateAsync(action.params).then(done, fail);
-        break;
+        return undoUntrashMessage.mutateAsync(action.params);
+      case "batch":
+        // Their redo registrations regroup, so z again redoes the whole batch.
+        beginUndoGroup(action.actions.length);
+        return Promise.all(action.actions.map(runUndo));
     }
+  };
+  undoRunner.current = (action) => {
+    console.log("[HomeView:undo]", {
+      kind: action.kind,
+      count: action.kind === "batch" ? action.actions.length : 1,
+    });
+    runUndo(action).then(
+      () => toast.success("Undone"),
+      () => toast.error("Could not undo"),
+    );
   };
 
   // Keyboard commands (Settings › Keybindings; defaults in keybindings/commands.ts).
@@ -461,11 +470,6 @@ export function HomeView() {
     };
     void pull();
     return window.glazeAPI.glaze.ipc.onNotification("mail:open", () => void pull());
-  }, []);
-
-  // "New Message" triggered from the menu-bar tray icon.
-  useEffect(() => {
-    return window.glazeAPI.glaze.ipc.onNotification("compose:new", () => setComposeOpen(true));
   }, []);
 
   const effectiveAccountId = isCombined

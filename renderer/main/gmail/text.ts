@@ -15,3 +15,15 @@ export function decodeEntities(input: string): string {
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&"); // last, so a single-encoded string never double-decodes
 }
+
+/** Readable plain text from an HTML body (for HTML-only mail: forwards, quotes).
+ *  Block elements become line breaks; scripts and styles are dropped. */
+export function htmlToText(html: string): string {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  doc.querySelectorAll("script, style, head").forEach((el) => el.remove());
+  doc.querySelectorAll("br").forEach((el) => el.replaceWith("\n"));
+  doc
+    .querySelectorAll("p, div, li, tr, h1, h2, h3, h4, h5, h6, blockquote")
+    .forEach((el) => el.append("\n"));
+  return (doc.body.textContent ?? "").replace(/\n{3,}/g, "\n\n").trim();
+}

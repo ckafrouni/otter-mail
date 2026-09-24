@@ -14,6 +14,7 @@ import {
   type ModifyThreadParams,
   type SendMessageParams,
 } from "./api";
+import { PENDING_LABEL_PREFIX } from "./label-tree";
 import type {
   ContactSuggestion,
   GmailAccount,
@@ -74,7 +75,7 @@ function invalidateMailCaches(qc: ReturnType<typeof useQueryClient>): void {
 export function useGmailWriteFailureToasts(): void {
   const qc = useQueryClient();
   useEffect(() => {
-    const unsubscribe = window.glazeAPI.glaze.ipc.onNotification(
+    const offWrite = window.glazeAPI.glaze.ipc.onNotification(
       "gmail:write-failed",
       (params: unknown) => {
         const p = params as { message?: string } | undefined;
@@ -82,8 +83,38 @@ export function useGmailWriteFailureToasts(): void {
         invalidateMailCaches(qc);
       },
     );
-    return unsubscribe;
+    // A send that outlasted the IPC budget and then failed: the backend put
+    // the message back in Drafts (the composer had already closed).
+    const offSend = window.glazeAPI.glaze.ipc.onNotification(
+      "gmail:send-failed",
+      (params: unknown) => {
+        const p = params as { subject?: string; savedToDrafts?: boolean } | undefined;
+        const what = p?.subject ? `“${p.subject}”` : "your message";
+        toast.error(
+          p?.savedToDrafts
+            ? `Couldn't send ${what} — it's back in Drafts`
+            : `Couldn't send ${what}`,
+        );
+        invalidateMailCaches(qc);
+      },
+    );
+    return () => {
+      offWrite();
+      offSend();
+    };
   }, [qc]);
+}
+
+/** Refreshes mail caches when another window (the menu-bar popover) changed mail. */
+export function useExternalMailChanges(): void {
+  const qc = useQueryClient();
+  useEffect(
+    () =>
+      window.glazeAPI.glaze.ipc.onNotification("gmail:mail-changed", () =>
+        invalidateMailCaches(qc),
+      ),
+    [qc],
+  );
 }
 
 // ---- Query Keys ----
@@ -191,7 +222,7 @@ export function useCreateLabel() {
       const prev = qc.getQueryData<GmailLabel[]>(queryKeys.labels(accountId));
       qc.setQueryData<GmailLabel[]>(queryKeys.labels(accountId), (old) => [
         ...(old ?? []),
-        { id: `pending:${name}`, name, type: "user" },
+        { id: `${PENDING_LABEL_PREFIX}${name}`, name, type: "user" },
       ]);
       return { prev };
     },
@@ -637,15 +668,25 @@ function removeMessagesFromInfiniteData(
 }
 
 /** Label add/remove applied to a cached summary; thread rollups follow when present. */
+/**
+ * Optimistically applies a label change to a row. `scope` says what changed:
+ * a whole thread (its label union changes the same way) or one message (an
+ * added label joins the thread's union; a removed one may still be on sibling
+ * messages, so the union keeps it until the server refresh).
+ */
 function applyLabelPatch(
   m: GmailMessageSummary,
   addLabelIds: string[],
   removeLabelIds: string[],
+  scope: "thread" | "message" = "message",
 ): GmailMessageSummary {
-  const labelSet = new Set(m.labelIds);
-  for (const lid of removeLabelIds) labelSet.delete(lid);
-  for (const lid of addLabelIds) labelSet.add(lid);
-  const labelIds = [...labelSet];
+  const patch = (ids: string[], removals: string[]) => {
+    const set = new Set(ids);
+    for (const lid of removals) set.delete(lid);
+    for (const lid of addLabelIds) set.add(lid);
+    return [...set];
+  };
+  const labelIds = patch(m.labelIds, removeLabelIds);
   const unread = labelIds.includes("UNREAD");
   const starred = labelIds.includes("STARRED");
   return {
@@ -655,6 +696,10 @@ function applyLabelPatch(
     starred,
     threadUnread: m.threadUnread === undefined ? undefined : unread,
     threadStarred: m.threadStarred === undefined ? undefined : starred,
+    threadLabelIds:
+      m.threadLabelIds === undefined
+        ? undefined
+        : patch(m.threadLabelIds, scope === "thread" ? removeLabelIds : []),
   };
 }
 
@@ -921,7 +966,13 @@ export function useTrashMessage() {
         prevLabels,
       };
     },
-    onError: (_err, _vars, context) => {
+    onError: (err, _vars, context) => {
+      if (isIpcTimeout(err)) {
+        // The backend mirrored it locally and finishes in the background.
+        invalidateMailCaches(qc);
+        return;
+      }
+      toast.error(describeGmailWriteError(err));
       if (!context) return;
       if (context.prevMessage) qc.setQueryData(context.messageKey, context.prevMessage);
       for (const [key, data] of context.prevThreadQueries) qc.setQueryData(key, data);
@@ -983,7 +1034,7 @@ export function useModifyThread() {
       const inThread = (m: GmailMessageSummary) =>
         (m.threadId || m.id) === threadId && (m.accountId ?? accountId) === accountId;
       const applyPatch = (m: GmailMessageSummary) =>
-        applyLabelPatch(m, addLabelIds, removeLabelIds);
+        applyLabelPatch(m, addLabelIds, removeLabelIds, "thread");
 
       qc.setQueriesData(
         { queryKey: ["gmail:messages", accountId] },
@@ -1121,7 +1172,7 @@ export function useTrashThread() {
       });
       // An open reader keeps rendering the conversation — mark it trashed there.
       const threadTrashPatch = <T extends GmailMessageSummary>(m: T): T =>
-        applyLabelPatch(m, ["TRASH"], ["INBOX"]) as T;
+        applyLabelPatch(m, ["TRASH"], ["INBOX"], "thread") as T;
       qc.setQueryData(threadKey, (old: GmailMessageSummary[] | undefined) =>
         old?.map(threadTrashPatch),
       );
@@ -1169,7 +1220,13 @@ export function useTrashThread() {
         prevDetailQueries,
       };
     },
-    onError: (_err, _vars, context) => {
+    onError: (err, _vars, context) => {
+      if (isIpcTimeout(err)) {
+        // The backend mirrored it locally and finishes in the background.
+        invalidateMailCaches(qc);
+        return;
+      }
+      toast.error(describeGmailWriteError(err));
       if (!context) return;
       for (const [key, data] of context.prevMessagesQueries) qc.setQueryData(key, data);
       for (const [key, data] of context.prevCombinedQueries) qc.setQueryData(key, data);
@@ -1265,6 +1322,9 @@ export function useAccountSync(accountId: string | null): SyncStatus | null {
       void qc.invalidateQueries({ queryKey: ["gmail:messages", accountId] });
       void qc.invalidateQueries({ queryKey: ["gmail:searchMessages"] });
       void qc.invalidateQueries({ queryKey: queryKeys.labels(accountId) });
+      // Account-owned view badges and an open conversation (new replies).
+      void qc.invalidateQueries({ queryKey: ["gmail:combinedCounts"] });
+      void qc.invalidateQueries({ queryKey: ["gmail:thread", accountId] });
     }
     prevRef.current = {
       synced: status.synced,
@@ -1449,7 +1509,16 @@ function useUntrashOptimism() {
 
 type UntrashContext = Awaited<ReturnType<ReturnType<typeof useUntrashOptimism>>>;
 
-function rollbackUntrash(qc: ReturnType<typeof useQueryClient>, context?: UntrashContext) {
+function rollbackUntrash(
+  qc: ReturnType<typeof useQueryClient>,
+  err: unknown,
+  context?: UntrashContext,
+) {
+  if (isIpcTimeout(err)) {
+    invalidateMailCaches(qc);
+    return;
+  }
+  toast.error(describeGmailWriteError(err));
   if (!context) return;
   for (const [key, data] of context.prevThreadQueries) qc.setQueryData(key, data);
   for (const [key, data] of context.prevDetailQueries) qc.setQueryData(key, data);
@@ -1533,7 +1602,13 @@ export function useDeleteThreadsForever() {
         prevLabels,
       };
     },
-    onError: (_err, _vars, context) => {
+    onError: (err, _vars, context) => {
+      if (isIpcTimeout(err)) {
+        // The backend mirrored it locally and finishes in the background.
+        invalidateMailCaches(qc);
+        return;
+      }
+      toast.error(describeGmailWriteError(err));
       if (!context) return;
       for (const [key, data] of context.prevMessagesQueries) qc.setQueryData(key, data);
       for (const [key, data] of context.prevCombinedQueries) qc.setQueryData(key, data);
@@ -1564,7 +1639,7 @@ export function useUntrashThread() {
     },
     onMutate: ({ accountId, threadId }) =>
       optimism(accountId, (m) => (m.threadId || m.id) === threadId),
-    onError: (_err, _vars, context) => rollbackUntrash(qc, context),
+    onError: (err, _vars, context) => rollbackUntrash(qc, err, context),
     onSuccess: (_data, { accountId }) => invalidate(accountId),
   });
 }
@@ -1579,7 +1654,7 @@ export function useUntrashMessage() {
       return gmailApi.untrashMessage(params.accountId, params.messageId);
     },
     onMutate: ({ accountId, messageId }) => optimism(accountId, (m) => m.id === messageId),
-    onError: (_err, _vars, context) => rollbackUntrash(qc, context),
+    onError: (err, _vars, context) => rollbackUntrash(qc, err, context),
     onSuccess: (_data, { accountId }) => invalidate(accountId),
   });
 }

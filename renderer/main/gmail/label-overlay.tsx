@@ -14,7 +14,7 @@ import {
 } from "@glaze/core/components";
 import { CheckIcon } from "lucide-react";
 import { useLabels } from "./hooks";
-import { buildLabelTree, flattenLabelTree } from "./label-tree";
+import { buildLabelTree, flattenLabelTree, isAssignableLabel } from "./label-tree";
 import { labelDisplayName } from "./label-names";
 import type { GmailLabel } from "./types";
 
@@ -52,7 +52,7 @@ export function LabelOverlay({
   }, [open]);
 
   const userLabels = flattenLabelTree(
-    buildLabelTree((labelsQuery.data ?? []).filter((l) => l.type === "user")),
+    buildLabelTree((labelsQuery.data ?? []).filter(isAssignableLabel)),
   )
     .map(({ node }) => node.label)
     .filter((l): l is GmailLabel => l != null);

@@ -204,6 +204,8 @@ interface ThreadRow extends MessageRow {
   threadCount: number;
   threadUnread: number;
   threadStarred: number;
+  /** Comma-joined union of every message's labels in the thread. */
+  threadLabels: string | null;
 }
 
 function rowToThreadSummary(row: ThreadRow): GmailMessageSummary {
@@ -212,6 +214,7 @@ function rowToThreadSummary(row: ThreadRow): GmailMessageSummary {
     threadCount: row.threadCount,
     threadUnread: row.threadUnread === 1,
     threadStarred: row.threadStarred === 1,
+    threadLabelIds: row.threadLabels ? row.threadLabels.split(",") : [],
   };
 }
 
@@ -323,6 +326,11 @@ export function upsertMessageDetail(accountId: string, detail: GmailMessageDetai
  * is why sidebar/header unread badges could disagree with what the message
  * list actually showed until the app was relaunched.
  */
+/** Recounts the given labels' total/unread from the local cache. */
+export function recountLabels(accountId: string, labelIds: string[]): void {
+  recomputeLabelCounts(accountId, [...new Set(labelIds)]);
+}
+
 function recomputeLabelCounts(accountId: string, labelIds: string[]): void {
   if (labelIds.length === 0) return;
   const d = getDb();
@@ -475,7 +483,13 @@ function threadPageQuery(matchedSql: string): string {
     )
     SELECT m.*, agg.threadCount AS threadCount,
            agg.threadUnread AS threadUnread,
-           agg.threadStarred AS threadStarred
+           agg.threadStarred AS threadStarred,
+           -- CROSS JOIN pins the order: the thread's messages first (indexed by
+           -- thread), then each one's labels by primary key.
+           (SELECT GROUP_CONCAT(DISTINCT tl.labelId)
+              FROM messages tm
+              CROSS JOIN message_labels tl ON tl.accountId = tm.accountId AND tl.messageId = tm.id
+             WHERE tm.accountId = agg.accountId AND tm.threadId = agg.threadId) AS threadLabels
       FROM agg
       JOIN messages m
         ON m.accountId = agg.accountId AND m.threadId = agg.threadId AND m.date = agg.repDate
@@ -612,6 +626,34 @@ export function filterUnknownIds(accountId: string, ids: string[]): string[] {
     for (const r of rows) known.add(r.id);
   }
   return ids.filter((id) => !known.has(id));
+}
+
+/** Deletes an account's cached messages whose ids aren't in `keep` (mail
+ *  deleted in Gmail while the history feed was unavailable). Returns the count. */
+export function pruneMessagesNotIn(accountId: string, keep: ReadonlySet<string>): number {
+  const d = getDb();
+  const rows = d
+    .prepare("SELECT id, labelIds FROM messages WHERE accountId = ?")
+    .all(accountId) as unknown as { id: string; labelIds: string }[];
+  const gone = rows.filter((r) => !keep.has(r.id));
+  if (gone.length === 0) return 0;
+  const touched = new Set<string>();
+  const delMsg = d.prepare("DELETE FROM messages WHERE accountId = ? AND id = ?");
+  const delLabels = d.prepare("DELETE FROM message_labels WHERE accountId = ? AND messageId = ?");
+  d.exec("BEGIN");
+  try {
+    for (const r of gone) {
+      for (const l of parseLabelIds(r.labelIds)) touched.add(l);
+      delMsg.run(accountId, r.id);
+      delLabels.run(accountId, r.id);
+    }
+    d.exec("COMMIT");
+  } catch (err) {
+    d.exec("ROLLBACK");
+    throw err;
+  }
+  recomputeLabelCounts(accountId, [...touched]);
+  return gone.length;
 }
 
 /** Messages cached for an account (full-sync progress after a resume). */
@@ -1061,10 +1103,78 @@ export function getSyncState(accountId: string): SyncStateRow {
 }
 
 /** Drops a deleted label's message mappings (sync reconciles the rest). */
-export function clearLabelMappings(accountId: string, labelId: string): void {
+// ── Label edits (mirrored locally before Gmail confirms) ────────────────────
+
+/** Inserts a label or updates its name/color, keeping cached counts. */
+export function putLabel(accountId: string, label: GmailLabel): void {
   getDb()
-    .prepare("DELETE FROM message_labels WHERE accountId = ? AND labelId = ?")
-    .run(accountId, labelId);
+    .prepare(`
+      INSERT INTO labels (accountId, id, name, type, unread, total, bgColor, textColor)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(accountId, id) DO UPDATE SET
+        name = excluded.name,
+        type = excluded.type,
+        bgColor = excluded.bgColor,
+        textColor = excluded.textColor
+    `)
+    .run(
+      accountId,
+      label.id,
+      label.name,
+      label.type,
+      label.unread ?? null,
+      label.total ?? null,
+      label.color?.backgroundColor ?? null,
+      label.color?.textColor ?? null,
+    );
+}
+
+/**
+ * Renames/recolors a label, renaming nested labels ("Old/child" → "New/child")
+ * like Gmail does. Returns a revert that restores the previous rows.
+ */
+export function editLabelLocally(
+  accountId: string,
+  labelId: string,
+  edit: { name?: string; color?: { backgroundColor: string; textColor: string } },
+): () => void {
+  const before = getLabels(accountId);
+  const target = before.find((l) => l.id === labelId);
+  if (!target) return () => {};
+  const changed: GmailLabel[] = [];
+  if (edit.name && edit.name !== target.name) {
+    const prefix = `${target.name}/`;
+    for (const l of before) {
+      if (l.id === labelId) changed.push({ ...l, name: edit.name });
+      else if (l.name.startsWith(prefix))
+        changed.push({ ...l, name: `${edit.name}/${l.name.slice(prefix.length)}` });
+    }
+  }
+  if (edit.color) {
+    const own = changed.find((l) => l.id === labelId);
+    if (own) own.color = edit.color;
+    else changed.push({ ...target, color: edit.color });
+  }
+  for (const l of changed) putLabel(accountId, l);
+  const previous = before.filter((l) => changed.some((c) => c.id === l.id));
+  return () => {
+    for (const l of previous) putLabel(accountId, l);
+  };
+}
+
+/**
+ * Removes a label from the cache: the label row and every message's link to
+ * it (both the message_labels rows and the labelIds JSON). Returns a revert.
+ */
+export function removeLabelLocally(accountId: string, labelId: string): () => void {
+  const label = getLabels(accountId).find((l) => l.id === labelId);
+  const messageIds = getMessageIdsForLabel(accountId, labelId);
+  for (const id of messageIds) applyLabelChange(accountId, id, [], [labelId]);
+  getDb().prepare("DELETE FROM labels WHERE accountId = ? AND id = ?").run(accountId, labelId);
+  return () => {
+    if (label) putLabel(accountId, label);
+    for (const id of messageIds) applyLabelChange(accountId, id, [labelId], []);
+  };
 }
 
 export function getKv(key: string): string | null {
@@ -1110,6 +1220,12 @@ export function removeAccountData(accountId: string): void {
     d.prepare("DELETE FROM message_labels WHERE accountId = ?").run(accountId);
     d.prepare("DELETE FROM labels WHERE accountId = ?").run(accountId);
     d.prepare("DELETE FROM sync_state WHERE accountId = ?").run(accountId);
+    // Per-account sync bookkeeping (resume cursor, history seed, backfill flag):
+    // a re-added account must start its first sync from scratch.
+    const kvKeys = ["fullSyncCursor", "fullSyncSeed", "fullSyncRefresh", "spamTrashBackfilled"].map(
+      (prefix) => `${prefix}:${accountId}`,
+    );
+    d.prepare(`DELETE FROM kv WHERE key IN (${kvKeys.map(() => "?").join(", ")})`).run(...kvKeys);
     d.exec("COMMIT");
   } catch (err) {
     d.exec("ROLLBACK");

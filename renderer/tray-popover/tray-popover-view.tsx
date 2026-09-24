@@ -226,15 +226,25 @@ export function TrayPopoverView() {
     }
   }
 
-  async function handleArchive(accountId: string, threadId: string) {
-    await gmailApi.modifyThread({ accountId, threadId, removeLabelIds: ["INBOX"] });
+  /** Runs a row action, then refreshes this popover and the main window. A
+      failure that surfaces later is toasted by the main window. */
+  async function runAction(label: string, action: () => Promise<unknown>) {
+    try {
+      await action();
+    } catch (error) {
+      console.log(`[TrayPopover:${label}] failed`, { error: String(error) });
+    }
+    void trayApi.mailChanged().catch(() => {});
     await queryClient.invalidateQueries({ queryKey: ["tray:snapshot"] });
   }
 
-  async function handleTrash(accountId: string, threadId: string) {
-    await gmailApi.trashThread(accountId, threadId);
-    await queryClient.invalidateQueries({ queryKey: ["tray:snapshot"] });
-  }
+  const handleArchive = (accountId: string, threadId: string) =>
+    runAction("archive", () =>
+      gmailApi.modifyThread({ accountId, threadId, removeLabelIds: ["INBOX"] }),
+    );
+
+  const handleTrash = (accountId: string, threadId: string) =>
+    runAction("trash", () => gmailApi.trashThread(accountId, threadId));
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-canvas text-foreground">

@@ -8,6 +8,7 @@
  */
 
 import { app, ipcMain, logger } from "@glaze/core/backend";
+import { setPendingMailto } from "../services/mailto-target.js";
 import { listAccounts } from "../services/account-store.js";
 import {
   countInboxUnreadAll,
@@ -71,10 +72,20 @@ export function registerTrayPopoverHandlers(): void {
     }
   });
 
+  // A blank mailto target through the same pull handoff as mailto: links —
+  // a main window that's still loading picks it up on mount (a bare broadcast
+  // would be lost before its listener exists).
   ipcMain.handle("tray:compose", async () => {
-    await focusMainWindow();
-    ipcMain.broadcast("compose:new");
+    setPendingMailto({ to: "", cc: "", subject: "", body: "" });
     hideTrayPopover();
+    await focusMainWindow();
+    ipcMain.broadcast("compose:mailto");
+  });
+
+  // The popover changed mail through the shared gmail:* handlers; the main
+  // window has its own query cache, so tell it to refresh.
+  ipcMain.handle("tray:mailChanged", async () => {
+    ipcMain.broadcast("gmail:mail-changed");
   });
 
   ipcMain.handle("tray:sync", async () => {

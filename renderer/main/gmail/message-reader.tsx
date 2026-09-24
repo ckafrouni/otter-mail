@@ -49,7 +49,7 @@ import {
 import { gmailApi } from "./api";
 import { CategoryChip, InboxChip, LabelChip, isCategoryLabelId } from "./label-chip";
 import { SenderAvatar } from "./sender-avatar";
-import { decodeEntities } from "./text";
+import { decodeEntities, htmlToText } from "./text";
 import { LabelPickerMenu } from "./label-picker-menu";
 import { parseAddressEntry, splitAddressList } from "./address";
 import { matchesCommand, useCommandHandlers } from "../keybindings/dispatch";
@@ -1323,11 +1323,21 @@ function computeReply(
   return { to: fromSelf ? last.to : last.fromEmail, cc: undefined };
 }
 
-function forwardBlock(source: GmailMessageSummary & { bodyText?: string | null }): string {
+/** "Re: x" / "Fwd: x" without stacking prefixes (any case; FW/Fwd alike). */
+function prefixSubject(prefix: "Re" | "Fwd", subject: string): string {
+  const already = prefix === "Re" ? /^re:/i : /^(fwd?|fw):/i;
+  return already.test(subject.trim()) ? subject : `${prefix}: ${subject}`;
+}
+
+function forwardBlock(
+  source: GmailMessageSummary & { bodyText?: string | null; bodyHtml?: string | null },
+): string {
   const fromDisplay = source.fromName
     ? `${source.fromName} <${source.fromEmail}>`
     : source.fromEmail;
-  return `\n\n---------- Forwarded message ----------\nFrom: ${fromDisplay}\nDate: ${formatFullDate(source.date)}\nSubject: ${source.subject}\nTo: ${source.to}\n\n${source.bodyText ?? ""}`;
+  // HTML-only mail has no text part — derive it, or the forward arrives empty.
+  const body = source.bodyText ?? (source.bodyHtml ? htmlToText(source.bodyHtml) : "");
+  return `\n\n---------- Forwarded message ----------\nFrom: ${fromDisplay}\nDate: ${formatFullDate(source.date)}\nSubject: ${source.subject}\nTo: ${source.to}\n\n${body}`;
 }
 
 /**
@@ -1436,13 +1446,7 @@ function InlineComposer({
   }, [mode]);
 
   const subject =
-    mode === "forward"
-      ? baseSubject.startsWith("Fwd:")
-        ? baseSubject
-        : `Fwd: ${baseSubject}`
-      : baseSubject.startsWith("Re:")
-        ? baseSubject
-        : `Re: ${baseSubject}`;
+    mode === "forward" ? prefixSubject("Fwd", baseSubject) : prefixSubject("Re", baseSubject);
 
   // Half-written replies/forwards persist as thread drafts.
   const draft = useDraftAutosave({
@@ -1837,12 +1841,17 @@ export function MessageReader({
   // From here on the conversation is renderable — a thread of one message
   // falls back to the opened message itself.
   const rows: GmailMessageSummary[] = threadMessages.length > 0 ? threadMessages : [message];
-  const lastRow = rows[rows.length - 1];
+  // Reply/forward target the last real message — never your own saved draft.
+  const sentRows = rows.filter((m) => !m.labelIds.includes("DRAFT"));
+  const lastRow = sentRows[sentRows.length - 1] ?? rows[rows.length - 1];
+  // Labels belong to the conversation: shown and edited as the union over it.
+  const conversationLabelIds = [...new Set(rows.flatMap((m) => m.labelIds))];
+  const conversationId = threadId ?? message.threadId ?? message.id;
 
   const isUnread = isThread ? threadMessages.some((m) => m.unread) : message.unread;
 
   const labelsById = new Map((labelsQuery.data ?? []).map((l) => [l.id, l]));
-  const messageLabels = message.labelIds
+  const messageLabels = conversationLabelIds
     .map((id) => labelsById.get(id))
     .filter((l): l is GmailLabel => l != null && l.type === "user");
 
@@ -1872,6 +1881,8 @@ export function MessageReader({
           messageId: last.id,
           addLabelIds: ["UNREAD"],
         });
+        // Back to the list, or the auto mark-read would undo it (Gmail does this).
+        onDeselect?.();
       }
       return;
     }
@@ -1881,6 +1892,7 @@ export function MessageReader({
       addLabelIds: isUnread ? undefined : ["UNREAD"],
       removeLabelIds: isUnread ? ["UNREAD"] : undefined,
     });
+    if (!isUnread) onDeselect?.();
   };
 
   const handleArchive = () => {
@@ -2033,12 +2045,14 @@ export function MessageReader({
             >
               {message.subject || "(no subject)"}
             </span>
-            {message.labelIds.includes("INBOX") ||
-            message.labelIds.some(isCategoryLabelId) ||
+            {conversationLabelIds.includes("INBOX") ||
+            conversationLabelIds.some(isCategoryLabelId) ||
             messageLabels.length > 0 ? (
               <span className="flex min-w-0 shrink items-center gap-1 overflow-hidden">
-                {message.labelIds.includes("INBOX") ? <InboxChip onRemove={handleArchive} /> : null}
-                {message.labelIds.filter(isCategoryLabelId).map((id) => (
+                {conversationLabelIds.includes("INBOX") ? (
+                  <InboxChip onRemove={handleArchive} />
+                ) : null}
+                {conversationLabelIds.filter(isCategoryLabelId).map((id) => (
                   <CategoryChip key={id} id={id} />
                 ))}
                 {messageLabels.map((label) => (
@@ -2047,9 +2061,9 @@ export function MessageReader({
                     label={label}
                     onRemove={() => {
                       console.log("[MessageReader:removeLabelChip]", { labelId: label.id });
-                      void modifyMessage.mutateAsync({
+                      void modifyThread.mutateAsync({
                         accountId,
-                        messageId: message.id,
+                        threadId: conversationId,
                         removeLabelIds: [label.id],
                       });
                     }}
@@ -2119,8 +2133,12 @@ export function MessageReader({
               </IconBtn>
             </HintTooltip>
           )}
-          <LabelPickerMenu accountId={accountId} messageId={message.id} labelIds={message.labelIds}>
-            <IconBtn label="Move to label">
+          <LabelPickerMenu
+            accountId={accountId}
+            threadId={conversationId}
+            labelIds={conversationLabelIds}
+          >
+            <IconBtn label="Label">
               <FolderIcon className="size-4" />
             </IconBtn>
           </LabelPickerMenu>

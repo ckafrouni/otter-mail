@@ -19,6 +19,11 @@ import {
   RemoveFormattingIcon,
 } from "lucide-react";
 
+/** Marks the signature block inside the editor. */
+const SIGNATURE_ATTR = "data-signature";
+
+const signatureBlock = (html: string) => `<br><br><div ${SIGNATURE_ATTR}="">${html}</div>`;
+
 export type RichTextRef = {
   getHTML: () => string;
   getText: () => string;
@@ -144,16 +149,24 @@ export const RichTextArea = forwardRef<
     focus: () => editorRef.current?.focus(),
   }));
 
+  // The signature lives in its own marked block so a later change (switching
+  // the From account) swaps just that block — never the user's text.
   const seededRef = useRef(false);
+  const signatureRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     const el = editorRef.current;
-    if (!seededRef.current && el && (initialHTML || signatureHTML)) {
+    if (!el) return;
+    const signatureChanged = signatureHTML !== signatureRef.current;
+    signatureRef.current = signatureHTML;
+    const block = el.querySelector<HTMLElement>(`[${SIGNATURE_ATTR}]`);
+
+    if (!seededRef.current && (initialHTML || signatureHTML)) {
       seededRef.current = true;
-      el.innerHTML = (initialHTML ?? "") + (signatureHTML ? `<br><br>${signatureHTML}` : "");
-      emitChange();
-      if (signatureHTML) {
-        // Collapse the caret to the very start so typing lands above the
-        // signature instead of inside/after it.
+      // Content that arrives late must not clobber what the user already typed.
+      if (!el.textContent?.trim()) el.innerHTML = initialHTML ?? "";
+      if (signatureHTML && !block) {
+        el.insertAdjacentHTML("beforeend", signatureBlock(signatureHTML));
+        // Caret at the very start so typing lands above the signature.
         const range = document.createRange();
         range.setStart(el, 0);
         range.collapse(true);
@@ -161,8 +174,14 @@ export const RichTextArea = forwardRef<
         selection?.removeAllRanges();
         selection?.addRange(range);
       }
+      emitChange();
+    } else if (seededRef.current && signatureChanged) {
+      if (block && signatureHTML) block.innerHTML = signatureHTML;
+      else if (block) block.remove();
+      else if (signatureHTML) el.insertAdjacentHTML("beforeend", signatureBlock(signatureHTML));
+      emitChange();
     }
-    if (autoFocus) editorRef.current?.focus();
+    if (autoFocus) el.focus();
   }, [autoFocus, initialHTML, signatureHTML]);
 
   const refreshToolbar = () => {

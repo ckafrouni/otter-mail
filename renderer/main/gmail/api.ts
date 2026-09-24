@@ -13,6 +13,27 @@ import type {
 const ipc = <T = unknown>(channel: string, params?: unknown): Promise<T> =>
   window.glazeAPI.glaze.ipc.invoke<T>(channel, params);
 
+/**
+ * For calls that can outlast the 5s IPC timeout (file dialogs, big downloads):
+ * the backend acknowledges at once and reports the outcome as a `task:done`
+ * notification carrying our task id (see `runAsTask` in the gmail handlers).
+ */
+const task = <T>(channel: string, params: Record<string, unknown>): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const taskId = crypto.randomUUID();
+    const off = window.glazeAPI.glaze.ipc.onNotification("task:done", (payload: unknown) => {
+      const p = payload as { taskId?: string; result?: T; error?: string } | undefined;
+      if (p?.taskId !== taskId) return;
+      off();
+      if (p.error) reject(new Error(p.error));
+      else resolve(p.result as T);
+    });
+    ipc(channel, { ...params, taskId }).catch((err: unknown) => {
+      off();
+      reject(err);
+    });
+  });
+
 export type ListMessagesParams = {
   accountId: string;
   labelIds?: string[];
@@ -128,6 +149,9 @@ export type SendMessageParams = {
 export type SaveDraftParams = {
   accountId: string;
   draftId?: string;
+  /** Stable per composer: the backend serializes its saves and remembers its
+      draft id, so a timed-out first save never leads to a duplicate draft. */
+  sessionKey?: string;
   to: string;
   cc?: string;
   bcc?: string;
@@ -270,6 +294,10 @@ export const gmailApi = {
   deleteDraft: (accountId: string, draftId: string): Promise<{ ok: boolean }> =>
     ipc("gmail:deleteDraft", { accountId, draftId }),
 
+  /** Deletes a composer session's draft when its id never reached the renderer. */
+  deleteSessionDraft: (accountId: string, sessionKey: string): Promise<{ ok: boolean }> =>
+    ipc("gmail:deleteDraft", { accountId, sessionKey }),
+
   getDraftForMessage: (
     accountId: string,
     messageId: string,
@@ -278,10 +306,10 @@ export const gmailApi = {
     ipc("gmail:getDraftForMessage", { accountId, messageId, threadId }),
 
   getAttachment: (params: GetAttachmentParams): Promise<GetAttachmentResult> =>
-    ipc("gmail:getAttachment", params),
+    task("gmail:getAttachment", params),
 
   getAttachmentData: (params: GetAttachmentDataParams): Promise<{ base64: string; size: number }> =>
-    ipc("gmail:getAttachmentData", params),
+    task("gmail:getAttachmentData", params),
 
   openComposeAttachment: (params: { name: string; base64: string }): Promise<{ ok: boolean }> =>
     ipc("gmail:openComposeAttachment", params),
@@ -290,13 +318,13 @@ export const gmailApi = {
   proxyImage: (url: string): Promise<{ dataUrl: string }> => ipc("gmail:proxyImage", { url }),
 
   openAttachment: (params: AttachmentFileParams): Promise<{ ok: boolean }> =>
-    ipc("gmail:openAttachment", params),
+    task("gmail:openAttachment", params),
 
   dragAttachment: (params: AttachmentFileParams): Promise<{ ok: boolean }> =>
-    ipc("gmail:dragAttachment", params),
+    task("gmail:dragAttachment", params),
 
   pickAttachments: (existingBytes: number): Promise<PickAttachmentsResult> =>
-    ipc("gmail:pickAttachments", { existingBytes }),
+    task("gmail:pickAttachments", { existingBytes }),
 
   suggestContacts: (params: { q: string; limit?: number }): Promise<ContactSuggestion[]> =>
     ipc("gmail:suggestContacts", params),

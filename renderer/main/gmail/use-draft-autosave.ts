@@ -42,6 +42,8 @@ export function useDraftAutosave({
   const adoptedThreadRef = useRef<string | null>(null);
   const doneRef = useRef(false);
   const savingRef = useRef(false);
+  const unmountedRef = useRef(false);
+  const sessionKeyRef = useRef(crypto.randomUUID());
   const snapshotRef = useRef(signal);
 
   const signalRef = useRef(signal);
@@ -86,6 +88,7 @@ export function useDraftAutosave({
       const res = await gmailApi.saveDraft({
         accountId: account,
         draftId: draftIdRef.current ?? undefined,
+        sessionKey: sessionKeyRef.current,
         ...payload,
         threadId: threadRef.current ?? adoptedThreadRef.current ?? undefined,
       });
@@ -97,7 +100,9 @@ export function useDraftAutosave({
     } catch (err) {
       console.log("[useDraftAutosave:saveFailed]", { error: String(err) });
       setSaveState("error");
-      setTimeout(() => void triggerRef.current(), 5000);
+      // Retry while the composer is open; a closed one's last save carries on
+      // in the backend (same session, so no duplicate draft).
+      if (!unmountedRef.current) setTimeout(() => void triggerRef.current(), 5000);
     } finally {
       savingRef.current = false;
     }
@@ -123,6 +128,7 @@ export function useDraftAutosave({
   // Flush the last edits and refresh the lists once, on the way out.
   useEffect(
     () => () => {
+      unmountedRef.current = true;
       void Promise.resolve(triggerRef.current()).finally(() => refreshRef.current());
     },
     [],
@@ -133,9 +139,13 @@ export function useDraftAutosave({
     doneRef.current = true;
     // A flush kicked off by unmounting may still be creating the draft.
     if (pendingRef.current) await pendingRef.current;
-    if (opts?.deleteDraft && draftIdRef.current && draftAccountRef.current) {
+    // Delete through the session: the backend waits for any save still in
+    // flight and removes whatever draft it became (even if its id never
+    // reached us).
+    const account = draftAccountRef.current ?? accountRef.current;
+    if (opts?.deleteDraft && account) {
       try {
-        await gmailApi.deleteDraft(draftAccountRef.current, draftIdRef.current);
+        await gmailApi.deleteSessionDraft(account, sessionKeyRef.current);
       } catch {
         // sync reconciles leftovers
       }

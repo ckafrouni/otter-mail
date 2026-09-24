@@ -8,13 +8,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuSub,
 } from "./menu";
-import { useLabels, useModifyMessage } from "./hooks";
-import { buildLabelTree, type LabelTreeNode } from "./label-tree";
+import { useLabels, useModifyThread } from "./hooks";
+import { buildLabelTree, type LabelTreeNode, isAssignableLabel } from "./label-tree";
 
 type LabelPickerMenuProps = {
   /** Owning account of the message (per-row account in Combined mode). */
   accountId: string;
-  messageId: string;
+  /** The conversation to label (labels apply to the whole thread, like Gmail). */
+  threadId: string;
+  /** Labels currently on the conversation (union over its messages). */
   labelIds: string[];
   /** Trigger element (rendered via asChild — must accept a ref). */
   children: React.ReactNode;
@@ -77,23 +79,18 @@ export function renderLabelMenuNodes(
   return nodes.map(renderNode);
 }
 
-export function LabelPickerMenu({
-  accountId,
-  messageId,
-  labelIds,
-  children,
-}: LabelPickerMenuProps) {
+export function LabelPickerMenu({ accountId, threadId, labelIds, children }: LabelPickerMenuProps) {
   const labelsQuery = useLabels(accountId);
-  const modifyMessage = useModifyMessage();
+  const modifyThread = useModifyThread();
 
-  const tree = buildLabelTree((labelsQuery.data ?? []).filter((l) => l.type === "user"));
+  const tree = buildLabelTree((labelsQuery.data ?? []).filter(isAssignableLabel));
   const applied = new Set(labelIds);
 
   const handleToggle = (labelId: string, checked: boolean) => {
-    console.log("[LabelPickerMenu:toggle]", { accountId, messageId, labelId, checked });
-    void modifyMessage.mutateAsync({
+    console.log("[LabelPickerMenu:toggle]", { accountId, threadId, labelId, checked });
+    void modifyThread.mutateAsync({
       accountId,
-      messageId,
+      threadId,
       addLabelIds: checked ? [labelId] : undefined,
       removeLabelIds: checked ? undefined : [labelId],
     });

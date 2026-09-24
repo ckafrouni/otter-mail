@@ -19,6 +19,7 @@ export const trayApi = {
   openThread: (accountId: string, messageId: string) =>
     ipc<void>("tray:openThread", { accountId, messageId }),
   compose: () => ipc<void>("tray:compose"),
+  mailChanged: () => ipc<void>("tray:mailChanged"),
   sync: () => ipc<{ ok: boolean }>("tray:sync"),
   openApp: () => ipc<void>("tray:openApp"),
   quit: () => ipc<void>("tray:quit"),

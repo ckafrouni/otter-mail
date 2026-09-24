@@ -51,7 +51,7 @@ import { LabelChip, InboxChip, ImportantMarker } from "./label-chip";
 import { LabelOverlay, type LabelOverlayMode } from "./label-overlay";
 import { renderLabelMenuNodes } from "./label-picker-menu";
 import { INBOX_VIEW_ID, STARRED_VIEW_ID, SENT_VIEW_ID, DRAFTS_VIEW_ID } from "./custom-views";
-import { buildLabelTree } from "./label-tree";
+import { buildLabelTree, isAssignableLabel } from "./label-tree";
 import { isTypingTarget } from "./keyboard";
 import { useCommandHandlers } from "../keybindings/dispatch";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
@@ -60,6 +60,7 @@ import { decodeEntities } from "./text";
 import { parseAddressEntry, splitAddressList } from "./address";
 import type { GmailAccount, GmailLabel, GmailMessageSummary, ViewRule } from "./types";
 import { pickAdvanceTarget } from "./advance-direction";
+import { beginUndoGroup, clearUndo } from "./undo";
 
 type ResolveLabel = (accountId: string | undefined, labelId: string) => GmailLabel | undefined;
 
@@ -97,6 +98,12 @@ type MessageListProps = {
   searchQuery: string;
 };
 
+/** A row's labels: rows are conversations, so the union over its messages
+ *  (falls back to the message's own labels for message-level search rows). */
+function rowLabels(message: GmailMessageSummary): string[] {
+  return message.threadLabelIds ?? message.labelIds;
+}
+
 function ruleMailboxName(rule: ViewRule, resolveLabel: ResolveLabel): string | null {
   if (rule.allOf.length === 0) return null;
   return rule.allOf
@@ -127,8 +134,8 @@ function resolveCombinedMeta(
   const matched = combined.rules.find(
     (r) =>
       r.accountId === message.accountId &&
-      r.allOf.every((id) => message.labelIds.includes(id)) &&
-      !r.noneOf.some((id) => message.labelIds.includes(id)),
+      r.allOf.every((id) => rowLabels(message).includes(id)) &&
+      !r.noneOf.some((id) => rowLabels(message).includes(id)),
   );
   // Thread representatives may not carry the matched labels themselves (e.g.
   // your own reply in an Inbox view) — still show which account the row is from.
@@ -186,6 +193,9 @@ type MessageRowProps = {
   onDeleteForever: () => void;
   /** Opens this conversation in the in-app Hermes chat panel. */
   onChatAssistant: () => void;
+  /** Closes the reader — used after marking the open row unread, so the
+      reader's auto mark-read doesn't immediately undo it (Gmail does this too). */
+  onDeselect: () => void;
 };
 
 function MessageRow({
@@ -200,6 +210,7 @@ function MessageRow({
   viewLabelIds,
   onDeleteForever,
   onChatAssistant,
+  onDeselect,
 }: MessageRowProps) {
   const modifyMessage = useModifyMessage();
   const modifyThread = useModifyThread();
@@ -210,7 +221,8 @@ function MessageRow({
   const threadId = message.threadId || message.id;
   const threadCount = message.threadCount ?? 1;
 
-  const messageLabels = message.labelIds
+  const labelIds = rowLabels(message);
+  const messageLabels = labelIds
     .filter((id) => !viewLabelIds.has(id))
     .map((id) => resolveLabel(ownerAccountId, id))
     .filter((l): l is GmailLabel => l != null && l.type === "user");
@@ -220,14 +232,15 @@ function MessageRow({
   const hiddenLabelCount = messageLabels.length - shownLabels.length;
 
   const ownerLabels = useLabels(ownerAccountId);
-  const labelTree = buildLabelTree((ownerLabels.data ?? []).filter((l) => l.type === "user"));
-  const appliedLabels = new Set(message.labelIds);
+  const labelTree = buildLabelTree((ownerLabels.data ?? []).filter(isAssignableLabel));
+  const appliedLabels = new Set(labelIds);
 
+  // Labels apply to the whole conversation, like Gmail's list.
   const handleLabelToggle = (labelId: string, checked: boolean) => {
-    console.log("[MessageList:labelToggle]", { messageId: message.id, labelId, checked });
-    void modifyMessage.mutateAsync({
+    console.log("[MessageList:labelToggle]", { threadId, labelId, checked });
+    void modifyThread.mutateAsync({
       accountId: ownerAccountId,
-      messageId: message.id,
+      threadId,
       addLabelIds: checked ? [labelId] : undefined,
       removeLabelIds: checked ? undefined : [labelId],
     });
@@ -248,10 +261,11 @@ function MessageRow({
         messageId: message.id,
         addLabelIds: ["UNREAD"],
       });
+      if (selected) onDeselect();
     }
   };
 
-  const junk = message.labelIds.includes("SPAM");
+  const junk = labelIds.includes("SPAM");
 
   const handleJunk = () => {
     console.log("[MessageList:junkToggle]", { threadId, junk });
@@ -284,7 +298,7 @@ function MessageRow({
     }
   };
 
-  const inInbox = message.labelIds.includes("INBOX");
+  const inInbox = labelIds.includes("INBOX");
 
   const handleArchive = (e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -297,7 +311,7 @@ function MessageRow({
     });
   };
 
-  const trashed = message.labelIds.includes("TRASH");
+  const trashed = labelIds.includes("TRASH");
 
   const handleTrash = (e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -371,7 +385,7 @@ function MessageRow({
                   {unread && !selected ? (
                     <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
                   ) : null}
-                  {message.labelIds.includes("IMPORTANT") ? <ImportantMarker muted /> : null}
+                  {labelIds.includes("IMPORTANT") ? <ImportantMarker muted /> : null}
                   {isDraft ? (
                     <span className="shrink-0 text-sm font-semibold leading-snug text-destructive-foreground">
                       Draft
@@ -431,9 +445,9 @@ function MessageRow({
                 {decodeEntities(message.snippet) || " "}
               </span>
               {/* Chips only when they add something beyond the current view. */}
-              {(showInboxChip && message.labelIds.includes("INBOX")) || shownLabels.length > 0 ? (
+              {(showInboxChip && labelIds.includes("INBOX")) || shownLabels.length > 0 ? (
                 <div className="mt-1 flex h-4.5 items-center gap-1 overflow-hidden">
-                  {showInboxChip && message.labelIds.includes("INBOX") ? (
+                  {showInboxChip && labelIds.includes("INBOX") ? (
                     <InboxChip selected={selected} />
                   ) : null}
                   {shownLabels.map((label) => (
@@ -478,7 +492,7 @@ function MessageRow({
             Open in Hermes chat
           </ContextMenuItem>
           <ContextMenuSeparator />
-          <ContextMenuSub label="Move to label">
+          <ContextMenuSub label="Label">
             {labelTree.length === 0 ? (
               <ContextMenuItem disabled>No labels</ContextMenuItem>
             ) : (
@@ -814,8 +828,15 @@ export function MessageList({
   useEffect(() => {
     selectionRef.current?.(checkedRowsRef.current);
   }, [selectionSig]);
-  const bulk = (label: string, run: (m: GmailMessageSummary) => void) => {
+  /** Runs an action on every checked row. `undoable` actions register one
+      undo per row; grouped, a single z restores the whole selection. */
+  const bulk = (
+    label: string,
+    run: (m: GmailMessageSummary) => void,
+    { undoable = true }: { undoable?: boolean } = {},
+  ) => {
     console.log("[MessageList:bulk]", { action: label, count: checkedRows.length });
+    if (undoable) beginUndoGroup(checkedRows.length);
     for (const m of checkedRows) run(m);
     clearChecked();
   };
@@ -858,6 +879,7 @@ export function MessageList({
           threadId: m.threadId || m.id,
           removeLabelIds: ["UNREAD"],
         }),
+      { undoable: false }, // mark-read never registers an undo
     );
   const bulkUntrash = () =>
     bulk(
@@ -867,6 +889,7 @@ export function MessageList({
           accountId: m.accountId ?? accountId,
           threadId: m.threadId || m.id,
         }),
+      { undoable: false },
     );
   const listDeleteForever = useDeleteThreadsForever();
   const [confirmDeleteRows, setConfirmDeleteRows] = useState<GmailMessageSummary[] | null>(null);
@@ -884,6 +907,8 @@ export function MessageList({
     for (const [owner, threadIds] of byAccount) {
       void listDeleteForever.mutateAsync({ accountId: owner, threadIds });
     }
+    // Nothing to undo into: an older undo would now target deleted mail.
+    clearUndo();
     clearChecked();
   };
   const bulkNotJunk = () =>
@@ -900,9 +925,11 @@ export function MessageList({
   // Trash/spam rows only surface in their own views, so a uniform selection
   // decides the bar's vocabulary; mixed selections fall back to the default.
   const allTrashed =
-    checkedRows.length > 0 && checkedRows.every((m) => m.labelIds.includes("TRASH"));
+    checkedRows.length > 0 && checkedRows.every((m) => rowLabels(m).includes("TRASH"));
   const allJunk =
-    !allTrashed && checkedRows.length > 0 && checkedRows.every((m) => m.labelIds.includes("SPAM"));
+    !allTrashed &&
+    checkedRows.length > 0 &&
+    checkedRows.every((m) => rowLabels(m).includes("SPAM"));
 
   // Delete acts on the multi-selection when there is one; read through a ref so
   // the window listener (mounted once) sees the current rows.
@@ -1031,11 +1058,13 @@ export function MessageList({
       const prev = idx === -1 ? rows[0] : rows[idx - 1];
       if (prev) select(prev);
     }),
+    // With rows multi-selected, triage keys act on the whole selection.
     "message.archive": rowCommand(({ row, owner, threadId, advance }) => {
+      if (checkedRef.current.size > 0) return bulkArchive();
       if (!row) return false;
       // Archived rows un-archive; rows still in the inbox archive (and
       // advance, since they leave the current view).
-      const rowInInbox = row.labelIds.includes("INBOX");
+      const rowInInbox = rowLabels(row).includes("INBOX");
       if (rowInInbox) advance();
       void listModifyThread.mutateAsync({
         accountId: owner,
@@ -1051,7 +1080,7 @@ export function MessageList({
       }
       if (!row) return false;
       // Trashed rows restore in place; live rows trash and advance.
-      if (row.labelIds.includes("TRASH")) {
+      if (rowLabels(row).includes("TRASH")) {
         void listUntrashThread.mutateAsync({ accountId: owner, threadId });
       } else {
         advance();
@@ -1059,9 +1088,10 @@ export function MessageList({
       }
     }),
     "message.junk": rowCommand(({ row, owner, threadId, advance }) => {
+      if (checkedRef.current.size > 0) return allJunk ? bulkNotJunk() : bulkJunk();
       if (!row) return false;
       // Junk rows come back to the inbox; either way the row leaves the view.
-      const rowJunk = row.labelIds.includes("SPAM");
+      const rowJunk = rowLabels(row).includes("SPAM");
       advance();
       void listModifyThread.mutateAsync({
         accountId: owner,
@@ -1080,6 +1110,7 @@ export function MessageList({
       });
     }),
     "message.markUnread": rowCommand(({ row, owner }) => {
+      if (checkedRef.current.size > 0) return bulkMarkUnread();
       if (!row) return false;
       void listModifyMessage.mutateAsync({
         accountId: owner,
@@ -1091,6 +1122,7 @@ export function MessageList({
       onDeselect();
     }),
     "message.markRead": rowCommand(({ row, owner, threadId }) => {
+      if (checkedRef.current.size > 0) return bulkMarkRead();
       if (!row) return false;
       void listModifyThread.mutateAsync({ accountId: owner, threadId, removeLabelIds: ["UNREAD"] });
     }),
@@ -1321,6 +1353,7 @@ export function MessageList({
                 combinedMeta={resolveCombinedMeta(message, combined, accounts, resolveLabel)}
                 showInboxChip={!inInboxContext}
                 onDeleteForever={() => setConfirmDeleteRows([message])}
+                onDeselect={onDeselect}
                 onChatAssistant={() => {
                   // Open this conversation in the reader so it becomes the
                   // chat panel's attached context, then reveal the panel.
@@ -1465,7 +1498,7 @@ export function MessageList({
         }}
         mode={labelOverlay ?? "label"}
         accountId={selectedOwner}
-        appliedLabelIds={selectedRow?.labelIds ?? []}
+        appliedLabelIds={selectedRow ? rowLabels(selectedRow) : []}
         currentLabelId={moveContextLabelId}
         onPick={handleOverlayPick}
       />

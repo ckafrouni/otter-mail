@@ -51,7 +51,8 @@ export const RecipientInput = forwardRef<
   };
 
   const handleKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (!open) return;
+    // Modified keys (⌘↩ send) belong to the composer, not the suggestions.
+    if (!open || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setActiveIdx((i) => (i + 1) % suggestions.length);

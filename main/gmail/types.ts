@@ -44,6 +44,9 @@ export interface GmailMessageSummary {
   threadCount?: number;
   threadUnread?: boolean;
   threadStarred?: boolean;
+  /** Union of every message's labels in the thread (list rows are threads:
+   *  a thread is "in the Inbox" or "labelled X" if any of its messages is). */
+  threadLabelIds?: string[];
   /** RFC 2822 reply headers — captured on Gmail fetches and persisted, never returned by store reads. */
   messageIdHeader?: string;
   referencesHeader?: string;

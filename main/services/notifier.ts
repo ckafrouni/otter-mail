@@ -56,6 +56,7 @@ export async function notifyNewMail(
     const fresh = added.filter(
       (m) =>
         m.date > cutoff &&
+        m.unread && // already read elsewhere (phone, Gmail web) — nothing to announce
         m.fromEmail.toLowerCase() !== ownEmail &&
         (settings.notificationsMode === "all" || m.labelIds.includes("INBOX")),
     );
