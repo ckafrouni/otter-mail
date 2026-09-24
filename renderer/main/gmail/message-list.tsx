@@ -183,6 +183,8 @@ type MessageRowProps = {
   combinedMeta: CombinedMeta | null;
   /** Mark rows still in the inbox (shown when browsing non-inbox views). */
   showInboxChip: boolean;
+  /** Labels that define the current view; every row has them, so no chip. */
+  viewLabelIds: ReadonlySet<string>;
   /** Opens the permanent-delete confirm (offered on trashed/junk rows only). */
   onDeleteForever: () => void;
   /** Slack handoff seeded with this conversation. */
@@ -200,6 +202,7 @@ function MessageRow({
   resolveLabel,
   combinedMeta,
   showInboxChip,
+  viewLabelIds,
   onDeleteForever,
   onAskAssistant,
   onChatAssistant,
@@ -214,8 +217,13 @@ function MessageRow({
   const threadCount = message.threadCount ?? 1;
 
   const messageLabels = message.labelIds
+    .filter((id) => !viewLabelIds.has(id))
     .map((id) => resolveLabel(ownerAccountId, id))
     .filter((l): l is GmailLabel => l != null && l.type === "user");
+  // At most two chips; the rest collapse into "+N".
+  const MAX_CHIPS = 2;
+  const shownLabels = messageLabels.slice(0, MAX_CHIPS);
+  const hiddenLabelCount = messageLabels.length - shownLabels.length;
 
   const ownerLabels = useLabels(ownerAccountId);
   const labelTree = buildLabelTree((ownerLabels.data ?? []).filter((l) => l.type === "user"));
@@ -340,17 +348,23 @@ function MessageRow({
                   : "hover:bg-sidebar-row-hover",
             ].join(" ")}
           >
-            <div className="flex min-w-0 flex-1 flex-col gap-px">
+            <div
+              className={[
+                "flex min-w-0 flex-1 flex-col gap-px transition-opacity",
+                // Read mail recedes; hover or selection brings it back.
+                !unread && !selected ? "opacity-65 group-hover:opacity-100 dark:opacity-55" : "",
+              ].join(" ")}
+            >
               <div className="flex items-center justify-between gap-2">
                 <span className="flex min-w-0 flex-1 items-center gap-1.5">
                   {unread && !selected ? (
                     <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
                   ) : null}
-                  {message.labelIds.includes("IMPORTANT") ? <ImportantMarker /> : null}
+                  {message.labelIds.includes("IMPORTANT") ? <ImportantMarker muted /> : null}
                   <span
                     className={[
                       "min-w-0 truncate text-sm leading-snug",
-                      unread ? "font-semibold text-foreground" : "font-medium text-foreground/90",
+                      unread ? "font-semibold text-foreground" : "font-medium text-foreground",
                     ].join(" ")}
                   >
                     {message.fromName || message.fromEmail}
@@ -387,29 +401,22 @@ function MessageRow({
                   >
                     <BotMessageSquareIcon className="size-3.5" />
                   </button>
-                  {combinedMeta ? (
-                    <span className="flex items-center gap-1 text-2xs">
-                      {combinedMeta.mailbox ? (
-                        <span className="text-muted-foreground/70">{combinedMeta.mailbox} -</span>
-                      ) : null}
-                      <span
-                        className="font-semibold"
-                        style={{
-                          color: combinedMeta.accountColor,
-                        }}
-                      >
-                        {combinedMeta.accountName}
-                      </span>
-                    </span>
-                  ) : null}
                   {threadCount > 1 ? (
-                    <span
-                      className={[
-                        "inline-flex h-4 min-w-4 items-center justify-center rounded-sm border border-input px-1 text-2xs font-medium tabular-nums text-muted-foreground",
-                      ].join(" ")}
-                    >
+                    <span className="text-xs tabular-nums text-muted-foreground">
                       {threadCount}
                     </span>
+                  ) : null}
+                  {combinedMeta ? (
+                    <span
+                      className="size-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: combinedMeta.accountColor }}
+                      title={
+                        combinedMeta.mailbox
+                          ? `${combinedMeta.accountName} · ${combinedMeta.mailbox}`
+                          : combinedMeta.accountName
+                      }
+                      aria-label={combinedMeta.accountName}
+                    />
                   ) : null}
                   <span className={["text-xs tabular-nums text-muted-foreground/55"].join(" ")}>
                     {formatRelativeDate(message.date)}
@@ -419,7 +426,7 @@ function MessageRow({
               <span
                 className={[
                   "truncate text-sm leading-snug",
-                  unread ? "font-medium text-foreground/90" : "text-muted-foreground",
+                  unread ? "font-medium text-foreground/90" : "text-foreground/80",
                 ].join(" ")}
               >
                 {message.subject || "(no subject)"}
@@ -429,15 +436,22 @@ function MessageRow({
               >
                 {decodeEntities(message.snippet) || " "}
               </span>
-              {/* Fixed-height single-line chip strip so every row measures the same. */}
-              <div className="mt-0.5 flex h-5 items-center gap-1 overflow-hidden">
-                {showInboxChip && message.labelIds.includes("INBOX") ? (
-                  <InboxChip selected={selected} />
-                ) : null}
-                {messageLabels.map((label) => (
-                  <LabelChip key={label.id} label={label} selected={selected} />
-                ))}
-              </div>
+              {/* Chips only when they add something beyond the current view. */}
+              {(showInboxChip && message.labelIds.includes("INBOX")) || shownLabels.length > 0 ? (
+                <div className="mt-1 flex h-4.5 items-center gap-1 overflow-hidden">
+                  {showInboxChip && message.labelIds.includes("INBOX") ? (
+                    <InboxChip selected={selected} />
+                  ) : null}
+                  {shownLabels.map((label) => (
+                    <LabelChip key={label.id} label={label} selected={selected} />
+                  ))}
+                  {hiddenLabelCount > 0 ? (
+                    <span className="text-2xs tabular-nums text-muted-foreground">
+                      +{hiddenLabelCount}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
 
             {message.starred ? (
@@ -1149,6 +1163,17 @@ export function MessageList({
   const inInboxContext =
     !globalSearching && (isCombined ? combined.viewId === INBOX_VIEW_ID : labelId === "INBOX");
 
+  // Labels that define what's on screen (the browsed label, or a view's
+  // required labels for that account) are on every row — no chip for them.
+  const EMPTY_LABELS: ReadonlySet<string> = new Set();
+  const viewLabelIdsFor = (ownerId: string): ReadonlySet<string> => {
+    if (globalSearching) return EMPTY_LABELS;
+    if (combined) {
+      return new Set(combined.rules.filter((r) => r.accountId === ownerId).flatMap((r) => r.allOf));
+    }
+    return new Set([labelId]);
+  };
+
   return (
     <div className="relative flex h-full min-w-0 flex-col">
       {/* Header */}
@@ -1316,6 +1341,7 @@ export function MessageList({
           <>
             {visibleMessages.map((message) => (
               <MessageRow
+                viewLabelIds={viewLabelIdsFor(message.accountId ?? accountId)}
                 key={`${message.accountId ?? accountId}:${message.id}`}
                 message={message}
                 selected={selectedMessageId === message.id}

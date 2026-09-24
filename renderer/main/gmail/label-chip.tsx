@@ -62,11 +62,15 @@ export function isCategoryLabelId(id: string): boolean {
   return id in CATEGORY_CHIPS;
 }
 
-/** Gmail's yellow importance marker. */
-export function ImportantMarker() {
+/** Gmail's importance marker; `muted` for dense lists where most mail is "important". */
+export function ImportantMarker({ muted }: { muted?: boolean }) {
   return (
     <span title="Marked important" aria-label="Important" className="shrink-0">
-      <ChevronsRightIcon className="size-3.5" strokeWidth={3} style={{ color: "#f4b400" }} />
+      <ChevronsRightIcon
+        className={muted ? "size-3.5 text-muted-foreground/60" : "size-3.5"}
+        strokeWidth={muted ? 2.5 : 3}
+        style={muted ? undefined : { color: "#f4b400" }}
+      />
     </span>
   );
 }
