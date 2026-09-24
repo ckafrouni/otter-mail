@@ -29,7 +29,6 @@ import {
   SearchIcon,
   SquarePenIcon,
   XIcon,
-  CommandIcon,
   RotateCwIcon,
 } from "lucide-react";
 import {
@@ -42,7 +41,6 @@ import {
   useViewUnreadCounts,
 } from "./hooks";
 import type { GmailLabel, MailView } from "./types";
-import { gmailApi } from "./api";
 import { COMBINED_ACCOUNT_ID, useMailViews } from "./custom-views";
 import { buildLabelTree, type LabelTreeNode } from "./label-tree";
 import { UnreadPill, HintTooltip, IconBtn } from "./ui";
@@ -286,25 +284,6 @@ function ViewRow({
             console.log("[AccountsSidebar:selectView]", { viewId: view.id });
             onSelect();
           }}
-          trailing={
-            <span
-              role="button"
-              tabIndex={-1}
-              aria-label={`Edit ${view.name}`}
-              className={[
-                "flex shrink-0 items-center",
-                selected
-                  ? "text-sidebar-foreground/70"
-                  : "text-muted-foreground hover:text-foreground",
-              ].join(" ")}
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit();
-              }}
-            >
-              <SettingsIcon className="size-3.5" />
-            </span>
-          }
         />
       </ContextMenuTrigger>
       <ContextMenuContent>
@@ -470,7 +449,8 @@ type AccountsSidebarProps = {
   onToggleSidebar: () => void;
   /** Footer utilities. */
   onOpenSettings: () => void;
-  onOpenPalette: () => void;
+  /** Opens Settings → Views on a view ("new" to create one) for a mailbox. */
+  onEditView: (viewId: string, mailbox: string | null) => void;
   onSync: () => void;
   syncing: boolean;
   selectedAccountId: string | null;
@@ -489,7 +469,7 @@ export function AccountsSidebar({
   sidebarOpen,
   onToggleSidebar,
   onOpenSettings,
-  onOpenPalette,
+  onEditView,
   onSync,
   syncing,
   selectedAccountId,
@@ -627,12 +607,10 @@ export function AccountsSidebar({
     onMove: handleMoveLabel,
   };
 
+  // Settings live in this window: open the view editor directly rather than
+  // round-tripping through the backend deep link.
   const openViewEditor = (viewId: string) => {
-    void gmailApi.openSettings({
-      pane: "views",
-      viewId,
-      mailbox: isCombined ? COMBINED_ACCOUNT_ID : selectedAccountId,
-    });
+    onEditView(viewId, isCombined ? COMBINED_ACCOUNT_ID : selectedAccountId);
   };
 
   const viewRow = (view: MailView) => (
@@ -804,11 +782,6 @@ export function AccountsSidebar({
         <HintTooltip label="Settings" hint="⌘,">
           <IconBtn label="Settings" onClick={onOpenSettings} className="size-8">
             <SettingsIcon className="size-4" />
-          </IconBtn>
-        </HintTooltip>
-        <HintTooltip label="Jump to anything" hint="⌘K">
-          <IconBtn label="Command palette" onClick={onOpenPalette} className="size-8">
-            <CommandIcon className="size-4" />
           </IconBtn>
         </HintTooltip>
         <span className="flex-1" />

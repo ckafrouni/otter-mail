@@ -761,7 +761,9 @@ export function HomeView() {
                     onOpenSettings={() =>
                       setSettingsRoute({ pane: "general", viewId: null, mailbox: null })
                     }
-                    onOpenPalette={() => setPaletteOpen(true)}
+                    onEditView={(viewId, mailbox) =>
+                      setSettingsRoute({ pane: "views", viewId, mailbox })
+                    }
                     onSync={syncNow}
                     syncing={globalSync.syncing || manualSyncing}
                     selectedAccountId={effectiveAccountId}
