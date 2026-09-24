@@ -22,6 +22,7 @@ import {
   useAddAccount,
   useAccountSync,
   useGlobalSyncStatus,
+  useGmailWriteFailureToasts,
   useModifyMessage,
   useModifyThread,
   useUntrashThread,
@@ -184,6 +185,7 @@ export function HomeView() {
   const isCombined = selectedAccountId === COMBINED_ACCOUNT_ID;
 
   const globalSync = useGlobalSyncStatus(accountIds);
+  useGmailWriteFailureToasts();
 
   const sidebarPane = useStoredWidth("gmail:pane:sidebar", 256, 224, 400);
   const listPane = useStoredWidth("gmail:pane:list", 400, 300, 640);

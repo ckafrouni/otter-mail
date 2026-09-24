@@ -35,11 +35,55 @@ const STALE_TIME = 30_000;
  *  never updates), so calling that out specifically saves a confusing "why
  *  didn't this save" round trip. */
 function describeGmailWriteError(err: unknown): string {
-  const message = err instanceof Error ? err.message : String(err);
+  const raw = err instanceof Error ? err.message : String(err);
+  // The IPC bridge wraps handler errors as "Error invoking remote method
+  // 'gmail:x': <reason>" — only the reason is useful to the user.
+  const message = raw.replace(/^Error invoking remote method '[^']*':\s*/, "");
   if (/unauthorized|oauth/i.test(message)) {
     return "Google sign-in expired for this account — remove and re-add it in Settings → Accounts.";
   }
   return `Couldn't save the change: ${message}`;
+}
+
+/** The renderer bridge gives up after 5s. The backend mirrors label writes
+ *  locally before calling Gmail and finishes slow ones in the background
+ *  (broadcasting `gmail:write-failed` if that fails), so a timeout is not a
+ *  failure — keep the optimistic state instead of rolling it back. */
+function isIpcTimeout(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /Request timeout/i.test(message);
+}
+
+function invalidateMailCaches(qc: ReturnType<typeof useQueryClient>): void {
+  for (const key of [
+    "gmail:message",
+    "gmail:messages",
+    "gmail:combinedMessages",
+    "gmail:combinedCounts",
+    "gmail:searchMessages",
+    "gmail:thread",
+    "gmail:labels",
+  ]) {
+    void qc.invalidateQueries({ queryKey: [key] });
+  }
+}
+
+/** Surfaces label writes that failed after the backend had already answered
+ *  (finished in the background past the IPC budget) and refetches so the
+ *  reverted local state shows. Mount once, in the main window. */
+export function useGmailWriteFailureToasts(): void {
+  const qc = useQueryClient();
+  useEffect(() => {
+    const unsubscribe = window.glazeAPI.glaze.ipc.onNotification(
+      "gmail:write-failed",
+      (params: unknown) => {
+        const p = params as { message?: string } | undefined;
+        toast.error(describeGmailWriteError(new Error(p?.message ?? "Unknown error")));
+        invalidateMailCaches(qc);
+      },
+    );
+    return unsubscribe;
+  }, [qc]);
 }
 
 // ---- Query Keys ----
@@ -750,6 +794,11 @@ export function useModifyMessage() {
       };
     },
     onError: (err, _params, context) => {
+      if (isIpcTimeout(err)) {
+        console.log("[hooks:useModifyMessage] IPC timed out; backend finishes in background");
+        invalidateMailCaches(qc);
+        return;
+      }
       toast.error(describeGmailWriteError(err));
       if (!context) return;
       if (context.prevMessage) qc.setQueryData(context.messageKey, context.prevMessage);
@@ -1008,6 +1057,11 @@ export function useModifyThread() {
       };
     },
     onError: (err, _params, context) => {
+      if (isIpcTimeout(err)) {
+        console.log("[hooks:useModifyThread] IPC timed out; backend finishes in background");
+        invalidateMailCaches(qc);
+        return;
+      }
       toast.error(describeGmailWriteError(err));
       if (!context) return;
       for (const [key, data] of context.prevMessagesQueries) qc.setQueryData(key, data);

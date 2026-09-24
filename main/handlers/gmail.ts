@@ -52,6 +52,47 @@ import type { ComposeAttachment, MailView, ViewRule } from "../gmail/types.js";
 
 const LOCAL_PAGE_SIZE = 50;
 
+/** Renderer IPC calls time out after 5s (hard-coded in the SDK). A label write
+ *  can outlast that while the first full sync is hogging the event loop or
+ *  Gmail rate-limits us (the 429 backoff alone sleeps up to 7s), and the user
+ *  then saw "Couldn't save the change: Request timeout" for a change that
+ *  usually succeeded anyway. So: mirror the change locally right away, answer
+ *  inside the budget, and let a slow write finish in the background — if that
+ *  eventually fails, the mirror is reverted and the renderer is told. */
+const IPC_WRITE_BUDGET_MS = 4_000;
+
+async function settleGmailWrite(
+  channel: string,
+  write: Promise<unknown>,
+  revert: () => void,
+): Promise<{ ok: true; pending?: boolean }> {
+  const settled = write.then(
+    () => "done" as const,
+    (err: unknown) => {
+      revert();
+      throw err;
+    },
+  );
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<"pending">((resolve) => {
+    timer = setTimeout(() => resolve("pending"), IPC_WRITE_BUDGET_MS);
+  });
+  try {
+    if ((await Promise.race([settled, deadline])) === "done") return { ok: true };
+  } finally {
+    clearTimeout(timer);
+  }
+  console.log(`[${channel}] still running past the IPC budget — finishing in the background`);
+  settled.catch((err: unknown) => {
+    console.log(`[${channel}] background write failed`, { error: String(err) });
+    ipcMain.broadcast("gmail:write-failed", {
+      channel,
+      message: err instanceof Error ? err.message : String(err),
+    });
+  });
+  return { ok: true, pending: true };
+}
+
 const RECONCILE_COOLDOWN_MS = 60_000;
 const lastUnreadReconcile = new Map<string, number>();
 
@@ -540,10 +581,18 @@ export function registerGmailHandlers(): void {
       const messageId = assertString(p?.messageId, "messageId");
       const addLabelIds = asStringArray(p?.addLabelIds);
       const removeLabelIds = asStringArray(p?.removeLabelIds);
-      const result = await modifyMessage(accountId, messageId, { addLabelIds, removeLabelIds });
-      mailStore.applyLabelChange(accountId, messageId, addLabelIds ?? [], removeLabelIds ?? []);
+      const add = addLabelIds ?? [];
+      const remove = removeLabelIds ?? [];
+      mailStore.applyLabelChange(accountId, messageId, add, remove);
       updateDockBadge();
-      return result;
+      return await settleGmailWrite(
+        "gmail:modifyMessage",
+        modifyMessage(accountId, messageId, { addLabelIds, removeLabelIds }),
+        () => {
+          mailStore.applyLabelChange(accountId, messageId, remove, add);
+          updateDockBadge();
+        },
+      );
     } catch (err) {
       console.log("[gmail:modifyMessage] error", { error: String(err) });
       throw err;
@@ -590,15 +639,18 @@ export function registerGmailHandlers(): void {
       const threadId = assertString(p?.threadId, "threadId");
       const addLabelIds = asStringArray(p?.addLabelIds);
       const removeLabelIds = asStringArray(p?.removeLabelIds);
-      const result = await modifyThread(accountId, threadId, { addLabelIds, removeLabelIds });
-      mailStore.applyLabelChangeToThread(
-        accountId,
-        threadId,
-        addLabelIds ?? [],
-        removeLabelIds ?? [],
-      );
+      const add = addLabelIds ?? [];
+      const remove = removeLabelIds ?? [];
+      mailStore.applyLabelChangeToThread(accountId, threadId, add, remove);
       updateDockBadge();
-      return result;
+      return await settleGmailWrite(
+        "gmail:modifyThread",
+        modifyThread(accountId, threadId, { addLabelIds, removeLabelIds }),
+        () => {
+          mailStore.applyLabelChangeToThread(accountId, threadId, remove, add);
+          updateDockBadge();
+        },
+      );
     } catch (err) {
       console.log("[gmail:modifyThread] error", { error: String(err) });
       throw err;
