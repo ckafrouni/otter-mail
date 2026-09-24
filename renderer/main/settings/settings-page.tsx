@@ -24,7 +24,6 @@ import {
 } from "lucide-react";
 import {
   gmailApi,
-  type AssistantStatus,
   type ChatStatus,
   type MailApp,
   type NotificationsMode,
@@ -664,22 +663,11 @@ function ViewsPane({
 // ---------------------------------------------------------------------------
 
 function AssistantPane() {
-  const [assistantStatus, setAssistantStatus] = useState<AssistantStatus | null>(null);
-  const [assistantToken, setAssistantToken] = useState("");
-  const [assistantBotId, setAssistantBotId] = useState("");
-  const [assistantSaving, setAssistantSaving] = useState(false);
   const [chatStatus, setChatStatus] = useState<ChatStatus | null>(null);
   const [chatBaseUrl, setChatBaseUrl] = useState("");
   const [chatApiKey, setChatApiKey] = useState("");
   const [chatSaving, setChatSaving] = useState(false);
 
-  const loadAssistantStatus = async () => {
-    try {
-      setAssistantStatus(await gmailApi.assistantGetStatus());
-    } catch (error) {
-      console.log("[Settings:assistantStatus] failed", { error: String(error) });
-    }
-  };
   const loadChatStatus = async () => {
     try {
       setChatStatus(await gmailApi.chatStatus());
@@ -688,7 +676,6 @@ function AssistantPane() {
     }
   };
   useEffect(() => {
-    void loadAssistantStatus();
     void loadChatStatus();
   }, []);
 
@@ -715,29 +702,6 @@ function AssistantPane() {
     }
   };
 
-  const handleAssistantSave = async () => {
-    if (!assistantToken.trim() || !assistantBotId.trim()) {
-      toast.error("Slack user token and bot member ID are both required");
-      return;
-    }
-    setAssistantSaving(true);
-    console.log("[Settings:assistantConfigure]");
-    try {
-      const status = await gmailApi.assistantConfigure({
-        token: assistantToken.trim(),
-        botUserId: assistantBotId.trim(),
-      });
-      setAssistantStatus(status);
-      setAssistantToken("");
-      setAssistantBotId("");
-      toast.success(`Connected to ${status.teamName || "Slack"}`);
-    } catch (error) {
-      toast.error(`Could not connect: ${error}`);
-    } finally {
-      setAssistantSaving(false);
-    }
-  };
-
   const chatStatusLine = chatStatus?.configured ? (
     <span className="inline-flex items-center gap-1.5">
       <span className="size-1.5 rounded-full bg-success" aria-hidden />
@@ -745,18 +709,6 @@ function AssistantPane() {
       {chatStatus.sessions
         ? "native sessions: chats persist on Hermes."
         : "no Sessions API; chats chain by response id."}
-    </span>
-  ) : (
-    <span className="inline-flex items-center gap-1.5">
-      <span className="size-1.5 rounded-full bg-muted-foreground/50" aria-hidden />
-      Not connected
-    </span>
-  );
-
-  const slackStatusLine = assistantStatus?.configured ? (
-    <span className="inline-flex items-center gap-1.5">
-      <span className="size-1.5 rounded-full bg-success" aria-hidden />
-      Connected to {assistantStatus.teamName || "your workspace"}
     </span>
   ) : (
     <span className="inline-flex items-center gap-1.5">
@@ -810,61 +762,6 @@ function AssistantPane() {
               onClick={() => void handleChatSave()}
             >
               {chatSaving ? "Connecting…" : chatStatus?.configured ? "Reconnect" : "Connect"}
-            </Btn>
-          }
-        />
-      </SettingsSection>
-
-      <SettingsSection title="Hermes over Slack">
-        <SettingsRow
-          title="Ask-Hermes handoffs"
-          description="Sends a conversation to Hermes as a DM in your Slack workspace, posted as you."
-          status={slackStatusLine}
-        />
-        <SettingsRow
-          title="Slack user token"
-          description="Needs the chat:write and im:write scopes."
-          control={
-            <TextInput
-              type="password"
-              value={assistantToken}
-              onChange={(e) => setAssistantToken(e.target.value)}
-              placeholder={assistantStatus?.configured ? "Replace token (xoxp-…)" : "xoxp-…"}
-              aria-label="Slack user token"
-              className="sm:w-64"
-            />
-          }
-        />
-        <SettingsRow
-          title="Bot member ID"
-          control={
-            <TextInput
-              value={assistantBotId}
-              onChange={(e) => setAssistantBotId(e.target.value)}
-              placeholder={
-                assistantStatus?.botUserId
-                  ? `Bot member ID (${assistantStatus.botUserId})`
-                  : "Bot member ID (U…)"
-              }
-              aria-label="Bot member ID"
-              className="sm:w-64"
-            />
-          }
-        />
-        <SettingsRow
-          title={assistantStatus?.configured ? "Reconnect" : "Connect"}
-          control={
-            <Btn
-              size="sm"
-              variant="primary"
-              disabled={assistantSaving}
-              onClick={() => void handleAssistantSave()}
-            >
-              {assistantSaving
-                ? "Connecting…"
-                : assistantStatus?.configured
-                  ? "Reconnect"
-                  : "Connect"}
             </Btn>
           }
         />

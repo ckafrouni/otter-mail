@@ -24,7 +24,7 @@ import {
 import { takeUndo, type UndoAction } from "./gmail/undo";
 import { getAccountColor, getAccountContrastColor } from "./gmail/account-style";
 import { gmailApi, type MailtoTarget } from "./gmail/api";
-import type { QuoteContext } from "./gmail/ask-assistant";
+import type { QuoteContext } from "./gmail/chat-context";
 import type { GmailMessageSummary } from "./gmail/types";
 import {
   useMailViews,

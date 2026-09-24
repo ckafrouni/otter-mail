@@ -34,7 +34,6 @@ import {
   XIcon,
 } from "lucide-react";
 import { IconBtn, HintTooltip, buttonClass, cn } from "./ui";
-import { SlackAiIcon } from "./assistant-icons";
 import { gmailApi } from "./api";
 import {
   useMessages,
@@ -51,7 +50,6 @@ import {
   useLabelResolver,
   useSyncAccountLabels,
 } from "./hooks";
-import { AskAssistantDialog, contextFromMessages, type AssistantContext } from "./ask-assistant";
 import { LabelChip, InboxChip, ImportantMarker } from "./label-chip";
 import { LabelOverlay, type LabelOverlayMode } from "./label-overlay";
 import { renderLabelMenuNodes } from "./label-picker-menu";
@@ -187,8 +185,6 @@ type MessageRowProps = {
   viewLabelIds: ReadonlySet<string>;
   /** Opens the permanent-delete confirm (offered on trashed/junk rows only). */
   onDeleteForever: () => void;
-  /** Slack handoff seeded with this conversation. */
-  onAskAssistant: () => void;
   /** Opens this conversation in the in-app Hermes chat panel. */
   onChatAssistant: () => void;
 };
@@ -204,7 +200,6 @@ function MessageRow({
   showInboxChip,
   viewLabelIds,
   onDeleteForever,
-  onAskAssistant,
   onChatAssistant,
 }: MessageRowProps) {
   const modifyMessage = useModifyMessage();
@@ -375,21 +370,6 @@ function MessageRow({
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onAskAssistant();
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    aria-label="Send to Hermes in Slack"
-                    className={[
-                      "shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
-                      "text-muted-foreground hover:text-foreground",
-                    ].join(" ")}
-                  >
-                    <SlackAiIcon className="size-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
                       onChatAssistant();
                     }}
                     onMouseDown={(e) => e.stopPropagation()}
@@ -487,9 +467,6 @@ function MessageRow({
             Open in New Window
           </ContextMenuItem>
           <ContextMenuSeparator />
-          <ContextMenuItem icon="paperplane" onSelect={onAskAssistant}>
-            Send to Hermes in Slack…
-          </ContextMenuItem>
           <ContextMenuItem icon="bubble.left" onSelect={onChatAssistant}>
             Open in Hermes chat
           </ContextMenuItem>
@@ -735,16 +712,6 @@ export function MessageList({
       : labelId;
 
   const [labelOverlay, setLabelOverlay] = useState<LabelOverlayMode | null>(null);
-
-  // Ask-Hermes handoff: one conversation from a row, several from the
-  // multi-selection. Context is pointer-only; Hermes fetches via gog.
-  const [askContext, setAskContext] = useState<AssistantContext | null>(null);
-  const accountEmailById = (id: string | undefined) =>
-    accounts.find((a) => a.id === (id ?? accountId))?.email ?? id ?? accountId;
-  const askAbout = (rows: GmailMessageSummary[]) => {
-    console.log("[MessageList:askAssistant]", { count: rows.length });
-    setAskContext(contextFromMessages(rows, accountEmailById));
-  };
 
   // Cmd/shift multi-selection (bulk action bar). Anchor = last plain/cmd click,
   // falling back to the open message, so shift-click ranges feel native.
@@ -1352,7 +1319,6 @@ export function MessageList({
                 combinedMeta={resolveCombinedMeta(message, combined, accounts, resolveLabel)}
                 showInboxChip={!inInboxContext}
                 onDeleteForever={() => setConfirmDeleteRows([message])}
-                onAskAssistant={() => askAbout([message])}
                 onChatAssistant={() => {
                   // Open this conversation in the reader so it becomes the
                   // chat panel's attached context, then reveal the panel.
@@ -1452,15 +1418,6 @@ export function MessageList({
               </IconBtn>
             </HintTooltip>
             <span className="mx-1 h-5 w-px shrink-0 bg-border" aria-hidden />
-            <HintTooltip label="Send selection to Hermes in Slack">
-              <IconBtn
-                label="Send to Slack"
-                className="size-7"
-                onClick={() => askAbout(checkedRows)}
-              >
-                <SlackAiIcon className="size-3.5" />
-              </IconBtn>
-            </HintTooltip>
             <HintTooltip label="Chat about the selection in Hermes">
               <IconBtn
                 label="Open in Hermes chat"
@@ -1498,13 +1455,6 @@ export function MessageList({
           ? This cannot be undone.
         </Text>
       </Dialog>
-
-      <AskAssistantDialog
-        context={askContext}
-        onOpenChange={(o) => {
-          if (!o) setAskContext(null);
-        }}
-      />
 
       <LabelOverlay
         open={labelOverlay != null}

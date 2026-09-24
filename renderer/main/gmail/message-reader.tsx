@@ -30,7 +30,6 @@ import {
   Trash2Icon,
   XIcon,
 } from "lucide-react";
-import { SlackAiIcon } from "./assistant-icons";
 import { SenderHoverCard } from "./sender-hovercard";
 import {
   useAccounts,
@@ -65,7 +64,7 @@ import {
   pickComposeAttachments,
   useComposeFileDrop,
 } from "./compose-attachments";
-import { AskAssistantDialog, type AssistantContext, type QuoteContext } from "./ask-assistant";
+import type { QuoteContext } from "./chat-context";
 import { DraftEditor } from "./draft-editor";
 import { useDraftAutosave } from "./use-draft-autosave";
 import type {
@@ -1359,26 +1358,7 @@ export function MessageReader({
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set());
   const seededRef = useRef<string | null>(null);
-
-  // Ask-Hermes handoff for the open conversation (pointer-only context).
-  const [askContext, setAskContext] = useState<AssistantContext | null>(null);
   const readerAccounts = useAccounts();
-  const handleAskAssistant = () => {
-    if (!message) return;
-    const rows = threadMessages.length > 0 ? threadMessages : [message];
-    console.log("[MessageReader:askAssistant]", { threadId: message.threadId || message.id });
-    setAskContext({
-      conversations: [
-        {
-          account: readerAccounts.data?.find((a) => a.id === accountId)?.email ?? accountId,
-          threadId: message.threadId || message.id,
-          subject: message.subject || "(no subject)",
-          from: rows[rows.length - 1].fromEmail,
-          messageIds: rows.map((m) => m.id),
-        },
-      ],
-    });
-  };
 
   // Quote-from-selection: a highlighted excerpt (parent DOM or an HTML iframe)
   // is reported up; when the chat panel is open, home-view attaches it as a
@@ -1833,11 +1813,6 @@ export function MessageReader({
 
           {groupDivider}
 
-          <HintTooltip label="Send to Hermes in Slack">
-            <IconBtn label="Send to Hermes in Slack" onClick={handleAskAssistant}>
-              <SlackAiIcon className="size-3.5" />
-            </IconBtn>
-          </HintTooltip>
           <HintTooltip label="Chat about this in Hermes">
             <IconBtn label="Open in Hermes chat" onClick={() => onOpenChat?.()}>
               <BotMessageSquareIcon className="size-3.5" />
@@ -1909,13 +1884,6 @@ export function MessageReader({
           />
         ) : null}
       </div>
-
-      <AskAssistantDialog
-        context={askContext}
-        onOpenChange={(o) => {
-          if (!o) setAskContext(null);
-        }}
-      />
 
       <Dialog
         open={confirmDeleteOpen}

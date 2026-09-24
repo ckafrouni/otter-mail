@@ -4,7 +4,7 @@ import { MessageReader } from "../main/gmail/message-reader";
 import { HermesChatPanel } from "../main/gmail/hermes-chat";
 import { isTypingTarget } from "../main/gmail/keyboard";
 import { APP_DARK_THEME, APP_LIGHT_THEME } from "../main/gmail/app-theme";
-import type { QuoteContext } from "../main/gmail/ask-assistant";
+import type { QuoteContext } from "../main/gmail/chat-context";
 
 // Same TE glass skin as the main window, following the system appearance.
 function applyTeTheme() {

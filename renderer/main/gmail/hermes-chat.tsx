@@ -42,7 +42,7 @@ import {
   contextFromQuote,
   type AssistantContext,
   type QuoteContext,
-} from "./ask-assistant";
+} from "./chat-context";
 import { ChatMarkdown } from "./chat-markdown";
 import { useAccounts, useMessage } from "./hooks";
 import type { GmailMessageSummary } from "./types";

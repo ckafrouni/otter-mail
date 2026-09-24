@@ -293,6 +293,11 @@ app.whenReady().then(async () => {
 
   await setupApplicationMenu();
 
+  // The Slack handoff was removed; drop its stored token and routing config.
+  for (const file of ["assistant-slack.enc", "assistant.json"]) {
+    fs.promises.rm(path.join(app.getPath("userData"), file), { force: true }).catch(() => {});
+  }
+
   const startupSettings = await getSettings();
   app.setLoginItemSettings({ openAtLogin: startupSettings.launchAtLogin });
   if (startupSettings.trayEnabled) {
