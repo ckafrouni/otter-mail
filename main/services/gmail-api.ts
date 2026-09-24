@@ -256,7 +256,10 @@ export async function fetchMetadataForIds(
   accountId: string,
   ids: string[],
 ): Promise<GmailMessageSummary[]> {
-  const CONCURRENCY = 8;
+  // messages.get costs 5 quota units against Gmail's ~250 units/s per user;
+  // 5 in flight (~30 req/s) stays clear of 429 backoffs and leaves headroom
+  // for what the user opens while a big sync runs.
+  const CONCURRENCY = 5;
   const results: GmailMessageSummary[] = [];
 
   for (let i = 0; i < ids.length; i += CONCURRENCY) {

@@ -1261,12 +1261,7 @@ export function useAccountSync(accountId: string | null): SyncStatus | null {
     const status = statusQuery.data;
     if (!status || !accountId) return;
     const prev = prevRef.current;
-    const progressed =
-      prev != null &&
-      (status.synced !== prev.synced ||
-        (prev.syncing && !status.syncing) ||
-        status.lastSyncAt !== prev.lastSyncAt);
-    if (progressed) {
+    if (prev != null && shouldRefreshLists(accountId, status, prev)) {
       void qc.invalidateQueries({ queryKey: ["gmail:messages", accountId] });
       void qc.invalidateQueries({ queryKey: ["gmail:searchMessages"] });
       void qc.invalidateQueries({ queryKey: queryKeys.labels(accountId) });
@@ -1279,6 +1274,30 @@ export function useAccountSync(accountId: string | null): SyncStatus | null {
   }, [statusQuery.data, accountId, qc]);
 
   return statusQuery.data ?? null;
+}
+
+/**
+ * Whether sync progress warrants refetching message lists. Every refetch of
+ * an infinite list reloads ALL its loaded pages, so during a long sync of a
+ * big mailbox (progress ticks every poll) lists refresh at most every
+ * LIST_REFRESH_MS; a finished sync refreshes at once. Body downloads don't
+ * change list rows and never trigger a refresh.
+ */
+const LIST_REFRESH_MS = 8000;
+const lastListRefresh = new Map<string, number>();
+function shouldRefreshLists(
+  key: string,
+  status: SyncStatus,
+  prev: { synced: number; syncing: boolean; lastSyncAt: number | null },
+): boolean {
+  const finished = (prev.syncing && !status.syncing) || status.lastSyncAt !== prev.lastSyncAt;
+  const grew = status.synced !== prev.synced && status.phase !== "bodies";
+  const now = Date.now();
+  if (finished || (grew && now - (lastListRefresh.get(key) ?? 0) >= LIST_REFRESH_MS)) {
+    lastListRefresh.set(key, now);
+    return true;
+  }
+  return false;
 }
 
 export function syncLabel(status: SyncStatus): string {
@@ -1370,12 +1389,7 @@ export function useSyncAccountLabels(accountIds: string[], enabled: boolean): vo
       const status = r.data as SyncStatus | undefined;
       if (!status) return;
       const prev = prevRef.current.get(accountId);
-      const progressed =
-        prev != null &&
-        (status.synced !== prev.synced ||
-          (prev.syncing && !status.syncing) ||
-          status.lastSyncAt !== prev.lastSyncAt);
-      if (progressed) {
+      if (prev != null && shouldRefreshLists(`combined:${accountId}`, status, prev)) {
         anyProgressed = true;
         void qc.invalidateQueries({ queryKey: queryKeys.labels(accountId) });
       }

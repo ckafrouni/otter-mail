@@ -18,6 +18,7 @@ import {
 } from "./menu";
 import {
   ArchiveIcon,
+  RotateCwIcon,
   ArchiveXIcon,
   BotMessageSquareIcon,
   FlagIcon,
@@ -332,7 +333,9 @@ function MessageRow({
     : "";
 
   return (
-    <div className="px-2 py-0.5">
+    // Off-screen rows skip layout/paint (long scrolls load thousands of rows);
+    // `auto` remembers each row's real height once it has rendered.
+    <div className="px-2 py-0.5 [contain-intrinsic-size:auto_92px] [content-visibility:auto]">
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <button
@@ -1269,6 +1272,12 @@ export function MessageList({
                 </div>
               </div>
             ))}
+          </div>
+        ) : visibleMessages.length === 0 && (hasNextPage || isFetchingNextPage) ? (
+          // Nothing to show yet, but more is coming (big mailboxes still syncing).
+          <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+            <RotateCwIcon className="size-4 animate-spin text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Loading more mail…</span>
           </div>
         ) : visibleMessages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">

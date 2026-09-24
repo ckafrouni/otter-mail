@@ -127,6 +127,8 @@ function applyLocalLabelChange(
 
 type LiveCursor = { pageToken?: string; exhausted: boolean };
 const liveCursors = new Map<string, LiveCursor>();
+// Total list reply stays under ~3.5s (unread check ≤1s + fills ≤2.5s) — the
+// renderer's IPC timeout is 5s, and a timed-out first page never renders.
 const LIVE_BUDGET_MS = 2500;
 const LIVE_PAGE_SIZE = 50;
 
@@ -137,8 +139,21 @@ function needsLive(accountId: string, labelId: string | null): boolean {
   return !(liveCursors.get(liveKey(accountId, labelId))?.exhausted ?? false);
 }
 
-/** Fetches and caches the next live page of a label (null = all mail). */
-async function fillFromGmail(accountId: string, labelId: string | null): Promise<void> {
+const inflightFills = new Map<string, Promise<void>>();
+
+/** Fetches and caches the next live page of a label (null = all mail). One
+    fetch per cursor at a time: callers that time out leave it running, and
+    the next request joins it instead of starting another. */
+function fillFromGmail(accountId: string, labelId: string | null): Promise<void> {
+  const key = liveKey(accountId, labelId);
+  const running = inflightFills.get(key);
+  if (running) return running;
+  const fill = fillOnce(accountId, labelId).finally(() => inflightFills.delete(key));
+  inflightFills.set(key, fill);
+  return fill;
+}
+
+async function fillOnce(accountId: string, labelId: string | null): Promise<void> {
   const key = liveKey(accountId, labelId);
   const cursor = liveCursors.get(key) ?? { exhausted: false };
   if (cursor.exhausted) return;
@@ -167,16 +182,30 @@ async function pageWithLiveFill(
   let page = read();
   const pending = () => sources.filter((src) => needsLive(src.accountId, src.labelId));
   while (!page.hasMore && page.messages.length < maxResults && pending().length > 0) {
-    if (Date.now() - started > LIVE_BUDGET_MS) break;
-    try {
-      await Promise.all(pending().map((src) => fillFromGmail(src.accountId, src.labelId)));
-    } catch (err) {
-      console.log("[gmail:livePage] failed", { error: String(err) });
-      break;
-    }
+    const left = LIVE_BUDGET_MS - (Date.now() - started);
+    if (left <= 0) break;
+    // Gmail can stall (rate-limit backoff waits up to 32s): answer with what's
+    // cached when the budget runs out; the fill keeps going in the background.
+    const fills = Promise.all(pending().map((src) => fillFromGmail(src.accountId, src.labelId)));
+    fills.catch((err) => console.log("[gmail:livePage] failed", { error: String(err) }));
+    const done = await Promise.race([
+      fills.then(
+        () => true,
+        () => false,
+      ),
+      sleep(left).then(() => false),
+    ]);
     page = read();
+    if (!done) break;
   }
   return { messages: page.messages, more: page.hasMore || pending().length > 0 };
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** Lets slow background work run on, but never holds a reply longer than `ms`. */
+async function atMost(work: Promise<unknown>, ms: number): Promise<void> {
+  await Promise.race([work.catch(() => {}), sleep(ms)]);
 }
 
 const RECONCILE_COOLDOWN_MS = 60_000;
@@ -428,7 +457,7 @@ export function registerGmailHandlers(): void {
       // Gmail's counter says there's unread mail we don't have yet (e.g. the
       // first full sync is still running): pull it in so the list and its
       // Unread filter show what the badge counts.
-      if (offset === 0) await reconcileUnread(accountId, labelId);
+      if (offset === 0) await atMost(reconcileUnread(accountId, labelId), 1000);
 
       mailSync.syncAccount(accountId);
 

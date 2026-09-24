@@ -279,7 +279,8 @@ async function backfillBodies(accountId: string): Promise<void> {
 
   update(accountId, { phase: "bodies", synced: 0, total: ids.length });
 
-  const CONCURRENCY = 8;
+  // Full-message fetches share the per-user Gmail quota with everything else.
+  const CONCURRENCY = 4;
   let done = 0;
 
   for (let i = 0; i < ids.length; i += CONCURRENCY) {
