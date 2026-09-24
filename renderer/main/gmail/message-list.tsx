@@ -351,8 +351,10 @@ function MessageRow({
               selected
                 ? "bg-sidebar-row-active"
                 : checked
-                  ? "bg-sidebar-row-hover ring-1 ring-inset ring-primary/70"
+                  ? "bg-sidebar-row-hover"
                   : "hover:bg-sidebar-row-hover",
+              // Every row in the multi-selection is outlined — the open one too.
+              checked ? "ring-1 ring-inset ring-primary/70" : "",
             ].join(" ")}
           >
             <div
@@ -774,8 +776,18 @@ export function MessageList({
   };
 
   const handleRowClick = (e: React.MouseEvent, message: GmailMessageSummary) => {
-    // Option+click toggles the multi-selection.
-    if (e.altKey) {
+    // Cmd+click (or Option+click) adds/removes one row, Finder-style. The
+    // open message counts as already selected, so the first Cmd+click keeps
+    // it instead of starting over.
+    if ((e.metaKey || e.altKey) && !e.shiftKey) {
+      if (
+        checkedRef.current.size === 0 &&
+        selectedMessageId &&
+        selectedMessageId !== message.id &&
+        visibleMessages.some((m) => m.id === selectedMessageId)
+      ) {
+        setChecked(new Set([selectedMessageId]));
+      }
       toggleChecked(message.id);
       return;
     }

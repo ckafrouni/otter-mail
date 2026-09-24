@@ -41,18 +41,26 @@ export function SenderAvatar({
   const sizeClasses = size === "sm" ? "size-6 text-2xs rounded-sm" : "size-9 text-sm rounded-md";
 
   if (photo) {
+    // Transparent logos need a white backing, but painting it under the whole
+    // tile leaves a white fringe where the rounded corners antialias. Inset it
+    // 1px so the edge blends into the surface instead.
     return (
-      <img
-        src={photo}
-        alt=""
-        draggable={false}
+      <span
         className={[
-          "shrink-0 select-none object-cover bg-white",
+          "relative shrink-0 select-none overflow-hidden",
           sizeClasses,
           className ?? "",
         ].join(" ")}
         aria-hidden
-      />
+      >
+        <span className="absolute inset-px rounded-[inherit] bg-white" />
+        <img
+          src={photo}
+          alt=""
+          draggable={false}
+          className="relative block size-full rounded-[inherit] object-cover"
+        />
+      </span>
     );
   }
 
