@@ -154,7 +154,11 @@ export function registerGmailHandlers(): void {
   ipcMain.handle("gmail:addAccount", async (_event) => {
     console.log("[gmail:addAccount]", {});
     try {
-      return await oauthAddAccount();
+      const account = await oauthAddAccount();
+      // The browser sign-in outlasts the renderer's IPC timeout, so the caller
+      // usually never sees this return — tell every window to reload accounts.
+      ipcMain.broadcast("gmail:accounts-changed");
+      return account;
     } catch (err) {
       console.log("[gmail:addAccount] error", { error: String(err) });
       throw err;
