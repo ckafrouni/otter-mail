@@ -391,13 +391,9 @@ export function DraftEditor({
             const prev = conversation[i - 1];
             const newDay = !prev || dayKey(prev.date) !== dayKey(m.date);
             const isExpanded = expandedIds.has(m.id);
-            const prevExpanded = prev ? expandedIds.has(prev.id) : false;
             return (
               <div key={m.id}>
                 {newDay ? <DayDivider timestamp={m.date} /> : null}
-                {!newDay && isExpanded && prevExpanded ? (
-                  <div className="mx-5 my-1 border-t border-border" />
-                ) : null}
                 {isExpanded ? (
                   <ExpandedRow
                     accountId={accountId}

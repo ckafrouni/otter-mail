@@ -4,7 +4,6 @@ import {
   ArchiveIcon,
   ArchiveRestoreIcon,
   ArchiveXIcon,
-  ChevronDownIcon,
   DownloadIcon,
   EllipsisIcon,
   ExternalLinkIcon,
@@ -980,7 +979,7 @@ function AttachmentList({
 // renders the same conversation above its composer.
 export function DayDivider({ timestamp }: { timestamp: number }) {
   return (
-    <div className="flex justify-center px-5 pb-1.5 pt-4">
+    <div className="flex justify-center px-6 pb-3 pt-5">
       <span className="rounded-full border border-border/60 bg-card/40 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
         {formatDayLabel(timestamp)}
       </span>
@@ -992,47 +991,49 @@ export function CollapsedRow({
   accountId,
   summary,
   onExpand,
-  standalone = true,
 }: {
   accountId: string;
   summary: GmailMessageSummary;
   onExpand: () => void;
-  /** Own card (default), or a bare row inside a grouped conversation card. */
+  /** Kept for callers; every row is now a flat, hairline-separated row. */
   standalone?: boolean;
 }) {
-  const row = (
+  return (
     <button
       type="button"
       onClick={onExpand}
       aria-label="Expand message"
-      className={cn(
-        "flex w-full cursor-pointer items-center gap-2.5 px-3.5 py-2.5 text-left outline-none transition-colors hover:bg-accent-surface/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring",
-        standalone && "rounded-xl border border-border/60 bg-card/40",
-      )}
+      className="flex w-full cursor-pointer items-start gap-3 border-b border-border/50 px-6 py-3 text-left outline-none transition-colors hover:bg-accent-surface/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring"
     >
       <SenderAvatar
         name={summary.fromName}
         email={summary.fromEmail}
         accountId={accountId}
-        size="sm"
+        className="shrink-0"
       />
-      <span
-        className={[
-          "shrink-0 text-sm leading-snug",
-          summary.unread ? "font-semibold text-foreground" : "font-semibold text-foreground/90",
-        ].join(" ")}
-      >
-        {summary.fromName || summary.fromEmail}
-      </span>
-      <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground/70">
-        {decodeEntities(summary.snippet)}
-      </span>
-      <span className="shrink-0 text-xs tabular-nums text-muted-foreground/55">
-        {formatTime(summary.date)}
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="flex items-baseline justify-between gap-3">
+          <span
+            className={cn(
+              "truncate text-sm",
+              summary.unread ? "font-semibold text-foreground" : "font-medium text-foreground",
+            )}
+          >
+            {summary.fromName || summary.fromEmail}
+          </span>
+          <span
+            className="shrink-0 text-xs tabular-nums text-muted-foreground/60"
+            title={formatFullDate(summary.date)}
+          >
+            {formatTime(summary.date)}
+          </span>
+        </span>
+        <span className="truncate text-sm text-muted-foreground">
+          {decodeEntities(summary.snippet)}
+        </span>
       </span>
     </button>
   );
-  return standalone ? <div className="px-4 py-1">{row}</div> : row;
 }
 
 /** "N more messages" fold inside a grouped run of collapsed messages. */
@@ -1041,14 +1042,14 @@ function FoldRow({ count, onUnfold }: { count: number; onUnfold: () => void }) {
     <button
       type="button"
       onClick={onUnfold}
-      className="flex w-full cursor-pointer items-center gap-2.5 px-3.5 py-2 text-left text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-accent-surface/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring"
+      className="flex w-full cursor-pointer items-center gap-3 border-b border-border/50 px-6 py-2 text-left text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-accent-surface/40 hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring"
     >
-      <span className="flex size-6 shrink-0 items-center justify-center">
-        <span className="flex h-5 min-w-5 items-center justify-center rounded-full border border-border px-1.5 tabular-nums">
+      <span className="flex size-9 shrink-0 items-center justify-center">
+        <span className="flex size-7 items-center justify-center rounded-full border border-border tabular-nums">
           {count}
         </span>
       </span>
-      more messages
+      {count === 1 ? "1 more message" : `${count} more messages`}
     </button>
   );
 }
@@ -1100,10 +1101,10 @@ export function ExpandedRow({
   const detail = detailQuery.data;
 
   return (
-    <div className="px-4 py-1">
-      <div className="group rounded-xl border border-border/60 bg-card/40 px-4 py-3.5">
-        {/* Post-style header: avatar + sender + time */}
-        <div className="flex items-start gap-2.5">
+    <div className="group border-b border-border/50 px-6 py-4">
+      <div>
+        {/* Header: avatar in the gutter, sender + time, recipients */}
+        <div className="flex items-start gap-3">
           <SenderHoverCard
             name={summary.fromName}
             email={summary.fromEmail}
@@ -1115,7 +1116,7 @@ export function ExpandedRow({
               name={summary.fromName}
               email={summary.fromEmail}
               accountId={accountId}
-              className="mt-0.5 shrink-0"
+              className="shrink-0"
             />
           </SenderHoverCard>
           <div className="min-w-0 flex-1">
@@ -1123,7 +1124,7 @@ export function ExpandedRow({
               type="button"
               onClick={onCollapse}
               disabled={!onCollapse}
-              className="flex w-full items-baseline gap-2 text-left"
+              className="flex w-full items-baseline justify-between gap-3 text-left"
               aria-label={onCollapse ? "Collapse message" : undefined}
             >
               <SenderHoverCard
@@ -1138,14 +1139,11 @@ export function ExpandedRow({
                 </span>
               </SenderHoverCard>
               <span
-                className="shrink-0 text-xs tabular-nums text-muted-foreground/55"
+                className="shrink-0 text-xs tabular-nums text-muted-foreground/60"
                 title={formatFullDate(summary.date)}
               >
                 {formatTime(summary.date)}
               </span>
-              {onCollapse ? (
-                <ChevronDownIcon className="size-3.5 shrink-0 rotate-180 self-center text-muted-foreground/70 opacity-0 group-hover:opacity-100" />
-              ) : null}
             </button>
             <div className="truncate text-xs text-muted-foreground/70" title={`to ${summary.to}`}>
               to {summary.to}
@@ -1154,8 +1152,8 @@ export function ExpandedRow({
           </div>
         </div>
 
-        {/* Body spans the full card width, like a post */}
-        <div className="mt-3">
+        {/* Body lines up under the sender's name */}
+        <div className="mt-3 pl-12">
           {detailQuery.isLoading ? (
             <div className="flex flex-col gap-2">
               <div className="h-4 w-3/4 animate-skeleton rounded-sm bg-secondary" />
@@ -2160,8 +2158,8 @@ export function MessageReader({
               const fold = !unfolded && seg.ms.length > 3;
               const visible = fold ? [seg.ms[0], seg.ms[seg.ms.length - 1]] : seg.ms;
               return (
-                <div key={`c-${seg.ms[0].id}`} className="px-4 py-1">
-                  <div className="overflow-hidden rounded-xl border border-border/60 bg-card/40 [&>*+*]:border-t [&>*+*]:border-border/50">
+                <div key={`c-${seg.ms[0].id}`}>
+                  <div>
                     {visible.map((m, idx) => (
                       <Fragment key={m.id}>
                         {fold && idx === 1 ? (
