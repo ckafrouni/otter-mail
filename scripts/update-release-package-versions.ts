@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Sets the app package versions to a released stable version, so the next
-// nightly (next patch + "-nightly...") sorts after it.
+// Sets the app package versions to a released version (the release workflow's
+// finalize job runs this on main after publishing).
 //
 //   node scripts/update-release-package-versions.ts 0.2.0 [--github-output]
 

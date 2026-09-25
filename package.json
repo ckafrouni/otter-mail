@@ -9,6 +9,7 @@
     "start": "vp run --filter @otter-mail/desktop start",
     "build": "vp run --filter './apps/*' build",
     "build:translator": "node scripts/build-translator.ts",
+    "icons:export": "node scripts/export-brand-icons.ts",
     "typecheck": "vp run -r typecheck",
     "lint": "vp lint --report-unused-disable-directives",
     "test": "vp run -r test",

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { UpdateState } from "@otter-mail/contracts";
 
+import { ArrowDownCircleIcon, SparklesIcon, XIcon } from "lucide-react";
+
 import { Btn } from "./gmail/ui";
 import { toast } from "./gmail/toast";
 import { SettingsRow, SettingsSection } from "./settings/settings-ui";
@@ -23,13 +25,12 @@ export function useUpdateState(): UpdateState | null {
 }
 
 /**
- * App-wide update prompts (mounted once in the main window): a toast when a
- * new version is available and again once it is ready to install. The app
- * menu's "Check for Updates…" lands here too.
+ * Feedback for the app menu's "Check for Updates…" (mounted once in the main
+ * window). Updates themselves download on their own and surface in the
+ * sidebar's UpdateCard.
  */
 export function UpdateNotifier() {
   const state = useUpdateState();
-  const announced = useRef<string | null>(null);
   const manualCheck = useRef(false);
 
   useEffect(
@@ -42,39 +43,101 @@ export function UpdateNotifier() {
   );
 
   useEffect(() => {
-    if (!state) return;
-    if (manualCheck.current) {
-      if (state.status === "up-to-date") {
-        manualCheck.current = false;
-        toast.success("Otter Mail is up to date", {
-          description: `Version ${state.currentVersion}`,
-        });
-      } else if (state.status === "disabled" || state.status === "error") {
-        manualCheck.current = false;
-        toast.error("Couldn't check for updates", { description: state.message ?? undefined });
-      } else if (state.status === "available") {
-        manualCheck.current = false;
-      }
-    }
-    const key = `${state.status}:${state.availableVersion}`;
-    if (announced.current === key) return;
-    if (state.status === "available") {
-      announced.current = key;
-      toast.info(`Otter Mail ${state.availableVersion} is available`, {
-        timeout: 0,
-        action: { label: "Download", onClick: () => void window.desktopBridge.updates.download() },
-      });
-    } else if (state.status === "downloaded") {
-      announced.current = key;
-      toast.success(`Otter Mail ${state.availableVersion} is ready`, {
-        description: "Restart to finish updating.",
-        timeout: 0,
-        action: { label: "Restart", onClick: () => void window.desktopBridge.updates.install() },
+    if (!state || !manualCheck.current) return;
+    if (state.status === "up-to-date") {
+      manualCheck.current = false;
+      toast.success("Otter Mail is up to date", { description: `Version ${state.currentVersion}` });
+    } else if (state.status === "disabled" || state.status === "error") {
+      manualCheck.current = false;
+      toast.error("Couldn't check for updates", { description: state.message ?? undefined });
+    } else if (state.status === "downloading" || state.status === "downloaded") {
+      manualCheck.current = false;
+      toast.info(`Otter Mail ${state.availableVersion} is on its way`, {
+        description: "It's downloading; the sidebar offers a restart when it's ready.",
       });
     }
   }, [state]);
 
   return null;
+}
+
+/**
+ * A small card at the bottom of the sidebar while an update downloads and once
+ * it's ready: "Restart to update" (it also installs on the next real quit).
+ */
+export function UpdateCard() {
+  const state = useUpdateState();
+  const [dismissed, setDismissed] = useState<string | null>(null);
+  if (!state?.availableVersion || dismissed === state.availableVersion) return null;
+  const failed = state.status === "error";
+  if (state.status !== "downloading" && state.status !== "downloaded" && !failed) return null;
+
+  const version = state.availableVersion;
+  const percent = Math.min(100, Math.max(0, state.downloadPercent ?? 0));
+  return (
+    <div className="mx-(--sidebar-content-inset) mb-1 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5 shadow-xs/5">
+      <div className="flex items-start gap-2">
+        {state.status === "downloaded" ? (
+          <SparklesIcon className="mt-0.5 size-3.5 shrink-0 text-primary" />
+        ) : (
+          <ArrowDownCircleIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xs font-medium text-foreground">
+            {state.status === "downloaded"
+              ? `Otter Mail ${version} is ready`
+              : failed
+                ? `Couldn't update to ${version}`
+                : `Downloading Otter Mail ${version}`}
+          </p>
+          <p className="text-2xs text-muted-foreground">
+            {state.status === "downloaded"
+              ? "Restart to finish updating."
+              : failed
+                ? "It will try again later."
+                : `${percent}%`}
+          </p>
+        </div>
+        {state.status === "downloaded" ? (
+          <button
+            type="button"
+            aria-label="Hide until next launch"
+            onClick={() => setDismissed(version)}
+            className="-mr-1 -mt-0.5 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground outline-none hover:bg-accent-surface hover:text-foreground focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
+            <XIcon className="size-3" />
+          </button>
+        ) : null}
+      </div>
+      {state.status === "downloading" ? (
+        <div className="mt-2 h-1 overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-[width] duration-300"
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+      ) : null}
+      {state.status === "downloaded" ? (
+        <Btn
+          size="xs"
+          variant="primary"
+          className="mt-2 w-full"
+          onClick={() => void window.desktopBridge.updates.install()}
+        >
+          Restart to update
+        </Btn>
+      ) : null}
+      {failed ? (
+        <Btn
+          size="xs"
+          className="mt-2 w-full"
+          onClick={() => void window.desktopBridge.updates.download()}
+        >
+          Retry
+        </Btn>
+      ) : null}
+    </div>
+  );
 }
 
 function statusLine(state: UpdateState): string {
@@ -94,13 +157,11 @@ function statusLine(state: UpdateState): string {
     case "error":
       return state.message ?? "The last update check failed.";
     default:
-      return state.channel === "nightly"
-        ? "Following nightly builds."
-        : "Following stable releases.";
+      return "Updates download on their own.";
   }
 }
 
-/** Settings → General: version, channel, and the check/download/restart button. */
+/** Settings → General: version, status, and the check / restart button. */
 export function UpdatesSection() {
   const state = useUpdateState();
   if (!state) return null;
@@ -132,7 +193,7 @@ export function UpdatesSection() {
   return (
     <SettingsSection title="Updates">
       <SettingsRow
-        title={`Otter Mail ${state.currentVersion}${state.channel === "nightly" ? " (nightly)" : ""}`}
+        title={`Otter Mail ${state.currentVersion}`}
         description={statusLine(state)}
         control={control}
       />

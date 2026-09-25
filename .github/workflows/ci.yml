@@ -50,7 +50,7 @@ jobs:
 
       - name: Check release scripts
         run: |
-          node scripts/resolve-nightly-release.ts --date 20260101 --run-number 1 --sha 0123456789abcdef
+          node scripts/resolve-release-version.ts --bump patch
           node scripts/build-desktop-artifact.ts --help > /dev/null
           node scripts/dev-runner.ts --dry-run
 

@@ -19,6 +19,9 @@ Releases with auto-update.
 - `native/translator`: a Swift command-line helper for Apple's on-device Translation. It reads a
   JSON request on stdin and prints JSON. Building it needs full Xcode (macOS 26 SDK).
 - `scripts/`: dev runner, desktop packaging (`build-desktop-artifact.ts`), release helpers.
+- `assets/`: app icons like T3 Code's: `prod/` for releases, `dev/` for the blueprint variant that
+  unpackaged runs wear. `pnpm icons:export` regenerates the dev icon and both `.icns` files.
+- `site/`: https://mail.otterware.dev (home, privacy policy, terms), a Cloudflare Worker.
 
 ## How the pieces talk
 
@@ -36,6 +39,12 @@ Releases with auto-update.
   `~/.otter-mail/userdata`; dev runs use `~/.otter-mail/dev`, or `<worktree>/.otter-mail` in a
   linked worktree. `pnpm dev --home <dir>` overrides. Never point dev at the installed app's home.
 - Main-process logs: the terminal, and `logs/main.log` in the state directory.
+
+## Releases
+
+Stable only (no nightlies): run the Release workflow from `main` with a patch/minor/major bump, or
+push a `vX.Y.Z` tag. Installed apps download updates on their own and offer "Restart to update" in
+the sidebar. Details in `docs/release.md`.
 
 ## Verifying
 

@@ -1,11 +1,11 @@
 /**
  * Auto-update from GitHub Releases through electron-updater. The feed comes
  * from app-update.yml, which electron-builder writes from the publish config
- * (see scripts/build-desktop-artifact.ts). Builds on a nightly version follow
- * the nightly channel; everything else follows stable ("latest").
+ * (see scripts/build-desktop-artifact.ts); only stable releases are offered.
  *
- * Nothing downloads on its own: the renderer shows "update available", the
- * user downloads, then restarts to install.
+ * A new version downloads in the background as soon as it's found. The
+ * sidebar then offers "Restart to update", and it also installs whenever the
+ * app really quits (⌥⌘Q, Dock → Quit, logging out; ⌘Q only hides the window).
  */
 
 import { app, ipcMain } from "electron";
@@ -23,14 +23,9 @@ const { autoUpdater } = electronUpdater;
 const STARTUP_DELAY_MS = 15_000;
 const POLL_INTERVAL_MS = 4 * 60 * 60_000;
 
-const channel: UpdateState["channel"] = /-nightly\.\d{8}\.\d+$/.test(app.getVersion())
-  ? "nightly"
-  : "latest";
-
 let state: UpdateState = {
   status: "idle",
   currentVersion: app.getVersion(),
-  channel,
   availableVersion: null,
   downloadPercent: null,
   checkedAt: null,
@@ -68,8 +63,11 @@ async function check(): Promise<UpdateState> {
   return state;
 }
 
+/** Retries a download that failed (normally it starts on its own). */
 async function download(): Promise<UpdateState> {
-  if (state.status !== "available") return state;
+  if (state.status !== "available" && !(state.status === "error" && state.availableVersion)) {
+    return state;
+  }
   setState({ status: "downloading", downloadPercent: 0, message: null });
   try {
     await autoUpdater.downloadUpdate();
@@ -97,17 +95,16 @@ export function initUpdates(): void {
   }
 
   autoUpdater.logger = null;
-  autoUpdater.autoDownload = false;
-  // Installing on quit would also fire when ⌘Q only hides the window.
-  autoUpdater.autoInstallOnAppQuit = false;
-  autoUpdater.channel = channel;
-  autoUpdater.allowPrerelease = channel === "nightly";
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.allowPrerelease = false;
   autoUpdater.allowDowngrade = false;
 
   autoUpdater.on("update-available", (info) => {
     setState({
-      status: "available",
+      status: "downloading",
       availableVersion: info.version,
+      downloadPercent: 0,
       checkedAt: Date.now(),
     });
   });
@@ -125,7 +122,7 @@ export function initUpdates(): void {
     setState({ status: "downloaded", availableVersion: info.version, downloadPercent: 100 });
   });
   autoUpdater.on("error", (err) => {
-    // A repository without releases yet (or without any on this channel).
+    // A repository without any release yet.
     if (/No published versions/i.test(err.message)) {
       setState({ status: "up-to-date", availableVersion: null, checkedAt: Date.now() });
       return;
