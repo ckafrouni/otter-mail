@@ -5,7 +5,7 @@
  *
  * A new version downloads in the background as soon as it's found. The
  * sidebar then offers "Restart to update", and it also installs whenever the
- * app really quits (⌥⌘Q, Dock → Quit, logging out; ⌘Q only hides the window).
+ * app quits (⌘Q, Dock → Quit, logging out).
  */
 
 import { app, ipcMain } from "electron";

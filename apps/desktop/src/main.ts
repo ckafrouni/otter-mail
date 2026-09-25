@@ -161,26 +161,7 @@ function setupApplicationMenu(): void {
         { role: "hideOthers" },
         { role: "unhide" },
         { type: "separator" },
-        // Like Mail-style apps that keep working in the background: ⌘Q only
-        // closes the window (sync and notifications carry on; the Dock icon
-        // brings it back); ⌥⌘Q quits. Quitting from the Dock, logging out
-        // and updates still quit normally.
-        {
-          label: "Close Otter Mail",
-          accelerator: "Command+Q",
-          click: () => {
-            logger.info("main", "Menu: close to background");
-            getMainWindow()?.hide();
-          },
-        },
-        {
-          label: "Quit Otter Mail",
-          accelerator: "Alt+Command+Q",
-          click: () => {
-            logger.info("main", "Menu: quit");
-            app.quit();
-          },
-        },
+        { role: "quit" },
       ],
     },
     {
@@ -285,9 +266,10 @@ function setupApplicationMenu(): void {
 }
 
 // ── Lifecycle events ──────────────────────────────────────────────────
-app.on("window-all-closed", () => {
-  // Mail keeps syncing in the background; the Dock icon brings the window back.
-});
+// As in T3 Code: closing the window (⌘W, the red button) leaves the app
+// running in the background, where mail keeps syncing and notifying; the Dock
+// icon or the menu bar brings the window back. ⌘Q quits.
+app.on("window-all-closed", () => {});
 
 app.on("activate", (_event, hasVisibleWindows) => {
   if (!hasVisibleWindows) void focusMainWindow();
