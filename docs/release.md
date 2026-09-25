@@ -3,8 +3,8 @@
 Releases are GitHub Releases of this repository, built by `.github/workflows/release.yml`.
 There is one channel, stable, like T3 Code's stable train (no nightlies). Installed apps check for
 a new release at launch and every few hours, download it in the background, and show a card at
-the bottom of the sidebar: "Restart to update". It also installs the next time the app really quits
-(⌥⌘Q, Dock → Quit, logging out; ⌘Q only hides the window).
+the bottom of the sidebar: "Restart to update". It also installs the next time the app quits (⌘Q,
+Dock → Quit, logging out).
 
 ## Release cycle
 

@@ -63,7 +63,7 @@ export function UpdateNotifier() {
 
 /**
  * A small card at the bottom of the sidebar while an update downloads and once
- * it's ready: "Restart to update" (it also installs on the next real quit).
+ * it's ready: "Restart to update" (it also installs when the app quits).
  */
 export function UpdateCard() {
   const state = useUpdateState();
