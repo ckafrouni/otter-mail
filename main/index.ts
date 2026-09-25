@@ -12,6 +12,7 @@ import {
   app,
   BrowserWindow,
   Menu,
+  MenuItem,
   ipcMain,
   logger,
   initDevToolsButtonState,
@@ -295,9 +296,38 @@ async function setupApplicationMenu() {
     reload.accelerator = undefined;
     reload.visible = false;
   }
+  // ⌘Z undoes the last mail action (archive, move, send…) — but text fields
+  // keep their own undo. The stock Edit › Undo sends undo: straight to the
+  // web view, so it's swapped for one that asks the main window first.
+  const editMenu = menu.items.find((item) => item.role === "editMenu")?.submenu;
+  const nativeUndo = editMenu?.items.find((item) => item.role === "undo");
+  if (editMenu && nativeUndo) {
+    nativeUndo.accelerator = undefined;
+    nativeUndo.visible = false;
+    editMenu.insert(
+      0,
+      new MenuItem({
+        label: "Undo",
+        accelerator: "CommandOrControl+Z",
+        click: () => {
+          const focused = BrowserWindow.getFocusedWindow();
+          if (focused && focused === mainWindow && !focused.isDestroyed()) {
+            ipcMain.broadcast("edit:undo");
+            return;
+          }
+          Menu.sendActionToFirstResponder("undo:");
+        },
+      }),
+    );
+  }
   Menu.setApplicationMenu(menu);
   logger.info("main", "Application menu configured with Settings");
 }
+
+// ⌘Z landed in a text field: give it the regular text undo.
+ipcMain.handle("edit:nativeUndo", async () => {
+  Menu.sendActionToFirstResponder("undo:");
+});
 
 ipcMain.handle("window:closeMain", async () => {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();

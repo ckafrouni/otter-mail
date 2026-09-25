@@ -6,7 +6,8 @@
  */
 
 import { useEffect, useState, type ComponentProps, type ReactNode } from "react";
-import { toast, Switch } from "@glaze/core/components";
+import { Switch } from "@glaze/core/components";
+import { toast } from "../gmail/toast";
 import { CheckIcon, RotateCwIcon, StarIcon } from "lucide-react";
 import {
   gmailApi,

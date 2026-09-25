@@ -9,7 +9,8 @@ import {
   TriangleAlertIcon,
   XIcon,
 } from "lucide-react";
-import { Dialog, Text, toast } from "@glaze/core/components";
+import { Dialog, Text } from "@glaze/core/components";
+import { toast } from "../gmail/toast";
 import { Btn, HintTooltip, IconBtn, Kbd, cn, restoreFocusForKeyboardOnly } from "../gmail/ui";
 import {
   DropdownMenu,

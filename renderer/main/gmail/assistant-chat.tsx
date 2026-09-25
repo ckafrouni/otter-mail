@@ -69,7 +69,7 @@ import {
   type SentAttachment,
 } from "./chat-attachments";
 import { IntentMarker, QueuedRunsControl, useFollowUpBehavior } from "./chat-queue";
-import { toast } from "@glaze/core/components";
+import { toast } from "./toast";
 import { useCommandHandlers, useKeybindingContext } from "../keybindings/dispatch";
 import { useAccounts, useMessage } from "./hooks";
 import type { GmailMessageSummary } from "./types";

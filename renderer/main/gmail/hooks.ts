@@ -7,7 +7,7 @@ import {
   useQueryClient,
   type InfiniteData,
 } from "@tanstack/react-query";
-import { toast } from "@glaze/core/components";
+import { toast } from "./toast";
 import {
   gmailApi,
   type ModifyMessageParams,
@@ -28,7 +28,8 @@ import type {
 } from "./types";
 import type { GmailSearchResult, ListMessagesResult } from "./api";
 import { resolveRules } from "./custom-views";
-import { registerUndo, isPureMarkRead } from "./undo";
+import { registerUndo, clearUndo, isPureMarkRead, isQuiet, type ActionSummary } from "./undo";
+import { summarizeLabelChange } from "./action-summary";
 
 const STALE_TIME = 30_000;
 
@@ -788,6 +789,19 @@ export function useRemoveAccount() {
   });
 }
 
+/** The action toast's summary of a label change, or undefined for changes an
+    undo made (they announce themselves as "Undone"). */
+function labelChangeSummary(
+  qc: ReturnType<typeof useQueryClient>,
+  params: { accountId: string; addLabelIds?: string[]; removeLabelIds?: string[] },
+  noun: ActionSummary["noun"],
+): ActionSummary | undefined {
+  if (isQuiet(params)) return undefined;
+  const labels = qc.getQueryData<GmailLabel[]>(queryKeys.labels(params.accountId)) ?? [];
+  const nameOf = (id: string) => labels.find((l) => l.id === id && l.type === "user")?.name;
+  return summarizeLabelChange(params.addLabelIds ?? [], params.removeLabelIds ?? [], noun, nameOf);
+}
+
 export function useModifyMessage() {
   const qc = useQueryClient();
   return useMutation({
@@ -798,15 +812,18 @@ export function useModifyMessage() {
     onMutate: async (params) => {
       const { accountId, messageId, addLabelIds = [], removeLabelIds = [] } = params;
       if (!isPureMarkRead(params.addLabelIds, params.removeLabelIds)) {
-        registerUndo({
-          kind: "modifyMessage",
-          params: {
-            accountId,
-            messageId,
-            addLabelIds: removeLabelIds,
-            removeLabelIds: addLabelIds,
+        registerUndo(
+          {
+            kind: "modifyMessage",
+            params: {
+              accountId,
+              messageId,
+              addLabelIds: removeLabelIds,
+              removeLabelIds: addLabelIds,
+            },
           },
-        });
+          labelChangeSummary(qc, params, "message"),
+        );
       }
       const messageKey = queryKeys.message(accountId, messageId);
       const labelsKey = queryKeys.labels(accountId);
@@ -936,8 +953,12 @@ export function useTrashMessage() {
       });
       return gmailApi.trashMessage(accountId, messageId);
     },
-    onMutate: async ({ accountId, messageId }) => {
-      registerUndo({ kind: "untrashMessage", params: { accountId, messageId } });
+    onMutate: async (params) => {
+      const { accountId, messageId } = params;
+      registerUndo(
+        { kind: "untrashMessage", params: { accountId, messageId } },
+        isQuiet(params) ? undefined : { verb: "Moved", suffix: " to Trash", noun: "message" },
+      );
       const labelsKey = queryKeys.labels(accountId);
       const messageKey = queryKeys.message(accountId, messageId);
       const threadsKey = ["gmail:thread", accountId];
@@ -1061,10 +1082,18 @@ export function useModifyThread() {
     onMutate: async (params) => {
       const { accountId, threadId, addLabelIds = [], removeLabelIds = [] } = params;
       if (!isPureMarkRead(params.addLabelIds, params.removeLabelIds)) {
-        registerUndo({
-          kind: "modifyThread",
-          params: { accountId, threadId, addLabelIds: removeLabelIds, removeLabelIds: addLabelIds },
-        });
+        registerUndo(
+          {
+            kind: "modifyThread",
+            params: {
+              accountId,
+              threadId,
+              addLabelIds: removeLabelIds,
+              removeLabelIds: addLabelIds,
+            },
+          },
+          labelChangeSummary(qc, params, "conversation"),
+        );
       }
       const threadKey = queryKeys.thread(accountId, threadId);
       const labelsKey = queryKeys.labels(accountId);
@@ -1215,8 +1244,12 @@ export function useTrashThread() {
       console.log("[hooks:useTrashThread] trashing thread", { accountId, threadId });
       return gmailApi.trashThread(accountId, threadId);
     },
-    onMutate: async ({ accountId, threadId }) => {
-      registerUndo({ kind: "untrashThread", params: { accountId, threadId } });
+    onMutate: async (params) => {
+      const { accountId, threadId } = params;
+      registerUndo(
+        { kind: "untrashThread", params: { accountId, threadId } },
+        isQuiet(params) ? undefined : { verb: "Moved", suffix: " to Trash", noun: "conversation" },
+      );
       const threadKey = queryKeys.thread(accountId, threadId);
       const labelsKey = queryKeys.labels(accountId);
 
@@ -1702,6 +1735,36 @@ export function useDeleteThreadsForever() {
       void qc.invalidateQueries({ queryKey: ["gmail:thread", accountId] });
       void qc.invalidateQueries({ queryKey: queryKeys.labels(accountId) });
     },
+  });
+}
+
+/** Empty Junk / Empty Trash for some accounts — permanent, so it clears the
+    undo slot, and the toast reports what went. */
+export function useEmptyFolder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      accountIds,
+      labelId,
+    }: {
+      accountIds: string[];
+      labelId: "SPAM" | "TRASH";
+    }) => {
+      console.log("[hooks:useEmptyFolder]", { accounts: accountIds.length, labelId });
+      const results = await Promise.all(accountIds.map((id) => gmailApi.emptyFolder(id, labelId)));
+      return results.reduce((sum, r) => sum + r.deleted, 0);
+    },
+    onSuccess: (deleted, { labelId }) => {
+      clearUndo();
+      invalidateMailCaches(qc);
+      const where = labelId === "SPAM" ? "Junk" : "Trash";
+      toast.success(
+        deleted === 0
+          ? `${where} was already empty`
+          : `Deleted ${deleted.toLocaleString()} message${deleted === 1 ? "" : "s"} from ${where}`,
+      );
+    },
+    onError: (err) => toast.error(`Couldn't empty it: ${describeGmailWriteError(err)}`),
   });
 }
 

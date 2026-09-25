@@ -351,6 +351,18 @@ export function useDraftAutosave({
     refreshRef.current();
   };
 
+  /** Where the draft is once its last save landed (undo send reopens it). */
+  const savedDraft = async (): Promise<{ accountId: string; messageId: string } | null> => {
+    if (pendingRef.current) await pendingRef.current;
+    // An earlier save may still be running (the closing flush skips then).
+    for (let i = 0; i < 100 && savingRef.current; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const account = draftAccountRef.current;
+    const messageId = versionRef.current;
+    return account && messageId ? { accountId: account, messageId } : null;
+  };
+
   /** Re-enable autosave after a failed send. */
   const reopen = () => {
     doneRef.current = false;
@@ -365,6 +377,7 @@ export function useDraftAutosave({
     keepMine,
     saveAsNew,
     finalize,
+    savedDraft,
     reopen,
   };
 }

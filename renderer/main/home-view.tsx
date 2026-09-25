@@ -5,7 +5,10 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { EmptyState, Button, toast } from "@glaze/core/components";
+import { EmptyState, Button } from "@glaze/core/components";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast, type ToastId } from "./gmail/toast";
+import { setDraftOpener } from "./gmail/undo-send";
 import { AccountsSidebar } from "./gmail/accounts-sidebar";
 import { MessageList } from "./gmail/message-list";
 import { MessageReader } from "./gmail/message-reader";
@@ -28,6 +31,7 @@ import { isTypingTarget } from "./gmail/keyboard";
 import { cn } from "./gmail/ui";
 import { usePanelAnimationSettings, usePanelPresence } from "./panel-animations";
 import {
+  keybindingContext,
   useCommandHandlers,
   useKeybindingContext,
   useKeybindingDispatcher,
@@ -46,7 +50,14 @@ import {
   useUntrashThread,
   useUntrashMessage,
 } from "./gmail/hooks";
-import { beginUndoGroup, takeUndo, type UndoAction } from "./gmail/undo";
+import {
+  beginUndoGroup,
+  onUndoableAction,
+  peekUndo,
+  quietParams,
+  takeUndo,
+  type UndoAction,
+} from "./gmail/undo";
 import { getAccountColor, getAccountContrastColor } from "./gmail/account-style";
 import { gmailApi, type MailtoTarget } from "./gmail/api";
 import type { QuoteContext } from "./gmail/chat-context";
@@ -333,31 +344,84 @@ export function HomeView() {
   const undoUntrashMessage = useUntrashMessage();
   const undoRunner = useRef<(action: UndoAction) => void>(() => {});
   const runUndo = (action: UndoAction): Promise<unknown> => {
+    // quietParams: the inverse re-registers (so z redoes) without its own toast.
     switch (action.kind) {
       case "modifyMessage":
-        return undoModifyMessage.mutateAsync(action.params);
+        return undoModifyMessage.mutateAsync(quietParams(action.params));
       case "modifyThread":
-        return undoModifyThread.mutateAsync(action.params);
+        return undoModifyThread.mutateAsync(quietParams(action.params));
       case "untrashThread":
-        return undoUntrashThread.mutateAsync(action.params);
+        return undoUntrashThread.mutateAsync(quietParams(action.params));
       case "untrashMessage":
-        return undoUntrashMessage.mutateAsync(action.params);
+        return undoUntrashMessage.mutateAsync(quietParams(action.params));
+      case "callback":
+        action.run();
+        return Promise.resolve();
       case "batch":
         // Their redo registrations regroup, so z again redoes the whole batch.
         beginUndoGroup(action.actions.length);
         return Promise.all(action.actions.map(runUndo));
     }
   };
+  // ⌘Z (Edit › Undo in the app menu): text undo while typing, else the last
+  // mail action, like z.
+  useEffect(
+    () =>
+      window.glazeAPI.glaze.ipc.onNotification("edit:undo", () => {
+        const context = keybindingContext();
+        if (context.editableFocus) {
+          void window.glazeAPI.glaze.ipc.invoke("edit:nativeUndo");
+          return;
+        }
+        if (context.dialogOpen) return;
+        const action = takeUndo();
+        if (action) undoRunner.current(action);
+      }),
+    [],
+  );
+  // The latest action's toast (its Undo is what z would undo); a newer action
+  // or an undo replaces it.
+  const actionToastRef = useRef<ToastId | null>(null);
+  const closeActionToast = () => {
+    if (actionToastRef.current) toast.close(actionToastRef.current);
+    actionToastRef.current = null;
+  };
   undoRunner.current = (action) => {
     console.log("[HomeView:undo]", {
       kind: action.kind,
       count: action.kind === "batch" ? action.actions.length : 1,
     });
+    closeActionToast();
     runUndo(action).then(
-      () => toast.success("Undone"),
+      // Callbacks (e.g. holding back a send) say what happened themselves.
+      () => (action.kind === "callback" ? undefined : toast.success("Undone")),
       () => toast.error("Could not undo"),
     );
   };
+  useEffect(
+    () =>
+      onUndoableAction((title) => {
+        closeActionToast();
+        // This toast undoes this action only — not whatever came after it
+        // (e.g. a message sent since, which has its own Undo).
+        const action = peekUndo();
+        actionToastRef.current = toast.success(title, {
+          action: {
+            label: "Undo",
+            onClick: () => {
+              actionToastRef.current = null;
+              if (!action || peekUndo() !== action) {
+                toast.info("That can no longer be undone");
+                return;
+              }
+              takeUndo();
+              undoRunner.current(action);
+            },
+          },
+        });
+      }),
+    [],
+  );
 
   // Keyboard commands (Settings › Keybindings; defaults in keybindings/commands.ts).
   useKeybindingDispatcher();
@@ -660,6 +724,20 @@ export function HomeView() {
     setReaderAccountId(accountId);
     setFocusedMessage(focusId ? { rowId: messageId, id: focusId } : null);
   };
+
+  // A send taken back with Undo reopens its draft here (the reader edits drafts).
+  const queryClient = useQueryClient();
+  const selectMessageRef = useRef(handleSelectMessage);
+  selectMessageRef.current = handleSelectMessage;
+  useEffect(
+    () =>
+      setDraftOpener(({ accountId, messageId }) => {
+        void queryClient.invalidateQueries({ queryKey: ["gmail:messages", accountId] });
+        void queryClient.invalidateQueries({ queryKey: ["gmail:combinedMessages"] });
+        selectMessageRef.current(messageId, accountId);
+      }),
+    [],
+  );
 
   // ── Search mailbox ───────────────────────────────────────────────────────
   // Search is a mailbox like Inbox: selecting a search row (the top Search

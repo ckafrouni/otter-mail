@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect } from "react";
-import { toast } from "@glaze/core/components";
+import { toast } from "./toast";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { gmailApi, type SaveViewParams } from "./api";
 import type { GmailAccount, MailView, ViewKind, ViewRule } from "./types";

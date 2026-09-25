@@ -465,6 +465,9 @@ export const gmailApi = {
 
   deleteThreadsForever: (accountId: string, threadIds: string[]): Promise<{ ok: boolean }> =>
     ipc("gmail:deleteThreadsForever", { accountId, threadIds }),
+  /** Empty Junk / Empty Trash: deletes every message there forever. */
+  emptyFolder: (accountId: string, labelId: "SPAM" | "TRASH"): Promise<{ deleted: number }> =>
+    task("gmail:emptyFolder", { accountId, labelId }),
 
   sendMessage: (params: SendMessageParams): Promise<{ ok: boolean }> =>
     ipc("gmail:sendMessage", params),

@@ -8,7 +8,7 @@
 
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { FileTextIcon, LoaderCircleIcon, PaperclipIcon, XIcon } from "lucide-react";
-import { toast } from "@glaze/core/components";
+import { toast } from "./toast";
 import { gmailApi, type ChatAttachment } from "./api";
 import { cn } from "./ui";
 

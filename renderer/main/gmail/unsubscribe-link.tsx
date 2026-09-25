@@ -6,7 +6,8 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Dialog, Text, toast } from "@glaze/core/components";
+import { Dialog, Text } from "@glaze/core/components";
+import { toast } from "./toast";
 import { gmailApi } from "./api";
 
 export function UnsubscribeLink({
