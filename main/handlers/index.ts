@@ -14,6 +14,7 @@ import { registerTrayPopoverHandlers } from "./tray-popover.js";
 import { registerAssistantHandlers } from "./assistant.js";
 import { registerSearchHandlers } from "./search.js";
 import { registerCalendarHandlers } from "./calendar.js";
+import { registerTranslationHandlers } from "./translation.js";
 import { takePendingOpenMessage } from "../services/open-message-target.js";
 import { focusMainWindow } from "../services/tray.js";
 import { listMailApps, setDefaultMailHandler } from "../services/default-mail.js";
@@ -118,6 +119,7 @@ export function registerHandlers(): void {
   registerAssistantHandlers();
   registerSearchHandlers();
   registerCalendarHandlers();
+  registerTranslationHandlers();
 
   // Register Gmail handlers
   registerGmailHandlers();

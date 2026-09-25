@@ -355,10 +355,23 @@ export type SyncSettings = {
   trayEnabled: boolean;
 };
 
+export type TranslationSettings = {
+  /** Languages the user reads; empty until set (system languages apply). */
+  readLanguages: string[];
+  autoTranslate: boolean;
+};
+
+export type TranslationStatus = "ok" | "notInstalled" | "unsupported" | "unavailable";
+
 export type SaveViewParams = { id?: string; name: string; rules: ViewRule[]; mailbox?: string };
 
 export type SettingsPane =
-  "general" | "appearance" | "keybindings" | "accounts" | "views" | "assistant";
+  | "general"
+  | "appearance"
+  | "keybindings"
+  | "accounts"
+  | "views"
+  | "assistant";
 export type SettingsTarget = {
   pane: SettingsPane;
   viewId?: string | null;
@@ -540,6 +553,23 @@ export const gmailApi = {
 
   setSyncSettings: (params: Partial<SyncSettings>): Promise<SyncSettings> =>
     ipc("gmail:setSyncSettings", params),
+
+  getTranslationSettings: (): Promise<TranslationSettings> => ipc("translation:getSettings"),
+
+  setTranslationSettings: (params: Partial<TranslationSettings>): Promise<TranslationSettings> =>
+    ipc("translation:setSettings", params),
+
+  /** Apple's on-device language detection. */
+  detectLanguage: (text: string): Promise<{ language: string | null; confidence: number }> =>
+    ipc("translation:detect", { text }),
+
+  /** Apple's on-device translation, one result per segment. */
+  translate: (params: {
+    segments: string[];
+    source: string;
+    target: string;
+  }): Promise<{ status: TranslationStatus; texts: string[] }> =>
+    task("translation:translate", params),
 
   listViews: (): Promise<MailView[]> => ipc("gmail:listViews"),
 

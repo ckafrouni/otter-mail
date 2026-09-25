@@ -26,3 +26,7 @@ tmp/*
 GLAZE-APP-GUIDE.md
 GLAZE-AGENT-INSTRUCTIONS.md
 .glaze-runtime-context.md
+
+# Native helper build output and its generated bindings
+native/*/.build/
+main/glaze-swift.d.ts

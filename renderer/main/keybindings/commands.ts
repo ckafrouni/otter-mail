@@ -80,6 +80,7 @@ export const KEYBINDING_COMMANDS = [
   "message.markUnread",
   "message.label",
   "message.move",
+  "message.translate",
 ] as const;
 
 export const LABEL_MOVE_PREFIX = "label.move:";
@@ -207,6 +208,7 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "shift+u", command: "message.markUnread", when: IN_MAIL },
   { key: "l", command: "message.label", when: IN_MAIL },
   { key: "v", command: "message.move", when: IN_MAIL },
+  { key: "t", command: "message.translate", when: ON_MESSAGE },
 ];
 
 function titleCaseSegment(segment: string): string {

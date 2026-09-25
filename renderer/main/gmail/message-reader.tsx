@@ -23,6 +23,7 @@ import {
   FolderIcon,
   ForwardIcon,
   ImageIcon,
+  LanguagesIcon,
   MailIcon,
   MailOpenIcon,
   ReplyAllIcon,
@@ -34,6 +35,12 @@ import {
 } from "lucide-react";
 import { SenderHoverCard } from "./sender-hovercard";
 import { UnsubscribeLink } from "./unsubscribe-link";
+import {
+  ConversationTranslationContext,
+  useIsForeignMessage,
+  useMessageTranslation,
+} from "./translate-banner";
+import { useTranslationSettings } from "./translation";
 import { InviteCard, requestRsvp, rsvpFromGoogleLink } from "./invite-card";
 import type { RsvpResponse } from "./api";
 import {
@@ -1285,6 +1292,9 @@ export function ExpandedRow({
     () => matchInlineImages(detail?.bodyHtml ?? null, detail?.attachments ?? []),
     [detail],
   );
+  // Mail in a language the user doesn't read gets the translate banner; once
+  // translated, the body's text is swapped in place.
+  const translation = useMessageTranslation(accountId, detail);
   // Calendar invitations (an .ics part) get the RSVP bar.
   const hasInvite = Boolean(
     detail?.attachments.some(
@@ -1377,11 +1387,12 @@ export function ExpandedRow({
             </div>
           ) : detail ? (
             <>
+              {translation.banner}
               {hasInvite ? <InviteCard accountId={accountId} messageId={summary.id} /> : null}
               <MessageBody
                 inviteMessageId={hasInvite ? summary.id : undefined}
-                bodyHtml={detail.bodyHtml}
-                bodyText={detail.bodyText}
+                bodyHtml={translation.bodyHtml}
+                bodyText={translation.bodyText}
                 inlineImages={
                   inlineImages.size > 0
                     ? { accountId, messageId: summary.id, byCid: inlineImages }
@@ -1924,13 +1935,17 @@ export function MessageReader({
 }: MessageReaderProps) {
   // Reply/reply-all/forward handlers exist only when a message is open; the
   // render below refreshes this ref so the once-mounted listener stays current.
-  const readerActions = useRef<{ reply?: () => void; replyAll?: () => void; forward?: () => void }>(
-    {},
-  );
+  const readerActions = useRef<{
+    reply?: () => void;
+    replyAll?: () => void;
+    forward?: () => void;
+    translate?: () => void;
+  }>({});
   const junkShortcut = useShortcutLabel("message.junk");
   const replyAllShortcut = useShortcutLabel("message.replyAll");
   const forwardShortcut = useShortcutLabel("message.forward");
   const flagShortcut = useShortcutLabel("message.star");
+  const translateShortcut = useShortcutLabel("message.translate");
   // The band adapts to the reader's width (panels open → narrow): the subject
   // moves to its own row below 44rem, secondary actions fold into "…" below
   // 36rem. Measured in JS because the "…" menu renders outside this element.
@@ -1946,7 +1961,7 @@ export function MessageReader({
   }, []);
   const compactTitle = readerWidth < 44 * 16;
   const compactActions = readerWidth < 36 * 16;
-  const readerAction = (name: "reply" | "replyAll" | "forward") => () => {
+  const readerAction = (name: "reply" | "replyAll" | "forward" | "translate") => () => {
     const action = readerActions.current[name];
     if (!action) return false;
     action();
@@ -1955,6 +1970,7 @@ export function MessageReader({
     "message.reply": readerAction("reply"),
     "message.replyAll": readerAction("replyAll"),
     "message.forward": readerAction("forward"),
+    "message.translate": readerAction("translate"),
   });
   // Cleared every render; the message-open path below re-populates it, so the
   // shortcuts are inert when no message is on screen.
@@ -1973,6 +1989,20 @@ export function MessageReader({
 
   const message = messageQuery.data;
   const threadId = message?.threadId || null;
+
+  // Translation is per conversation (starts on with "Translate
+  // automatically"); each message in another language follows it.
+  const { autoTranslate } = useTranslationSettings();
+  const [translation, setTranslation] = useState<{ on: boolean; target: string | null }>({
+    on: false,
+    target: null,
+  });
+  useEffect(() => setTranslation({ on: autoTranslate, target: null }), [messageId, autoTranslate]);
+  const conversationTranslation = useMemo(
+    () => ({ ...translation, set: setTranslation }),
+    [translation],
+  );
+  const openedForeign = useIsForeignMessage(accountId, message);
   const threadQuery = useThread(messageId ? accountId : null, threadId);
   const threadMessages = threadQuery.data ?? [];
   const isThread = !single && threadMessages.length > 1;
@@ -2251,10 +2281,20 @@ export function MessageReader({
     })();
   };
 
+  const handleToggleTranslation = () => {
+    if (!translation.on && !openedForeign) {
+      toast.info("This message is already in a language you read");
+      return;
+    }
+    console.log("[MessageReader:translate]", { messageId, on: !translation.on });
+    setTranslation((t) => ({ ...t, on: !t.on }));
+  };
+
   readerActions.current = {
     reply: handleReply,
     replyAll: handleReplyAll,
     forward: handleForward,
+    translate: handleToggleTranslation,
   };
 
   const isFlagged = message.labelIds.includes("STARRED");
@@ -2336,7 +2376,7 @@ export function MessageReader({
   );
 
   return (
-    <>
+    <ConversationTranslationContext.Provider value={conversationTranslation}>
       <div ref={readerRef} className="flex h-full min-w-0 flex-col">
         {/* Conversation header = the title band: subject + labels, the
             everyday actions, a "more" menu, then the window's panel toggle. */}
@@ -2487,6 +2527,15 @@ export function MessageReader({
               >
                 {isUnread ? "Mark as read" : "Mark as unread"}
               </DropdownMenuItem>
+              {openedForeign || translation.on ? (
+                <DropdownMenuItem
+                  icon={<LanguagesIcon />}
+                  accelerator={translateShortcut}
+                  onSelect={handleToggleTranslation}
+                >
+                  {translation.on ? "Show original" : "Translate"}
+                </DropdownMenuItem>
+              ) : null}
               {isJunk ? (
                 <DropdownMenuItem
                   icon={<ShieldCheckIcon />}
@@ -2661,6 +2710,6 @@ export function MessageReader({
       >
         <Text variant="small">Permanently delete this conversation? This cannot be undone.</Text>
       </Dialog>
-    </>
+    </ConversationTranslationContext.Provider>
   );
 }

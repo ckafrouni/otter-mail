@@ -1,12 +1,7 @@
 import { useEffect, useState } from "react";
 import { Switch, toast } from "@glaze/core/components";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../gmail/select";
-import {
-  gmailApi,
-  type MailApp,
-  type NotificationsMode,
-  type SettingsPane,
-} from "../gmail/api";
+import { gmailApi, type MailApp, type NotificationsMode, type SettingsPane } from "../gmail/api";
 import {
   getAdvanceDirection,
   setAdvanceDirection as persistAdvanceDirection,
@@ -18,6 +13,7 @@ import { KeybindingsPane } from "./keybindings-pane";
 import { AccountsPane } from "./accounts-pane";
 import { ViewsPane } from "./views-pane";
 import { ProvidersPane } from "./providers-pane";
+import { TranslationSection } from "./translation-section";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settings-ui";
 
 /** Where the settings page is. */
@@ -265,6 +261,8 @@ function GeneralPane() {
           }
         />
       </SettingsSection>
+
+      <TranslationSection />
 
       <SettingsSection title="System">
         <SettingsRow

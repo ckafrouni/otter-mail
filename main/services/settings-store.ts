@@ -20,6 +20,11 @@ export type AppSettings = {
   launchAtLogin: boolean;
   /** Show the menu-bar icon and mini-inbox popover (opt-in). */
   trayEnabled: boolean;
+  /** Languages the user reads (BCP-47 codes, first = where translations go).
+      Empty until set: the renderer then falls back to the system languages. */
+  readLanguages: string[];
+  /** Translate mail in other languages without asking. */
+  autoTranslate: boolean;
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -27,6 +32,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notificationsMode: "inbox",
   launchAtLogin: false,
   trayEnabled: false,
+  readLanguages: [],
+  autoTranslate: false,
 };
 
 async function getSettingsPath(): Promise<string> {
