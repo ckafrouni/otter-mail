@@ -22,6 +22,7 @@ const { autoUpdater } = electronUpdater;
 
 const STARTUP_DELAY_MS = 15_000;
 const POLL_INTERVAL_MS = 4 * 60 * 60_000;
+const RELEASES_URL = "https://github.com/ckafrouni/otter-mail/releases";
 
 let state: UpdateState = {
   status: "idle",
@@ -30,6 +31,7 @@ let state: UpdateState = {
   downloadPercent: null,
   checkedAt: null,
   message: null,
+  manualDownloadUrl: null,
 };
 
 function setState(patch: Partial<UpdateState>): UpdateState {
@@ -47,9 +49,25 @@ function disabledReason(): string | null {
   return null;
 }
 
+/** Squirrel.Mac only installs an update signed by the same Developer ID as the running app. */
+function isSignatureError(err: Error): boolean {
+  return /code signature|code requirement/i.test(err.message);
+}
+
+/** A short reason for the UI; the full error goes to the log. */
+function describeError(err: Error): string {
+  if (isSignatureError(err)) {
+    return "This copy of Otter Mail isn't signed, so macOS won't install updates into it. Download the new version instead.";
+  }
+  if (/net::ERR_/.test(err.message))
+    return "Couldn't reach GitHub. Otter Mail will try again later.";
+  const firstLine = err.message.split("\n")[0] ?? "";
+  return firstLine.length > 160 ? `${firstLine.slice(0, 160)}…` : firstLine;
+}
+
 async function check(): Promise<UpdateState> {
   if (state.status === "disabled" || state.status === "downloading") return state;
-  if (state.status === "downloaded") return state;
+  if (state.status === "downloaded" || state.manualDownloadUrl) return state;
   setState({ status: "checking", message: null });
   try {
     await autoUpdater.checkForUpdates();
@@ -57,7 +75,7 @@ async function check(): Promise<UpdateState> {
     // The "error" event has already reported it.
     if (state.status === "checking") {
       logger.warn("updates", "Update check failed", err);
-      setState({ status: "error", message: err instanceof Error ? err.message : String(err) });
+      setState({ status: "error", message: describeError(asError(err)) });
     }
   }
   return state;
@@ -65,17 +83,20 @@ async function check(): Promise<UpdateState> {
 
 /** Retries a download that failed (normally it starts on its own). */
 async function download(): Promise<UpdateState> {
-  if (state.status !== "available" && !(state.status === "error" && state.availableVersion)) {
-    return state;
-  }
+  const failed = state.status === "error" && state.availableVersion && !state.manualDownloadUrl;
+  if (state.status !== "available" && !failed) return state;
   setState({ status: "downloading", downloadPercent: 0, message: null });
   try {
     await autoUpdater.downloadUpdate();
   } catch (err) {
     logger.warn("updates", "Update download failed", err);
-    setState({ status: "error", message: err instanceof Error ? err.message : String(err) });
+    setState({ status: "error", message: describeError(asError(err)) });
   }
   return state;
+}
+
+function asError(err: unknown): Error {
+  return err instanceof Error ? err : new Error(String(err));
 }
 
 export function initUpdates(): void {
@@ -128,7 +149,14 @@ export function initUpdates(): void {
       return;
     }
     logger.warn("updates", "Updater error", err);
-    setState({ status: "error", message: err.message });
+    setState({
+      status: "error",
+      message: describeError(err),
+      manualDownloadUrl:
+        isSignatureError(err) && state.availableVersion
+          ? `${RELEASES_URL}/tag/v${state.availableVersion}`
+          : state.manualDownloadUrl,
+    });
   });
 
   setTimeout(() => void check(), STARTUP_DELAY_MS);
