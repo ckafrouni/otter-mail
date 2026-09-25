@@ -57,13 +57,17 @@ function mimeFor(name: string, fallback?: string): string {
 
 /** Keeps names readable but safe on disk. */
 function safeName(name: string): string {
-  const base = path.basename(name).replace(/[^\w.\- ()]+/g, "_").slice(-120);
+  const base = path
+    .basename(name)
+    .replace(/[^\w.\- ()]+/g, "_")
+    .slice(-120);
   return base || "attachment";
 }
 
 async function store(name: string, bytes: Buffer, mime?: string): Promise<ChatAttachment> {
   const type = mimeFor(name, mime);
-  if (bytes.byteLength === 0) throw new Error(`'${path.basename(name)}' is empty or could not be read.`);
+  if (bytes.byteLength === 0)
+    throw new Error(`'${path.basename(name)}' is empty or could not be read.`);
   if (bytes.byteLength > limitFor(type)) throw tooLarge(path.basename(name), type);
   const id = randomUUID();
   const file = path.join(await attachmentsDir(), `${id.slice(0, 8)}-${safeName(name)}`);
@@ -88,7 +92,11 @@ export async function stageFromPath(sourcePath: string): Promise<ChatAttachment>
 }
 
 /** Pasted content (screenshots, copied images): bytes only, no path. */
-export async function stageFromBytes(name: string, mime: string, base64: string): Promise<ChatAttachment> {
+export async function stageFromBytes(
+  name: string,
+  mime: string,
+  base64: string,
+): Promise<ChatAttachment> {
   return store(name, Buffer.from(base64, "base64"), mime);
 }
 

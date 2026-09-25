@@ -150,9 +150,12 @@ export function registerAssistantHandlers(): void {
     const errors: string[] = [];
     for (const item of items.slice(0, MAX_ATTACHMENTS)) {
       try {
-        if (typeof item?.path === "string" && item.path) staged.push(await stageFromPath(item.path));
+        if (typeof item?.path === "string" && item.path)
+          staged.push(await stageFromPath(item.path));
         else if (typeof item?.base64 === "string")
-          staged.push(await stageFromBytes(str(item.name) || "Pasted image.png", str(item.mime), item.base64));
+          staged.push(
+            await stageFromBytes(str(item.name) || "Pasted image.png", str(item.mime), item.base64),
+          );
       } catch (error) {
         errors.push(error instanceof Error ? error.message : String(error));
       }

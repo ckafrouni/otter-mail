@@ -88,7 +88,10 @@ async function hermesContent(input: string, attachments: ChatAttachment[]): Prom
   return [
     { type: "text", text: text || "See the attached image." },
     ...(await Promise.all(
-      images.map(async (image) => ({ type: "image_url", image_url: { url: await dataUrl(image) } })),
+      images.map(async (image) => ({
+        type: "image_url",
+        image_url: { url: await dataUrl(image) },
+      })),
     )),
   ];
 }

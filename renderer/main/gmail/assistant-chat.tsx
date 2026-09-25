@@ -21,6 +21,7 @@ import {
   CheckIcon,
   CornerUpRightIcon,
   ListPlusIcon,
+  PaperclipIcon,
 } from "lucide-react";
 import { IconBtn, HintTooltip, buttonClass, cn } from "./ui";
 import {
@@ -29,6 +30,7 @@ import {
   type ChatSession,
   type ChatSessionMessage,
   type ApprovalDecision,
+  type ChatAttachment,
   type ApprovalRequest,
   type AssistantSettingsPatch,
   type ProviderKind,
@@ -56,6 +58,15 @@ import {
   type QuoteContext,
 } from "./chat-context";
 import { ChatMarkdown } from "./chat-markdown";
+import {
+  ComposerAttachments,
+  DropOverlay,
+  SentAttachments,
+  filesFromPaste,
+  useChatAttachments,
+  useFileDrop,
+  type SentAttachment,
+} from "./chat-attachments";
 import { IntentMarker, QueuedRunsControl, useFollowUpBehavior } from "./chat-queue";
 import { toast } from "@glaze/core/components";
 import { useCommandHandlers, useKeybindingContext } from "../keybindings/dispatch";
@@ -106,6 +117,8 @@ type ChatTurn = {
   skill?: string;
   /** How a user message was delivered (Otter Code's inputIntent marker). */
   intent?: "queued" | "steer" | "promoted";
+  /** Files sent with a user message (thumbnails for images). */
+  attachments?: SentAttachment[];
   error?: string;
   /** Assistant turns: when the run started / settled, for the "Worked for" fold. */
   startedAt?: number;
@@ -190,6 +203,8 @@ type Outgoing = {
   skill?: Skill;
   title: string;
   context?: ContextMeta;
+  attachments?: ChatAttachment[];
+  sent?: SentAttachment[];
 };
 
 /**
@@ -689,6 +704,13 @@ export function AssistantChatPanel({
   } | null>(null);
   const [attach, setAttach] = useState(true);
   const [queue, setQueue] = useState<QueuedMessage[]>([]);
+  // Pasted / dropped / picked files for the next message.
+  const files = useChatAttachments();
+  const drop = useFileDrop((dropped) => {
+    void files.add(dropped);
+    inputRef.current?.focus();
+  });
+  const filePickerRef = useRef<HTMLInputElement>(null);
   // ⌘ held: the send button previews the alternate action (queue ⇄ steer).
   const [modHeld, setModHeld] = useState(false);
   useEffect(() => {
@@ -928,7 +950,12 @@ export function AssistantChatPanel({
   /** Consumes the composer (text, skill, attached context) into a message. */
   const compose = (): Outgoing | null => {
     const question = draft.trim();
-    if ((!question && !activeSkill) || !usable || !active) return null;
+    if ((!question && !activeSkill && files.count === 0) || !usable || !active) return null;
+    if (files.staging) {
+      toast.info("Attachments are still being added");
+      return null;
+    }
+    const { staged, sent } = files.take();
     const attached = attach && context ? context : null;
     const skill = activeSkill ?? undefined;
     setDraft("");
@@ -941,7 +968,11 @@ export function AssistantChatPanel({
       question,
       input: attached ? buildHandoffText(question, attached) : question,
       skill,
-      title: clampTitle(skill ? `/${skill.name} ${question}` : question),
+      title: clampTitle(
+        skill ? `/${skill.name} ${question}` : question || sent[0]?.name || "Attachment",
+      ),
+      attachments: staged.length > 0 ? staged : undefined,
+      sent: sent.length > 0 ? sent : undefined,
       context: attached
         ? {
             count: attached.conversations.length,
@@ -976,6 +1007,7 @@ export function AssistantChatPanel({
           tools: [],
           skill: msg.skill?.name,
           context: msg.context,
+          attachments: msg.sent,
           intent,
         },
         {
@@ -1019,6 +1051,7 @@ export function AssistantChatPanel({
         sessionId: convo.sessionId ?? undefined,
         title: firstTurn ? msg.title : undefined,
         skill: msg.skill ? { name: msg.skill.name, path: msg.skill.path } : undefined,
+        attachments: msg.attachments,
         previousResponseId: convo.sessionId ? undefined : (convo.lastResponseId ?? undefined),
       })
       .catch((error: unknown) => {
@@ -1080,7 +1113,8 @@ export function AssistantChatPanel({
     const run = streamingRef.current;
     if (!run) return startTurn(msg);
     if (run.convoId !== msg.convoId) return setQueue((q) => [...q, msg]);
-    if ((followUp === "queue") !== alternate) setQueue((q) => [...q, msg]);
+    // Steering sends text only; a message with files waits for its own turn.
+    if ((followUp === "queue") !== alternate || msg.attachments) setQueue((q) => [...q, msg]);
     else steer(msg);
   };
 
@@ -1359,7 +1393,7 @@ export function AssistantChatPanel({
 
   // Send button (Otter Code's ComposerPrimaryActions): queue vs steer while a
   // turn runs; holding ⌘ flips it for one message.
-  const hasDraft = Boolean(draft.trim() || activeSkill);
+  const hasDraft = Boolean(draft.trim() || activeSkill || files.count > 0);
   const alternateAction = followUp === "queue" ? "steer" : "queue";
   const submitMode: "send" | "queue" | "steer" =
     streaming?.convoId === activeId ? (modHeld ? alternateAction : followUp) : "send";
@@ -1380,7 +1414,8 @@ export function AssistantChatPanel({
   const busy = streaming != null;
 
   return (
-    <div className="relative flex h-full min-w-0 flex-col">
+    <div className="relative flex h-full min-w-0 flex-col" {...(needsSetup ? {} : drop.handlers)}>
+      {drop.active ? <DropOverlay /> : null}
       {/* Header: chat actions on the left; the panel toggle stays at the
           window's top-right, exactly where it sits while the panel is closed. */}
       <div className="drag-region flex h-(--workspace-topbar-height) shrink-0 items-center gap-1 px-4">
@@ -1476,6 +1511,9 @@ export function AssistantChatPanel({
                               <span className="mb-1 mr-1.5 inline-flex align-middle">
                                 <SkillBadge name={turn.skill} onAccent />
                               </span>
+                            ) : null}
+                            {turn.attachments ? (
+                              <SentAttachments attachments={turn.attachments} />
                             ) : null}
                             {turn.text}
                           </div>
@@ -1606,6 +1644,7 @@ export function AssistantChatPanel({
                 />
               ) : null}
               <div className="relative rounded-3xl border border-(--chat-composer-outline) bg-(--chat-composer-surface) shadow-composer transition-colors focus-within:border-input dark:shadow-none dark:inset-shadow-2xs dark:inset-shadow-(color:--chat-composer-highlight)">
+                <ComposerAttachments items={files.items} onRemove={files.remove} />
                 {activeSkill ? (
                   <div className="px-4 pt-3">
                     <SkillBadge name={activeSkill.name} onRemove={() => setActiveSkill(null)} />
@@ -1615,6 +1654,12 @@ export function AssistantChatPanel({
                   ref={inputRef}
                   value={draft}
                   onChange={(e) => handleDraftChange(e.target.value)}
+                  onPaste={(e) => {
+                    const pasted = filesFromPaste(e.clipboardData);
+                    if (pasted.length === 0) return;
+                    e.preventDefault();
+                    void files.add(pasted);
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Backspace" && draft === "" && activeSkill && !slashOpen) {
                       e.preventDefault();
@@ -1660,6 +1705,27 @@ export function AssistantChatPanel({
                 />
                 <div className="flex min-w-0 items-center justify-between gap-2 px-3 pb-3">
                   <div className="-ms-1 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    <HintTooltip label="Attach files">
+                      <IconBtn
+                        label="Attach files"
+                        onPointerDown={(e) => e.preventDefault()}
+                        onClick={() => filePickerRef.current?.click()}
+                      >
+                        <PaperclipIcon className="size-4" />
+                      </IconBtn>
+                    </HintTooltip>
+                    <input
+                      ref={filePickerRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const picked = Array.from(e.currentTarget.files ?? []);
+                        e.currentTarget.value = "";
+                        void files.add(picked);
+                        focusComposer();
+                      }}
+                    />
                     <ProviderModelPicker
                       providers={providersState?.providers ?? []}
                       activeKind={providerKind}
