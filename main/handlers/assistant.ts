@@ -12,7 +12,13 @@ import {
   type ApprovalDecision,
   type ProviderKind,
   type RuntimeMode,
+  type ChatAttachment,
 } from "../services/assistant/types.js";
+import {
+  attachmentsDir,
+  stageFromBytes,
+  stageFromPath,
+} from "../services/assistant/attachments.js";
 
 type Params = Record<string, unknown> | undefined;
 
@@ -68,6 +74,32 @@ function settingsPatch(p: Params): assistant.SettingsPatch {
   return patch;
 }
 
+const MAX_ATTACHMENTS = 10;
+
+/** Only staged files (inside the attachments folder) are passed to agents. */
+async function attachmentsOf(raw: unknown): Promise<ChatAttachment[]> {
+  if (!Array.isArray(raw)) return [];
+  const dir = await attachmentsDir();
+  return (raw as Params[])
+    .filter(
+      (a): a is Params & ChatAttachment =>
+        typeof a?.path === "string" &&
+        a.path.startsWith(dir + "/") &&
+        typeof a.name === "string" &&
+        typeof a.mime === "string" &&
+        (a.kind === "image" || a.kind === "file"),
+    )
+    .slice(0, MAX_ATTACHMENTS)
+    .map((a) => ({
+      id: str(a.id),
+      name: a.name,
+      mime: a.mime,
+      size: Number(a.size) || 0,
+      path: a.path,
+      kind: a.kind,
+    }));
+}
+
 export function registerAssistantHandlers(): void {
   ipcMain.handle("assistant:providers", async () => assistant.providersState());
 
@@ -94,7 +126,9 @@ export function registerAssistantHandlers(): void {
     const input = typeof p?.input === "string" ? p.input : "";
     const skill = p?.skill as Params;
     const skillName = str(skill?.name);
-    if (!requestId || (!input.trim() && !skillName)) throw new Error("Nothing to send.");
+    const attachments = await attachmentsOf(p?.attachments);
+    if (!requestId || (!input.trim() && !skillName && attachments.length === 0))
+      throw new Error("Nothing to send.");
     await assistant.sendTurn(providerOf(p), {
       requestId,
       input,
@@ -102,8 +136,28 @@ export function registerAssistantHandlers(): void {
       title: str(p?.title) || undefined,
       previousResponseId: str(p?.previousResponseId) || undefined,
       skill: skillName ? { name: skillName, path: str(skill?.path) || undefined } : undefined,
+      attachments,
     });
     return { ok: true };
+  });
+
+  // Files dropped from Finder (by path) or pasted (bytes) are copied into the
+  // attachments folder; the renderer sends the returned records with a turn.
+  ipcMain.handle("assistant:stageAttachments", async (_event, params: unknown) => {
+    const p = params as Params;
+    const items = Array.isArray(p?.items) ? (p.items as Params[]) : [];
+    const staged: ChatAttachment[] = [];
+    const errors: string[] = [];
+    for (const item of items.slice(0, MAX_ATTACHMENTS)) {
+      try {
+        if (typeof item?.path === "string" && item.path) staged.push(await stageFromPath(item.path));
+        else if (typeof item?.base64 === "string")
+          staged.push(await stageFromBytes(str(item.name) || "Pasted image.png", str(item.mime), item.base64));
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : String(error));
+      }
+    }
+    return { attachments: staged, errors };
   });
 
   ipcMain.handle("assistant:respondApproval", async (_event, params: unknown) => {

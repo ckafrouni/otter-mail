@@ -8,10 +8,13 @@
  *    kept so conversations started before the migration keep their thread.
  */
 
+import fs from "node:fs/promises";
 import { logger } from "@glaze/core/backend";
+import { dataUrl } from "./attachments.js";
 import { getHermesKey } from "./settings.js";
 import type {
   ApprovalDecision,
+  ChatAttachment,
   ChatProvider,
   ChatSession,
   ChatSessionMessage,
@@ -50,6 +53,44 @@ async function requireReady(settings: ProviderSettings): Promise<Ready> {
   const { baseUrl, agentModel } = settings.hermes;
   if (!baseUrl || !key) throw new Error("not_configured");
   return { baseUrl, root: apiRoot(baseUrl), key, agentModel };
+}
+
+// ---------------------------------------------------------------------------
+// Attachments (api_server accepts text + image parts only)
+// ---------------------------------------------------------------------------
+
+/** Whole request cap is 10 MB; base64 grows images by a third. */
+const HERMES_IMAGE_BUDGET = 7 * 1024 * 1024;
+/** Text parts together are capped at 64 KB server-side. */
+const HERMES_TEXT_BUDGET = 60 * 1024;
+const TEXT_TYPES = /^(text\/|application\/(json|xml)|message\/rfc822)/;
+
+async function hermesContent(input: string, attachments: ChatAttachment[]): Promise<unknown[]> {
+  const unsupported = attachments.filter((a) => a.kind === "file" && !TEXT_TYPES.test(a.mime));
+  if (unsupported.length > 0) {
+    throw new Error(
+      `Hermes can't read ${unsupported.map((a) => a.name).join(", ")} — its API takes images and text files only. Try Codex or Claude for PDFs and Office documents.`,
+    );
+  }
+  const images = attachments.filter((a) => a.kind === "image");
+  const imageBytes = images.reduce((sum, a) => sum + a.size, 0);
+  if (imageBytes > HERMES_IMAGE_BUDGET) {
+    throw new Error("Those images are too large for Hermes together (7 MB max per message).");
+  }
+  let text = input;
+  for (const doc of attachments.filter((a) => a.kind === "file")) {
+    const body = await fs.readFile(doc.path, "utf-8");
+    text += `\n\n--- ${doc.name} ---\n${body}`;
+  }
+  if (Buffer.byteLength(text) > HERMES_TEXT_BUDGET) {
+    throw new Error("The attached text is too long for Hermes (about 60 KB per message).");
+  }
+  return [
+    { type: "text", text: text || "See the attached image." },
+    ...(await Promise.all(
+      images.map(async (image) => ({ type: "image_url", image_url: { url: await dataUrl(image) } })),
+    )),
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -342,6 +383,8 @@ function parseJson(json: string): Record<string, unknown> | null {
 type TurnContext = {
   requestId: string;
   input: string;
+  /** What the session chat sends: the text, or content parts with attachments. */
+  message: string | unknown[];
   /** model / provider / model_options for this turn. */
   modelFields: Record<string, unknown>;
   ready: Ready;
@@ -357,13 +400,13 @@ type TurnContext = {
  * error{message}, done. Closing the connection interrupts the run server-side.
  */
 async function streamSessionTurn(ctx: TurnContext & { sessionId: string }): Promise<void> {
-  const { requestId, input, sessionId, ready, signal, resetIdle, emit } = ctx;
+  const { requestId, sessionId, ready, signal, resetIdle, emit } = ctx;
   const response = await fetch(
     `${ready.root}/api/sessions/${encodeURIComponent(sessionId)}/chat/stream`,
     {
       method: "POST",
       headers: { ...authHeaders(ready.key, true), Accept: "text/event-stream" },
-      body: JSON.stringify({ message: input, ...ctx.modelFields }),
+      body: JSON.stringify({ message: ctx.message, ...ctx.modelFields }),
       signal,
     },
   );
@@ -695,6 +738,21 @@ export const hermesProvider: ChatProvider = {
         }`
       : turn.input;
 
+    // Attachments ride in `message` as content parts: images inline, text
+    // documents as text. Hermes' API refuses other documents (PDF, Office).
+    let message: string | unknown[] = input;
+    if (turn.attachments?.length) {
+      try {
+        message = await hermesContent(input, turn.attachments);
+      } catch (error) {
+        return emit({
+          requestId,
+          type: "error",
+          message: `agent_error: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
+    }
+
     const controller = new AbortController();
     active.set(requestId, controller);
     let idleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -705,6 +763,7 @@ export const hermesProvider: ChatProvider = {
     const ctx = {
       requestId,
       input,
+      message,
       modelFields: turnModelFields(settings),
       ready,
       signal: controller.signal,

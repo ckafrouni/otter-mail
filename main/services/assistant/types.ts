@@ -192,6 +192,17 @@ export type ChatSessionMessage = {
   toolCalls?: string[];
 };
 
+/** A file attached to a turn, staged under userData/assistant-attachments. */
+export type ChatAttachment = {
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+  /** Where the staged copy lives (agents on this Mac read it from here). */
+  path: string;
+  kind: "image" | "file";
+};
+
 export type SendTurnInput = {
   requestId: string;
   input: string;
@@ -200,6 +211,7 @@ export type SendTurnInput = {
   /** Title for a new session. */
   title?: string;
   skill?: { name: string; path?: string };
+  attachments?: ChatAttachment[];
   /** Hermes legacy chats: chain via the Responses API. */
   previousResponseId?: string;
 };

@@ -16,6 +16,7 @@ import {
   type Notification,
   type ServerRequest,
 } from "./codex-app-server.js";
+import { dataUrl, withAttachmentPaths } from "./attachments.js";
 import { ASSISTANT_INSTRUCTIONS } from "./instructions.js";
 import { assistantWorkspace } from "./settings.js";
 import type {
@@ -751,11 +752,12 @@ export const codexProvider: ChatProvider = {
         name: turn.skill.name,
         path: turn.skill.path,
       });
-    input.push({
-      type: "text",
-      text: turn.input || `Use the ${turn.skill?.name ?? ""} skill.`,
-      text_elements: [],
-    });
+    // Otter Code: text with every attachment's path, then images as data URLs.
+    const attached = turn.attachments ?? [];
+    const base = turn.input || (attached.length ? "" : `Use the ${turn.skill?.name ?? ""} skill.`);
+    input.push({ type: "text", text: withAttachmentPaths(base, attached), text_elements: [] });
+    for (const image of attached.filter((a) => a.kind === "image"))
+      input.push({ type: "image", url: await dataUrl(image) });
     try {
       const started = await session.server.request<{ turn: { id: string } }>(
         "turn/start",

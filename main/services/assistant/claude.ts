@@ -32,6 +32,8 @@ import {
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { logger } from "@glaze/core/backend";
+import fs from "node:fs/promises";
+import { attachmentsDir, withAttachmentPaths } from "./attachments.js";
 import { ASSISTANT_INSTRUCTIONS } from "./instructions.js";
 import { assistantWorkspace } from "./settings.js";
 import { ensureShellPath } from "./shell-path.js";
@@ -50,6 +52,8 @@ import type {
 } from "./types.js";
 
 const PROBE_TIMEOUT_MS = 25_000;
+/** Image types Claude accepts as content blocks. */
+const CLAUDE_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 const VERSION_TIMEOUT_MS = 10_000;
 /** Idle chats release their Claude process after this long. */
 const SESSION_IDLE_MS = 15 * 60_000;
@@ -472,6 +476,8 @@ async function openSession(
     ...(pm === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
     ...(sessionId ? { resume: sessionId } : { sessionId: id }),
     includePartialMessages: true,
+    // Attached documents live outside the workspace.
+    additionalDirectories: [await attachmentsDir()],
     canUseTool,
     stderr: (line: string) => {
       if (/error|auth|login|keychain|credential/i.test(line))
@@ -762,10 +768,30 @@ export const claudeProvider: ChatProvider = {
     const text = turn.skill
       ? `/${turn.skill.name}${turn.input ? ` ${turn.input}` : ""}`
       : turn.input;
+    // Otter Code: images as base64 blocks, then the text with every
+    // attachment's path (Claude reads documents itself). Text last so a
+    // /skill command still expands.
+    const attached = turn.attachments ?? [];
+    const images = await Promise.all(
+      attached
+        .filter((a) => a.kind === "image" && CLAUDE_IMAGE_TYPES.has(a.mime))
+        .map(async (a) => ({
+          type: "image" as const,
+          source: {
+            type: "base64" as const,
+            media_type: a.mime,
+            data: (await fs.readFile(a.path)).toString("base64"),
+          },
+        })),
+    );
+
     session.prompts.push({
       type: "user",
       parent_tool_use_id: null,
-      message: { role: "user", content: [{ type: "text", text }] },
+      message: {
+        role: "user",
+        content: [...images, { type: "text", text: withAttachmentPaths(text, attached) }],
+      },
     } as SDKUserMessage);
     try {
       await finished;

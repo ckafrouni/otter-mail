@@ -729,22 +729,35 @@ export function HomeView() {
   const titleTrailing = (
     <TitleTrailing showPanelToggle={!chatOpen && !settingsRoute} onToggleChat={toggleChat} />
   );
+  // With the sidebar hidden and no list pane, this band is the leftmost one: it
+  // needs the traffic-light clearance and the toggle to bring the sidebar (and
+  // Settings' Back button) back.
+  const mainIsLeftmost = !sidebarOpen && !(hasListTarget && !settingsRoute);
   const titleControls = (
     <TitleControls
       leading={
-        settingsRoute ? (
-          <nav aria-label="Settings" className="min-w-0">
-            <ol className="m-0 flex min-w-0 list-none items-center gap-2 p-0 text-sm">
-              <li className="shrink-0 font-medium text-muted-foreground">Settings</li>
-              <li aria-hidden="true" className="flex shrink-0 items-center text-icon-muted">
-                /
-              </li>
-              <li className="min-w-0 truncate font-medium text-foreground">
-                {settingsSectionLabel(settingsRoute.pane)}
-              </li>
-            </ol>
-          </nav>
-        ) : null
+        <>
+          {mainIsLeftmost ? (
+            <WindowTitle
+              sidebarOpen={false}
+              onToggleSidebar={toggleSidebar}
+              className="-ml-4 h-auto"
+            />
+          ) : null}
+          {settingsRoute ? (
+            <nav aria-label="Settings" className="min-w-0">
+              <ol className="m-0 flex min-w-0 list-none items-center gap-2 p-0 text-sm">
+                <li className="shrink-0 font-medium text-muted-foreground">Settings</li>
+                <li aria-hidden="true" className="flex shrink-0 items-center text-icon-muted">
+                  /
+                </li>
+                <li className="min-w-0 truncate font-medium text-foreground">
+                  {settingsSectionLabel(settingsRoute.pane)}
+                </li>
+              </ol>
+            </nav>
+          ) : null}
+        </>
       }
       syncing={globalSync.syncing}
       syncLabel={globalSync.label}
@@ -935,7 +948,7 @@ export function HomeView() {
           views={views}
           selectedAccountId={effectiveAccountId}
           onOpenMessage={handlePaletteOpenMessage}
-        onSearchMail={(q) => openSearch(q)}
+          onSearchMail={(q) => openSearch(q)}
           onGoToView={handlePaletteGoToView}
           onSelectAccount={handleSelectAccount}
           onCompose={() => setComposeOpen(true)}

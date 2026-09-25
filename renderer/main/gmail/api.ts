@@ -206,6 +206,16 @@ export type ChatEvent =
   | { requestId: string; type: "done"; responseId: string | null }
   | { requestId: string; type: "error"; message: string };
 
+/** A file attached to an assistant turn (staged by the backend). */
+export type ChatAttachment = {
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+  path: string;
+  kind: "image" | "file";
+};
+
 /** An installed agent skill, for the composer's "/" picker. */
 export type Skill = { name: string; description: string; category: string | null; path?: string };
 
@@ -531,8 +541,15 @@ export const gmailApi = {
     sessionId?: string;
     title?: string;
     skill?: { name: string; path?: string };
+    attachments?: ChatAttachment[];
     previousResponseId?: string;
   }): Promise<{ ok: boolean }> => ipc("assistant:send", params),
+
+  /** Copies dropped (by path) or pasted (bytes) files into the attachments folder. */
+  assistantStageAttachments: (
+    items: ({ path: string } | { name: string; mime: string; base64: string })[],
+  ): Promise<{ attachments: ChatAttachment[]; errors: string[] }> =>
+    ipc("assistant:stageAttachments", { items }),
 
   assistantRespondApproval: (params: {
     provider: ProviderKind;
