@@ -15,6 +15,7 @@ import path from "path";
 import { DatabaseSync } from "node:sqlite";
 import { app } from "@glaze/core/backend";
 import { ALL_MAIL_LABEL_ID } from "../gmail/types.js";
+import { withPendingLabels } from "./pending-label-writes.js";
 import type {
   GmailLabel,
   GmailMessageSummary,
@@ -254,8 +255,10 @@ function rowToDetail(row: MessageRow): GmailMessageDetail {
 
 // ── Messages: writes ────────────────────────────────────────────────────────
 
-export function upsertMessages(accountId: string, messages: GmailMessageSummary[]): void {
-  if (messages.length === 0) return;
+export function upsertMessages(accountId: string, fetched: GmailMessageSummary[]): void {
+  if (fetched.length === 0) return;
+  // Gmail may not have caught up with changes made here moments ago; keep them.
+  const messages = withPendingLabels(accountId, fetched);
   const d = getDb();
 
   // hasAttachments from a list response is always false; never clobber a `true`

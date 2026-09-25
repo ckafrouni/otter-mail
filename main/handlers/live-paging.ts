@@ -8,6 +8,7 @@ import { fetchMetadataForIds, listMessages, listMessageIdsPage } from "../servic
 import * as mailStore from "../services/mail-store.js";
 import type { GmailMessageSummary } from "../gmail/types.js";
 import { sleep } from "./ipc-budget.js";
+import { hasPendingLabelWrites } from "../services/pending-label-writes.js";
 
 // ── Live paging while an account's first full sync is still running ────────
 // Lists read the local cache, which on a big mailbox fills in over a long
@@ -106,6 +107,9 @@ const lastUnreadReconcile = new Map<string, number>();
 export async function reconcileUnread(accountId: string, labelId: string): Promise<void> {
   const expected = mailStore.getLabelUnread(accountId, labelId);
   if (expected === 0 || mailStore.countUnreadForLabel(accountId, labelId) >= expected) return;
+  // Mid-triage the cache is ahead of Gmail's counter (mail just read or
+  // archived here), so the gap is expected, not missing mail.
+  if (hasPendingLabelWrites(accountId)) return;
   const key = `${accountId}:${labelId}`;
   if (Date.now() - (lastUnreadReconcile.get(key) ?? 0) < RECONCILE_COOLDOWN_MS) return;
   lastUnreadReconcile.set(key, Date.now());
