@@ -21,6 +21,7 @@ import {
   listHistory,
   isHistoryExpiredError,
   listDraftIds,
+  paceBackground,
 } from "./gmail-api.js";
 import { hasCachedAttachment } from "./attachment-cache.js";
 import { listAccounts } from "./account-store.js";
@@ -254,7 +255,9 @@ async function fullSync(accountId: string): Promise<void> {
     for (const id of page.ids) seen.add(id);
     const fresh = refresh ? page.ids : store.filterUnknownIds(accountId, page.ids);
     for (let i = 0; i < fresh.length; i += META_CHUNK) {
-      const summaries = await fetchMetadataForIds(accountId, fresh.slice(i, i + META_CHUNK));
+      const summaries = await fetchMetadataForIds(accountId, fresh.slice(i, i + META_CHUNK), {
+        background: true,
+      });
       assertActive(accountId);
       store.upsertMessages(accountId, summaries);
       synced += summaries.length;
@@ -346,7 +349,7 @@ async function backfillSpamTrash(accountId: string): Promise<void> {
     do {
       const page = await listMessageIdsPage(accountId, { pageToken, labelIds: [labelId] });
       if (page.ids.length > 0) {
-        const summaries = await fetchMetadataForIds(accountId, page.ids);
+        const summaries = await fetchMetadataForIds(accountId, page.ids, { background: true });
         assertActive(accountId);
         store.upsertMessages(accountId, summaries);
       }
@@ -381,6 +384,7 @@ async function backfillBodies(accountId: string): Promise<void> {
     // Per-message errors are skipped below, so check removal between batches.
     assertActive(accountId);
     const batch = ids.slice(i, i + CONCURRENCY);
+    const startedAt = Date.now();
     await Promise.all(
       batch.map(async (id) => {
         try {
@@ -394,6 +398,7 @@ async function backfillBodies(accountId: string): Promise<void> {
     );
     done += batch.length;
     update(accountId, { synced: done });
+    await paceBackground(accountId, startedAt, batch.length * 5);
   }
 }
 
