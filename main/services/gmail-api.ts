@@ -235,6 +235,22 @@ function getHeaderValue(headers: { name: string; value: string }[], name: string
   return headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? "";
 }
 
+/** A message's List-Unsubscribe / List-Unsubscribe-Post headers (RFC 2369 / 8058). */
+export async function getUnsubscribeHeaders(
+  accountId: string,
+  messageId: string,
+): Promise<{ listUnsubscribe: string; oneClick: boolean }> {
+  const msg = (await gmailFetch(
+    accountId,
+    `/messages/${messageId}?format=metadata&metadataHeaders=List-Unsubscribe&metadataHeaders=List-Unsubscribe-Post`,
+  )) as { payload?: { headers?: { name: string; value: string }[] } };
+  const headers = msg.payload?.headers ?? [];
+  return {
+    listUnsubscribe: getHeaderValue(headers, "List-Unsubscribe"),
+    oneClick: /List-Unsubscribe=One-Click/i.test(getHeaderValue(headers, "List-Unsubscribe-Post")),
+  };
+}
+
 // ── mapMessageSummary ─────────────────────────────────────────────────────────
 
 interface RawMessageMetadata {

@@ -30,6 +30,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { SenderHoverCard } from "./sender-hovercard";
+import { UnsubscribeLink } from "./unsubscribe-link";
 import { InviteCard, requestRsvp, rsvpFromGoogleLink } from "./invite-card";
 import type { RsvpResponse } from "./api";
 import {
@@ -1288,25 +1289,33 @@ export function ExpandedRow({
                 {formatTime(summary.date)}
               </span>
             </button>
-            <div className="truncate text-xs text-muted-foreground/70">
-              to{" "}
-              <RecipientList
-                list={summary.to}
+            <div className="flex min-w-0 items-baseline gap-3">
+              <div className="min-w-0 flex-1 truncate text-xs text-muted-foreground/70">
+                to{" "}
+                <RecipientList
+                  list={summary.to}
+                  accountId={accountId}
+                  onComposeTo={onComposeTo}
+                  onSearchSender={onSearchSender}
+                />
+                {detail?.cc ? (
+                  <>
+                    {" · cc "}
+                    <RecipientList
+                      list={detail.cc}
+                      accountId={accountId}
+                      onComposeTo={onComposeTo}
+                      onSearchSender={onSearchSender}
+                    />
+                  </>
+                ) : null}
+              </div>
+              <UnsubscribeLink
                 accountId={accountId}
-                onComposeTo={onComposeTo}
-                onSearchSender={onSearchSender}
+                messageId={summary.id}
+                senderName={summary.fromName}
+                senderEmail={summary.fromEmail}
               />
-              {detail?.cc ? (
-                <>
-                  {" · cc "}
-                  <RecipientList
-                    list={detail.cc}
-                    accountId={accountId}
-                    onComposeTo={onComposeTo}
-                    onSearchSender={onSearchSender}
-                  />
-                </>
-              ) : null}
             </div>
           </div>
         </div>

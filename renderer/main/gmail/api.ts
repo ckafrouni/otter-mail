@@ -397,6 +397,21 @@ export const gmailApi = {
   listCombinedMessages: (params: ListCombinedMessagesParams): Promise<ListMessagesResult> =>
     ipc("gmail:listCombinedMessages", params),
 
+  /** How this message offers unsubscribing (List-Unsubscribe), or null. */
+  getUnsubscribe: (
+    accountId: string,
+    messageId: string,
+    fromEmail: string,
+  ): Promise<{ method: "oneClick" | "mailto" | "web"; target: string; unsubscribed: boolean } | null> =>
+    ipc("gmail:getUnsubscribe", { accountId, messageId, fromEmail }),
+
+  /** Unsubscribes in place, or returns the page to open (web-only lists). */
+  unsubscribe: (
+    accountId: string,
+    messageId: string,
+  ): Promise<{ done: true } | { openUrl: string }> =>
+    task("gmail:unsubscribe", { accountId, messageId }),
+
   /** The calendar invitation in a message, with your current answer (null: none). */
   getCalendarInvite: (accountId: string, messageId: string): Promise<CalendarInvite | null> =>
     task("calendar:getInvite", { accountId, messageId }),
