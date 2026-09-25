@@ -73,6 +73,7 @@ export function UpdateCard() {
   if (state.status !== "downloading" && state.status !== "downloaded" && !failed) return null;
 
   const version = state.availableVersion;
+  const manualUrl = state.manualDownloadUrl;
   const percent = Math.min(100, Math.max(0, state.downloadPercent ?? 0));
   return (
     <div className="mx-(--sidebar-content-inset) mb-1 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5 shadow-xs/5">
@@ -93,9 +94,11 @@ export function UpdateCard() {
           <p className="text-2xs text-muted-foreground">
             {state.status === "downloaded"
               ? "Restart to finish updating."
-              : failed
-                ? "It will try again later."
-                : `${percent}%`}
+              : manualUrl
+                ? "This build can't update itself. Install it by hand."
+                : failed
+                  ? "It will try again later."
+                  : `${percent}%`}
           </p>
         </div>
         {state.status === "downloaded" ? (
@@ -127,7 +130,16 @@ export function UpdateCard() {
           Restart to update
         </Btn>
       ) : null}
-      {failed ? (
+      {manualUrl ? (
+        <Btn
+          size="xs"
+          variant="primary"
+          className="mt-2 w-full"
+          onClick={() => void window.desktopBridge.openExternal(manualUrl)}
+        >
+          Download {version}
+        </Btn>
+      ) : failed ? (
         <Btn
           size="xs"
           className="mt-2 w-full"
@@ -167,28 +179,34 @@ export function UpdatesSection() {
   if (!state) return null;
 
   const updates = window.desktopBridge.updates;
-  const control =
-    state.status === "available" ? (
-      <Btn variant="primary" size="sm" onClick={() => void updates.download()}>
-        Download
-      </Btn>
-    ) : state.status === "downloaded" ? (
-      <Btn variant="primary" size="sm" onClick={() => void updates.install()}>
-        Restart to Update
-      </Btn>
-    ) : (
-      <Btn
-        size="sm"
-        disabled={
-          state.status === "disabled" ||
-          state.status === "checking" ||
-          state.status === "downloading"
-        }
-        onClick={() => void updates.check()}
-      >
-        Check for Updates
-      </Btn>
-    );
+  const manualUrl = state.manualDownloadUrl;
+  const control = manualUrl ? (
+    <Btn
+      variant="primary"
+      size="sm"
+      onClick={() => void window.desktopBridge.openExternal(manualUrl)}
+    >
+      Download {state.availableVersion}
+    </Btn>
+  ) : state.status === "available" ? (
+    <Btn variant="primary" size="sm" onClick={() => void updates.download()}>
+      Download
+    </Btn>
+  ) : state.status === "downloaded" ? (
+    <Btn variant="primary" size="sm" onClick={() => void updates.install()}>
+      Restart to Update
+    </Btn>
+  ) : (
+    <Btn
+      size="sm"
+      disabled={
+        state.status === "disabled" || state.status === "checking" || state.status === "downloading"
+      }
+      onClick={() => void updates.check()}
+    >
+      Check for Updates
+    </Btn>
+  );
 
   return (
     <SettingsSection title="Updates">

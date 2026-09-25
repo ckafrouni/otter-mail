@@ -31,6 +31,11 @@ export interface UpdateState {
   downloadPercent: number | null;
   checkedAt: number | null;
   message: string | null;
+  /**
+   * Set when macOS refused to install a downloaded update (a build without a
+   * Developer ID signature): the release page to install it from by hand.
+   */
+  manualDownloadUrl: string | null;
 }
 
 export interface DesktopBridge {
