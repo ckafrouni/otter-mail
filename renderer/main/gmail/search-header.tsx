@@ -835,6 +835,13 @@ export function SearchHeader({
         >
           Is starred
         </button>
+        <button
+          type="button"
+          className={chipClass(hasToken(query, "is:important"))}
+          onClick={() => run(toggleToken(query, "is:important"))}
+        >
+          Is important
+        </button>
         <button type="button" className={chipClass(false)} onClick={() => setAdvancedOpen(true)}>
           Advanced search
         </button>

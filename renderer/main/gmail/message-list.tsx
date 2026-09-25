@@ -3,11 +3,6 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, Text } from "@glaze/core/components";
 import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuCheckboxItem,
-  DropdownMenuSeparator,
   ContextMenu,
   ContextMenuTrigger,
   ContextMenuContent,
@@ -27,16 +22,16 @@ import {
   RotateCcwIcon,
   SearchIcon,
   ShieldCheckIcon,
-  SlidersHorizontalIcon,
   Trash2Icon,
   XIcon,
+  CircleIcon,
+  CircleDotIcon,
 } from "lucide-react";
-import { IconBtn, HintTooltip, buttonClass, cn } from "./ui";
+import { IconBtn, HintTooltip, cn } from "./ui";
 import {
   useMessages,
   useCombinedMessages,
   useCombinedCounts,
-  useSearchMessages,
   useGmailSearch,
   useLabels,
   useModifyMessage,
@@ -564,46 +559,6 @@ function MessageRow({
   );
 }
 
-/** Structured criteria of the view filter bar, compiled into the scoped search. */
-type ViewFilters = {
-  starred: boolean;
-  important: boolean;
-  hasAttachments: boolean;
-  withinDays: number | null;
-};
-
-const NO_FILTERS: ViewFilters = {
-  starred: false,
-  important: false,
-  hasAttachments: false,
-  withinDays: null,
-};
-
-const WITHIN_DAYS_OPTIONS: { days: number; label: string }[] = [
-  { days: 1, label: "Last 24 hours" },
-  { days: 7, label: "Last 7 days" },
-  { days: 30, label: "Last 30 days" },
-];
-
-function withinDaysLabel(days: number): string {
-  return WITHIN_DAYS_OPTIONS.find((o) => o.days === days)?.label ?? `Last ${days} days`;
-}
-
-/** Removable filter token shown inside the filter bar. */
-function FilterPill({ label, onRemove }: { label: string; onRemove: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onRemove}
-      aria-label={`Remove filter: ${label}`}
-      className="inline-flex h-5 shrink-0 items-center gap-1 rounded-sm border border-input bg-canvas px-1.5 text-xs font-medium text-muted-foreground hover:bg-accent-surface/50 hover:text-foreground dark:bg-input/32"
-    >
-      {label}
-      <XIcon className="size-3" />
-    </button>
-  );
-}
-
 /** "260 messages, 7 unread" — omits the unread clause when nothing is unread. */
 function formatMailboxSummary(total: number, unread: number): string {
   const messages = `${total.toLocaleString()} message${total === 1 ? "" : "s"}`;
@@ -633,24 +588,13 @@ export function MessageList({
   const [mailboxMode, setMailboxMode] = useState<"all" | "unread">("all");
   const unreadOnly = mailboxMode === "unread" && !search;
 
-  // Two kinds of narrowing: the Search mailbox runs Gmail's own search (the
-  // truth, every operator; the header's search icon opens it scoped to this
-  // mailbox); the sliders menu filters the current view instantly from the
-  // local cache (structured criteria).
+  // The Search mailbox runs Gmail's own search (the truth, every operator);
+  // the header's search icon opens it scoped to this mailbox, where its
+  // chips (starred, attachments, dates…) narrow it.
   const globalSearching = search !== undefined;
 
-  const [filters, setFilters] = useState<ViewFilters>(NO_FILTERS);
-  const filtersActive =
-    filters.starred || filters.important || filters.hasAttachments || filters.withinDays != null;
-  const filtering = filtersActive;
-  const searching = filtering || globalSearching;
+  const searching = globalSearching;
   const searchQuery = search?.query ?? "";
-
-  const clearFilters = () => setFilters(NO_FILTERS);
-  const patchFilters = (patch: Partial<ViewFilters>) => {
-    console.log("[MessageList:patchFilters]", patch);
-    setFilters((f) => ({ ...f, ...patch }));
-  };
 
   // All hooks are always called (rules of hooks); the inactive ones are disabled.
   const accountMessages = useMessages(isCombined || searching ? null : accountId, labelId);
@@ -660,20 +604,11 @@ export function MessageList({
     isCombined && !searching,
   );
   const gmailSearch = useGmailSearch(searchQuery, search?.accountIds ?? [], globalSearching);
-  const filterResults = useSearchMessages("", isCombined ? null : accountId, filtering, {
-    ...(combined ? { rules: combined.rules } : { labelId }),
-    starred: filters.starred || undefined,
-    important: filters.important || undefined,
-    hasAttachments: filters.hasAttachments || undefined,
-    withinDays: filters.withinDays ?? undefined,
-  });
   const messagesQuery = globalSearching
     ? gmailSearch
-    : filtering
-      ? filterResults
-      : isCombined
-        ? combinedMessages
-        : accountMessages;
+    : isCombined
+      ? combinedMessages
+      : accountMessages;
 
   const resolveLabel = useLabelResolver(isCombined ? accountIds : [accountId]);
   // Combined mode has no single "active account" to drive per-account label
@@ -1234,90 +1169,22 @@ export function MessageList({
             <SearchIcon className="size-3.5" />
           </IconBtn>
         </HintTooltip>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <IconBtn label="Filters" active={filtersActive}>
-              <SlidersHorizontalIcon className="size-3.5" />
-            </IconBtn>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuCheckboxItem
-              checked={filters.starred}
-              onCheckedChange={(c) => patchFilters({ starred: c })}
-            >
-              Flagged
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={filters.important}
-              onCheckedChange={(c) => patchFilters({ important: c })}
-            >
-              Important
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={filters.hasAttachments}
-              onCheckedChange={(c) => patchFilters({ hasAttachments: c })}
-            >
-              With Attachments
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuSeparator />
-            {WITHIN_DAYS_OPTIONS.map((o) => (
-              <DropdownMenuCheckboxItem
-                key={o.days}
-                checked={filters.withinDays === o.days}
-                onCheckedChange={(c) => patchFilters({ withinDays: c ? o.days : null })}
-              >
-                {o.label}
-              </DropdownMenuCheckboxItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
         <HintTooltip label={unreadOnly ? "Show all messages" : "Show unread only"}>
-          <button
-            type="button"
+          {/* The rows' unread dot: an empty ring, or dotted when showing unread only. */}
+          <IconBtn
+            label={unreadOnly ? "Show all messages" : "Show unread only"}
             aria-pressed={unreadOnly}
+            active={unreadOnly}
             onClick={() => setMailboxMode(unreadOnly ? "all" : "unread")}
-            className={cn(
-              buttonClass("ghost-muted", "xs"),
-              "font-medium",
-              unreadOnly && "bg-accent-surface text-foreground",
-            )}
           >
-            Unread
-          </button>
+            {unreadOnly ? (
+              <CircleDotIcon className="size-3.5 text-primary" />
+            ) : (
+              <CircleIcon className="size-3.5" />
+            )}
+          </IconBtn>
         </HintTooltip>
       </div>
-
-      {filtersActive && !search ? (
-        <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-4 py-1.5">
-          {filters.starred ? (
-            <FilterPill label="Flagged" onRemove={() => patchFilters({ starred: false })} />
-          ) : null}
-          {filters.important ? (
-            <FilterPill label="Important" onRemove={() => patchFilters({ important: false })} />
-          ) : null}
-          {filters.hasAttachments ? (
-            <FilterPill
-              label="Attachments"
-              onRemove={() => patchFilters({ hasAttachments: false })}
-            />
-          ) : null}
-          {filters.withinDays != null ? (
-            <FilterPill
-              label={withinDaysLabel(filters.withinDays)}
-              onRemove={() => patchFilters({ withinDays: null })}
-            />
-          ) : null}
-          <span className="h-6 flex-1" aria-hidden />
-          <button
-            type="button"
-            onClick={clearFilters}
-            aria-label="Clear filters"
-            className="shrink-0 text-muted-foreground/70 hover:text-foreground"
-          >
-            <XIcon className="size-3.5" />
-          </button>
-        </div>
-      ) : null}
 
       <div
         ref={scrollRef}
@@ -1368,11 +1235,9 @@ export function MessageList({
             <span className="text-sm text-muted-foreground">
               {unreadOnly
                 ? "Everything here has been read."
-                : filtering
-                  ? "No messages match your filters."
-                  : searchQuery
-                    ? "No messages match your search."
-                    : "This label is empty."}
+                : searchQuery
+                  ? "No messages match your search."
+                  : "This label is empty."}
             </span>
           </div>
         ) : (
