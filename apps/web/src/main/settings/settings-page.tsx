@@ -66,7 +66,8 @@ function RowSelect({
   className?: string;
 }) {
   return (
-    <Select value={value} onValueChange={onValueChange}>
+    // "" keeps the Select controlled (showing the placeholder) while the value loads.
+    <Select value={value ?? ""} onValueChange={onValueChange}>
       <SelectTrigger
         size="small"
         aria-label={ariaLabel}
