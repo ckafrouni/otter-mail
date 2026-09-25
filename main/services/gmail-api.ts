@@ -4,7 +4,8 @@
  * Gmail REST API client.
  * Base URL: https://gmail.googleapis.com/gmail/v1/users/me
  *
- * gmailFetch: authenticated fetch with retry-after / exponential backoff on
+ * gmailFetch: authenticated fetch that spends the account's Gmail quota through
+ * gmail-quota.ts (user actions first, sync in the background) and backs off on
  * rate limits (429, and 403 per-user quota errors).
  */
 
@@ -15,6 +16,7 @@ import { app, dialog } from "@glaze/core/backend";
 import { getAccessToken } from "./gmail-oauth.js";
 import { getAccount } from "./account-store.js";
 import { getCachedAttachment, putCachedAttachment } from "./attachment-cache.js";
+import { acquireQuota, isBackgroundWork, quotaCost, reportQuotaExceeded } from "./gmail-quota.js";
 import type {
   GmailLabel,
   GmailMessageSummary,
@@ -23,16 +25,14 @@ import type {
 } from "../gmail/types.js";
 
 const BASE_URL = "https://gmail.googleapis.com/gmail/v1/users/me";
-const MAX_RETRIES = 5;
 
-/** Per-account time until which background work should hold off because
-    Gmail's per-user quota was just exhausted. */
-const quotaCooldownUntil = new Map<string, number>();
-const QUOTA_COOLDOWN_MS = 30_000;
-
-/** Background sync spends at most this many quota units per second per
-    account (Gmail allows ~250), leaving the rest for what the user does. */
-const BACKGROUND_UNITS_PER_SEC = 100;
+/**
+ * Retries after a rate-limit error. The user's own requests must answer
+ * inside the renderer's 5s IPC budget, so they get two quick retries; sync
+ * (background) work can afford to wait the limit out.
+ */
+const FOREGROUND_RETRY_DELAYS_MS = [700, 1500];
+const BACKGROUND_MAX_RETRIES = 6;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -43,22 +43,6 @@ function isRateLimited(status: number, body: string): boolean {
     status === 403 &&
     /rateLimitExceeded|userRateLimitExceeded|RATE_LIMIT_EXCEEDED|Quota exceeded/.test(body)
   );
-}
-
-/**
- * Called by background work after spending `units` quota units since
- * `startedAt`: sleeps long enough to stay under BACKGROUND_UNITS_PER_SEC, and
- * waits out any active quota cooldown so user actions get the quota first.
- */
-export async function paceBackground(
-  accountId: string,
-  startedAt: number,
-  units: number,
-): Promise<void> {
-  const minMs = (units / BACKGROUND_UNITS_PER_SEC) * 1000;
-  const now = Date.now();
-  const wait = Math.max(minMs - (now - startedAt), (quotaCooldownUntil.get(accountId) ?? 0) - now);
-  if (wait > 0) await sleep(wait);
 }
 
 type GmailFetchInit = {
@@ -75,6 +59,7 @@ async function gmailFetch(
   init: GmailFetchInit = {},
   retryCount = 0,
 ): Promise<unknown> {
+  await acquireQuota(accountId, quotaCost(init.method ?? "GET", path));
   const token = await getAccessToken(accountId);
 
   const response = await fetch(`${BASE_URL}${path}`, {
@@ -88,12 +73,20 @@ async function gmailFetch(
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    if (isRateLimited(response.status, body) && retryCount < MAX_RETRIES) {
-      const retryAfter = parseInt(response.headers.get("Retry-After") ?? "", 10);
-      const waitMs = retryAfter > 0 ? retryAfter * 1000 : Math.min(1000 * 2 ** retryCount, 32000);
-      quotaCooldownUntil.set(accountId, Date.now() + Math.max(waitMs, QUOTA_COOLDOWN_MS));
-      await sleep(waitMs);
-      return gmailFetch(accountId, path, init, retryCount + 1);
+    if (isRateLimited(response.status, body)) {
+      const retryAfter = parseInt(response.headers.get("Retry-After") ?? "", 10) * 1000;
+      reportQuotaExceeded(accountId, retryAfter > 0 ? retryAfter : 0);
+      const background = isBackgroundWork();
+      const waitMs = background
+        ? retryAfter > 0
+          ? retryAfter
+          : Math.min(1000 * 2 ** retryCount, 32_000)
+        : FOREGROUND_RETRY_DELAYS_MS[retryCount];
+      const canRetry = background ? retryCount < BACKGROUND_MAX_RETRIES : waitMs !== undefined;
+      if (canRetry) {
+        await sleep(waitMs);
+        return gmailFetch(accountId, path, init, retryCount + 1);
+      }
     }
     throw new Error(
       `Gmail API error: ${response.status} ${response.statusText}${body ? ` — ${body}` : ""}`,
@@ -285,12 +278,11 @@ function mapMessageSummary(msg: RawMessageMetadata): GmailMessageSummary {
 /**
  * Fetch metadata-format summaries for a set of message ids, capped at 5
  * concurrent requests. Shared by listMessages (live cold-cache warm-up) and the
- * background sync engine (`background: true` paces it via paceBackground).
+ * background sync engine (gmail-quota paces the latter behind user actions).
  */
 export async function fetchMetadataForIds(
   accountId: string,
   ids: string[],
-  opts: { background?: boolean } = {},
 ): Promise<GmailMessageSummary[]> {
   // messages.get costs 5 quota units against Gmail's ~250 units/s per user;
   // 5 in flight (~30 req/s) stays clear of 429 backoffs and leaves headroom
@@ -300,7 +292,6 @@ export async function fetchMetadataForIds(
 
   for (let i = 0; i < ids.length; i += CONCURRENCY) {
     const batch = ids.slice(i, i + CONCURRENCY);
-    const startedAt = Date.now();
     const fetched = await Promise.all(
       batch.map(async (id) => {
         try {
@@ -320,7 +311,6 @@ export async function fetchMetadataForIds(
     results.push(
       ...fetched.filter((m): m is RawMessageMetadata => m !== null).map(mapMessageSummary),
     );
-    if (opts.background) await paceBackground(accountId, startedAt, batch.length * 5);
   }
 
   return results;
