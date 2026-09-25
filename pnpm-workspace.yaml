@@ -1,0 +1,30 @@
+packages:
+  - apps/*
+  - packages/*
+  - site
+
+# true = allowed to run install scripts.
+allowBuilds:
+  electron: true
+  electron-winstaller: false
+  esbuild: true
+  sharp: false
+  workerd: true
+
+catalog:
+  "@types/node": 24.12.4
+  "@tailwindcss/vite": 4.3.3
+  tailwindcss: 4.3.3
+  typescript: 5.9.3
+  vite: npm:@voidzero-dev/vite-plus-core@0.3.3
+  vite-plus: 0.3.3
+
+minimumReleaseAgeExclude:
+  - "@cloudflare/workerd-darwin-64@1.20260925.1"
+  - "@cloudflare/workerd-darwin-arm64@1.20260925.1"
+  - "@cloudflare/workerd-linux-64@1.20260925.1"
+  - "@cloudflare/workerd-linux-arm64@1.20260925.1"
+  - "@cloudflare/workerd-windows-64@1.20260925.1"
+  - miniflare@5.20260925.0-alpha
+  - workerd@1.20260925.1
+  - wrangler@4.141.0

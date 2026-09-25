@@ -1,77 +1,34 @@
 {
-  "id": "2fv8ixle",
-  "name": "otter-mail",
-  "version": "1.0.0",
-  "productName": "Otter Mail",
-  "description": "Gmail, calm and fast.",
-  "iconDescription": "A desktop mail viewer focused exclusively on Gmail, allowing users to access and manage multiple inboxes and organize messages using Gmail's tagging system. The app consolidates email management across different Gmail accounts and labels in one unified interface. Think of an inbox tray, stacked envelopes, or a filing cabinet with labeled drawers.",
+  "name": "@otter-mail/monorepo",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "sh ./glaze-node.sh build",
-    "dev": "sh ./glaze-node.sh dev",
-    "dev:renderer": "sh ./glaze-node.sh dev:renderer",
-    "lint": "sh ./glaze-node.sh lint",
-    "type-check": "sh ./glaze-node.sh type-check",
-    "format": "sh ./glaze-node.sh format",
-    "verify": "sh ./glaze-node.sh verify --json",
-    "launch": "sh ./glaze-node.sh launch --wait --json",
-    "update-bundle": "sh ./glaze-node.sh update-bundle --wait --json",
-    "repackage": "sh ./glaze-node.sh repackage --wait --json"
-  },
-  "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.282",
-    "@base-ui/react": "^1.8.0",
-    "@radix-ui/colors": "^3.0.0",
-    "@shadcn/react": "^0.2.0",
-    "@tanstack/react-query": "^5.87.4",
-    "@tanstack/react-router": "^1.131.36",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "cmdk": "^1.1.1",
-    "lucide-react": "^0.542.0",
-    "radix-ui": "^1.4.3",
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1",
-    "react-markdown": "^9.1.0",
-    "remark-gfm": "^4.0.1",
-    "tailwind-merge": "^3.3.1"
+    "prepare": "vp config --no-agent",
+    "dev": "node scripts/dev-runner.ts",
+    "dev:web": "vp run --filter @otter-mail/web dev",
+    "start": "vp run --filter @otter-mail/desktop start",
+    "build": "vp run --filter './apps/*' build",
+    "build:translator": "node scripts/build-translator.ts",
+    "typecheck": "vp run -r typecheck",
+    "lint": "vp lint --report-unused-disable-directives",
+    "test": "vp run -r test",
+    "fmt": "vp fmt",
+    "fmt:check": "vp fmt --check",
+    "deploy:site": "pnpm --filter @otter-mail/site deploy",
+    "dist:desktop:artifact": "node scripts/build-desktop-artifact.ts",
+    "dist:desktop:dmg": "node scripts/build-desktop-artifact.ts --platform mac --target dmg",
+    "dist:desktop:dmg:arm64": "node scripts/build-desktop-artifact.ts --platform mac --target dmg --arch arm64",
+    "dist:desktop:dmg:x64": "node scripts/build-desktop-artifact.ts --platform mac --target dmg --arch x64",
+    "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules apps/*/dist apps/*/dist-electron native/*/.build release"
   },
   "devDependencies": {
-    "@eslint/js": "^9.22.0",
-    "@rolldown/plugin-babel": "^0.2.1",
-    "@tailwindcss/vite": "^4.2.2",
-    "@types/node": "^24.3.1",
-    "@types/react": "^19.1.12",
-    "@types/react-dom": "^19.1.9",
-    "@typescript-eslint/eslint-plugin": "^8.18.0",
-    "@typescript-eslint/parser": "^8.18.0",
-    "@vitejs/plugin-react": "^6.0.1",
-    "babel-plugin-react-compiler": "^1.0.0",
-    "esbuild": "^0.27.4",
-    "eslint": "^9.39.2",
-    "eslint-plugin-import": "^2.31.0",
-    "globals": "^17.3.0",
-    "oxfmt": "^0.26.0",
-    "tailwindcss": "^4.2.2",
-    "tsx": "^4.20.5",
-    "typescript": "^5.5.3",
-    "vite": "^8.0.2"
+    "@types/node": "catalog:",
+    "playwright-core": "1.60.0",
+    "typescript": "catalog:",
+    "vite-plus": "catalog:"
   },
   "engines": {
-    "node": ">=24"
+    "node": "^24.13.1"
   },
-  "packageManager": "npm@11.11.0+sha512-82gRxKrh/eY5UnNorkTFcdBQAGpgjWehkfGVqAGlJjejEtJZGGJUqjo3mbBTNbc5BTnPKGVtGPBZGhElujX5cw==",
-  "glaze": {
-    "capabilities": {},
-    "sdkVersion": "0.14.3.0",
-    "createdAt": "2026-07-01T12:05:07.615Z",
-    "lastMigration": "tray-retina-icons",
-    "host": {
-      "minVersion": "0.14.3.0"
-    },
-    "updatedAt": 1790346973061,
-    "appId": "gmail-inbox-local-2fv8ixle",
-    "variant": "local"
-  }
+  "packageManager": "pnpm@11.10.0"
 }

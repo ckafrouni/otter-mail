@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Privacy Policy · Otter Mail</title>
+    <link rel="icon" href="/favicon.png" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Privacy Policy</h1>
+      <p class="updated">Last updated: September 25, 2026</p>
+
+      <p>
+        Otter Mail is a desktop email app for macOS, made by Christophe Kafrouni under the Otterware
+        name. This policy explains what data Otter Mail accesses, where it goes, and what control
+        you have. In short: Otter Mail runs entirely on your Mac and talks to Google directly. There
+        is no Otter Mail server, and we never receive your mail, your contacts or your sign-in.
+      </p>
+
+      <h2>Data Otter Mail accesses from your Google Account</h2>
+      <p>When you sign in with Google, you choose to give Otter Mail access to:</p>
+      <ul>
+        <li>
+          <strong>Gmail</strong> (<code>https://mail.google.com/</code>): to read, search, send,
+          label, archive and delete your mail, and to manage drafts and labels, as you do in the
+          app.
+        </li>
+        <li>
+          <strong>Contacts</strong> (<code>contacts.readonly</code>,
+          <code>contacts.other.readonly</code>): to show the photos and names of people you
+          correspond with, and to suggest recipients as you type.
+        </li>
+        <li>
+          <strong>Calendar events</strong> (<code>calendar.events</code>): to show calendar
+          invitations you receive by email and to record your reply when you accept or decline.
+        </li>
+        <li>
+          <strong>Basic profile</strong> (<code>openid</code>, <code>email</code>,
+          <code>profile</code>): to know which account you added and to show its name and picture.
+        </li>
+      </ul>
+
+      <h2>How the data is used and stored</h2>
+      <ul>
+        <li>
+          Data from Google is used only to provide Otter Mail's features to you, in the app on your
+          Mac. It is never sold, never used for advertising, and never used to train artificial
+          intelligence models.
+        </li>
+        <li>
+          Your mail, labels and contact details are stored in a local database on your Mac, so the
+          app is fast and works offline. It stays in the Otter Mail folder in your home directory
+          (<code>~/.otter-mail</code>) until you remove the account or delete the app's data.
+        </li>
+        <li>
+          Google sign-in tokens are stored on your Mac, encrypted with a key kept in your macOS
+          Keychain.
+        </li>
+        <li>
+          Translation of foreign-language mail uses Apple's on-device translator. The text does not
+          leave your Mac.
+        </li>
+        <li>No analytics, tracking or crash reports are collected.</li>
+      </ul>
+
+      <h2>When data leaves your Mac</h2>
+      <p>Otter Mail connects directly from your Mac to:</p>
+      <ul>
+        <li>
+          <strong>Google</strong> (Gmail, People, Calendar and sign-in services), to do what you ask
+          in the app.
+        </li>
+        <li>
+          <strong>Image and icon services</strong>, to show sender pictures: Gravatar receives a
+          one-way hash of a sender's email address, and Google's and DuckDuckGo's favicon services
+          receive the domain of a sender's email address (never for personal addresses such as
+          gmail.com). Images inside emails are downloaded from the servers the sender chose, as in
+          any mail app.
+        </li>
+        <li>
+          <strong>Links you choose to open</strong>, such as unsubscribe links, which are sent to
+          the sender's own servers.
+        </li>
+        <li>
+          <strong>Your assistant, only if you set one up.</strong> The optional assistant runs
+          through a provider you install and sign in to yourself (Claude Code, Codex or Hermes).
+          When you ask it something, the messages and mail content it needs are sent to that
+          provider under your own account with them, and are subject to that provider's privacy
+          policy. Nothing is sent to an assistant unless you use it.
+        </li>
+        <li>
+          <strong>GitHub</strong>, to check for app updates. This shares only your IP address and
+          the app version, as any download does.
+        </li>
+      </ul>
+      <p>Otter Mail does not share your Google data with anyone else.</p>
+
+      <h2>Google API Services User Data Policy</h2>
+      <p>
+        Otter Mail's use and transfer to any other app of information received from Google APIs will
+        adhere to the
+        <a href="https://developers.google.com/terms/api-services-user-data-policy"
+          >Google API Services User Data Policy</a
+        >, including the Limited Use requirements.
+      </p>
+
+      <h2>Your control</h2>
+      <ul>
+        <li>
+          Removing an account in Otter Mail (Settings → Accounts) deletes its local copy of your
+          mail and its sign-in from your Mac. Nothing is deleted from Gmail.
+        </li>
+        <li>
+          You can revoke Otter Mail's access at any time at
+          <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.
+        </li>
+        <li>Deleting the <code>~/.otter-mail</code> folder removes all of the app's data.</li>
+      </ul>
+
+      <h2>Children</h2>
+      <p>Otter Mail is not directed at children under 13.</p>
+
+      <h2>Changes</h2>
+      <p>If this policy changes, the new version will be published on this page with a new date.</p>
+
+      <h2>Contact</h2>
+      <p>
+        Questions about privacy:
+        <a href="mailto:chris.kafrouni@gmail.com">chris.kafrouni@gmail.com</a>.
+      </p>
+
+      <footer>
+        <a href="/">Otter Mail</a><a href="/terms/">Terms</a
+        ><a href="https://otterware.dev">Otterware</a>
+      </footer>
+    </main>
+  </body>
+</html>

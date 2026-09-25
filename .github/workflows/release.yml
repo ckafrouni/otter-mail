@@ -1,0 +1,288 @@
+name: Release
+
+# Stable: push a tag vX.Y.Z, or run this workflow with channel=stable to promote
+# the latest nightly's commit. Nightly: daily schedule (skipped when nothing
+# changed) or run with channel=nightly. See docs/release.md.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+      - "!v*-nightly.*"
+  schedule:
+    # 03:17 UTC daily; off the hour, when GitHub's scheduler is busiest.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel
+        required: true
+        default: nightly
+        type: choice
+        options:
+          - nightly
+          - stable
+      version:
+        description: Stable version (e.g. 0.2.0). Defaults to the version the latest nightly previewed.
+        required: false
+        type: string
+
+# Nightlies queue behind each other; stable releases get their own lane.
+# Never cancel a run that may be publishing.
+concurrency:
+  group: release-${{ (github.event_name == 'schedule' || inputs.channel == 'nightly') && 'nightly' || 'stable' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # electron-builder downloads its own Electron per architecture.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+
+jobs:
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      due: ${{ steps.resolve.outputs.due }}
+      ref: ${{ steps.resolve.outputs.ref }}
+      channel: ${{ steps.meta.outputs.channel }}
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      name: ${{ steps.meta.outputs.name }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      make_latest: ${{ steps.meta.outputs.make_latest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - id: resolve
+        name: Resolve release commit
+        uses: actions/github-script@v8
+        env:
+          DISPATCH_CHANNEL: ${{ inputs.channel }}
+        with:
+          script: |
+            const {
+              assertCommitOnDefaultBranch,
+              shouldReleaseNightly,
+              resolveLatestNightlyCommit,
+            } = require('./.github/scripts/check-nightly-release.cjs');
+
+            const event = context.eventName;
+            const channel =
+              event === 'schedule' ? 'nightly'
+              : event === 'workflow_dispatch' ? process.env.DISPATCH_CHANNEL
+              : 'stable';
+            const branch = context.payload.repository.default_branch;
+            if (event === 'workflow_dispatch' && context.ref !== `refs/heads/${branch}`) {
+              throw new Error(`Releases must be dispatched from ${branch}, not ${context.ref}.`);
+            }
+
+            let ref = context.sha;
+            let due = true;
+            let nightlyVersion = '';
+            if (event === 'schedule') {
+              due = await shouldReleaseNightly({ github, context, core });
+            } else if (event === 'workflow_dispatch' && channel === 'stable') {
+              // Stable ships the exact commit nightly users already ran.
+              const nightly = await resolveLatestNightlyCommit({ github, context, core });
+              ref = nightly.sha;
+              nightlyVersion = nightly.version;
+              core.notice(`Stable release builds ${ref}, shipped by ${nightly.tag}.`);
+            }
+            await assertCommitOnDefaultBranch({ github, context, sha: ref });
+
+            core.setOutput('channel', channel);
+            core.setOutput('due', String(due));
+            core.setOutput('ref', ref);
+            core.setOutput('nightly_version', nightlyVersion);
+
+      - name: Setup Vite+
+        if: steps.resolve.outputs.due == 'true'
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+
+      - id: meta
+        name: Resolve release version
+        if: steps.resolve.outputs.due == 'true'
+        shell: bash
+        env:
+          CHANNEL: ${{ steps.resolve.outputs.channel }}
+          REF: ${{ steps.resolve.outputs.ref }}
+          DISPATCH_VERSION: ${{ inputs.version }}
+          NIGHTLY_VERSION: ${{ steps.resolve.outputs.nightly_version }}
+          RUN_STARTED_AT: ${{ github.run_started_at }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          if [[ "$CHANNEL" == "nightly" ]]; then
+            node scripts/resolve-nightly-release.ts \
+              --date "$(date -u -d "$RUN_STARTED_AT" +%Y%m%d)" \
+              --run-number "$RUN_NUMBER" \
+              --sha "$REF" \
+              --github-output
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "make_latest=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            raw="$GITHUB_REF_NAME"
+          else
+            raw="${DISPATCH_VERSION:-$NIGHTLY_VERSION}"
+          fi
+          version="${raw#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release version: '$raw'" >&2
+            exit 1
+          fi
+          {
+            echo "version=$version"
+            echo "tag=v$version"
+            echo "name=Otter Mail $version"
+          } >> "$GITHUB_OUTPUT"
+          # Anything with a suffix (e.g. 1.2.0-rc.1) is a prerelease without an
+          # update feed; see resolvePublishConfig in scripts/build-desktop-artifact.ts.
+          if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "make_latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "make_latest=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build_mac:
+    name: Build macOS (arm64 + x64)
+    needs: [preflight]
+    if: needs.preflight.outputs.due == 'true'
+    # Needs Xcode 26+ for the translator; see .github/actions/select-xcode.
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.preflight.outputs.ref }}
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Select Xcode
+        uses: ./.github/actions/select-xcode
+        with:
+          xcode-app: ${{ vars.XCODE_APP }}
+
+      - name: Build desktop artifacts
+        shell: bash
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          OTTER_MAIL_GOOGLE_CLIENT_ID: ${{ vars.OTTER_MAIL_GOOGLE_CLIENT_ID }}
+          OTTER_MAIL_GOOGLE_CLIENT_SECRET: ${{ secrets.OTTER_MAIL_GOOGLE_CLIENT_SECRET }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$OTTER_MAIL_GOOGLE_CLIENT_ID" || -z "$OTTER_MAIL_GOOGLE_CLIENT_SECRET" ]]; then
+            echo "::error::Set the OTTER_MAIL_GOOGLE_CLIENT_ID variable and OTTER_MAIL_GOOGLE_CLIENT_SECRET secret; without them the app can't sign in to Google."
+            exit 1
+          fi
+          args=(--platform mac --target dmg --arch both --build-version "$VERSION" --verbose)
+
+          if [[ -n "$CSC_LINK" && -n "$CSC_KEY_PASSWORD" && -n "$APPLE_API_KEY" && -n "$APPLE_API_KEY_ID" && -n "$APPLE_API_ISSUER" ]]; then
+            # electron-builder's notarization reads APPLE_API_KEY as a path to the .p8.
+            key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+            printf '%s' "$APPLE_API_KEY" > "$key_path"
+            export APPLE_API_KEY="$key_path"
+            echo "macOS signing and notarization enabled."
+            args+=(--signed)
+          else
+            echo "::warning::Building UNSIGNED (ad hoc). Set CSC_LINK, CSC_KEY_PASSWORD, APPLE_API_KEY, APPLE_API_KEY_ID and APPLE_API_ISSUER to sign and notarize."
+          fi
+
+          node scripts/build-desktop-artifact.ts "${args[@]}"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-mac
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.blockmap
+            release/*.yml
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish GitHub release
+    needs: [preflight, build_mac]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: desktop-mac
+          path: release-assets
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.preflight.outputs.tag }}
+          target_commitish: ${{ needs.preflight.outputs.ref }}
+          name: ${{ needs.preflight.outputs.name }}
+          generate_release_notes: true
+          prerelease: ${{ needs.preflight.outputs.prerelease }}
+          make_latest: ${{ needs.preflight.outputs.make_latest }}
+          files: release-assets/*
+          fail_on_unmatched_files: true
+
+  # After a stable release, move apps/*/package.json to the released version so
+  # the next nightly (next patch + -nightly) sorts after it for the updater.
+  finalize:
+    name: Bump package versions on main
+    needs: [preflight, release]
+    if: needs.preflight.outputs.channel == 'stable' && needs.preflight.outputs.prerelease == 'false'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+
+      - id: bump
+        name: Update versions
+        run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}" --github-output
+
+      - name: Commit and push
+        if: steps.bump.outputs.changed == 'true'
+        env:
+          TAG: ${{ needs.preflight.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/desktop/package.json apps/web/package.json
+          git commit -m "chore(release): $TAG"
+          git push origin HEAD
