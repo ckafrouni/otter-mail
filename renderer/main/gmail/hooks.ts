@@ -25,7 +25,7 @@ import type {
   SyncStatus,
   ViewRule,
 } from "./types";
-import type { ListMessagesResult } from "./api";
+import type { GmailSearchResult, ListMessagesResult } from "./api";
 import { resolveRules } from "./custom-views";
 import { registerUndo, isPureMarkRead } from "./undo";
 
@@ -419,6 +419,31 @@ export function useSearchMessages(
     getNextPageParam: (lastPage) => lastPage.nextPageToken,
     enabled: enabled && (q.trim().length > 0 || hasFilters),
     staleTime: STALE_TIME,
+  });
+}
+
+/**
+ * The search mailbox: Gmail's own search across `accountIds`, page by page.
+ * Each page is conversations newest first; a conversation seen on an earlier
+ * page isn't repeated.
+ */
+export function useGmailSearch(q: string, accountIds: string[], enabled = true) {
+  return useInfiniteQuery<
+    GmailSearchResult,
+    Error,
+    InfiniteData<GmailSearchResult>,
+    readonly unknown[],
+    Record<string, string | null> | undefined
+  >({
+    queryKey: ["gmail-search", q, [...accountIds].sort().join(",")],
+    queryFn: ({ pageParam }) => {
+      console.log("[hooks:useGmailSearch]", { q, accounts: accountIds.length, paged: Boolean(pageParam) });
+      return gmailApi.gmailSearch({ q, accountIds, cursors: pageParam });
+    },
+    initialPageParam: undefined,
+    getNextPageParam: (last) => last.cursors,
+    enabled: enabled && q.trim().length > 0 && accountIds.length > 0,
+    staleTime: 60_000,
   });
 }
 

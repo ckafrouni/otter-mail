@@ -6,6 +6,7 @@ import { MessageReader } from "./gmail/message-reader";
 import { NewMessageView } from "./gmail/new-message-view";
 import { CommandPalette } from "./gmail/command-palette";
 import { AssistantChatPanel } from "./gmail/assistant-chat";
+import { SEARCH_MAILBOX } from "./gmail/gmail-query";
 import { TitleControls, TitleTrailing, WindowTitle } from "./gmail/top-bar";
 import { SettingsPage, type SettingsRoute } from "./settings/settings-page";
 import { SettingsNav, settingsSectionLabel } from "./settings/settings-nav";
@@ -325,7 +326,7 @@ export function HomeView() {
     "commandPalette.toggle": () => setPaletteOpen((o) => !o),
     "sidebar.toggle": () => toggleSidebar(),
     "assistant.toggle": () => toggleChat(),
-    "search.focus": () => searchRef.current?.focus(),
+    "search.focus": () => openSearch(),
     "compose.new": () => setComposeOpen(true),
     "keybindings.show": () =>
       setSettingsRoute({ pane: "keybindings", viewId: null, mailbox: null }),
@@ -381,6 +382,8 @@ export function HomeView() {
   // Persist where the user is so we can reopen here next launch.
   useEffect(() => {
     if (!initialized || !selectedAccountId) return;
+    // The Search mailbox isn't a place to reopen into.
+    if (selectedLabelId === SEARCH_MAILBOX) return;
     saveLastLocation({ accountId: selectedAccountId, labelId: selectedLabelId });
   }, [initialized, selectedAccountId, selectedLabelId]);
 
@@ -504,6 +507,7 @@ export function HomeView() {
   // If the selected view disappears (deleted, or it has no rules for the
   // active account), fall back to Inbox.
   useEffect(() => {
+    if (selectedLabelId === SEARCH_MAILBOX) return;
     if (isCombined) {
       if (!views.some((v) => v.id === selectedLabelId)) {
         setSelectedLabelId(INBOX_VIEW_ID);
@@ -591,11 +595,30 @@ export function HomeView() {
     setReaderAccountId(accountId);
   };
 
-  const handleSearchChange = (q: string) => {
-    setSearchQuery(q);
+  // ── Search mailbox ───────────────────────────────────────────────────────
+  // "Search" is a mailbox like Inbox: selecting it (sidebar, / or ⌘F, ⌘K, a
+  // sender's hovercard) shows Gmail's search in the list pane. Leaving it
+  // (Escape in an empty bar) returns to the mailbox the user came from.
+  const searchActive = selectedLabelId === SEARCH_MAILBOX;
+  const searchReturnRef = useRef<string>("INBOX");
+  const [searchScope, setSearchScope] = useState<string[] | null>(null);
+  const openSearch = (q?: string) => {
+    console.log("[HomeView:openSearch]", { hasQuery: Boolean(q) });
+    if (!searchActive) searchReturnRef.current = selectedLabelId;
+    setComposeOpen(false);
+    setSettingsRoute(null);
+    setSelectedLabelId(SEARCH_MAILBOX);
+    if (q !== undefined) setSearchQuery(q);
     setSelectedMessageId(null);
     setReaderAccountId(null);
+    // Focus once the header has mounted (empty search: ready to type).
+    if (!q) setTimeout(() => searchRef.current?.focus(), 0);
   };
+  const exitSearch = () => {
+    setSelectedLabelId(searchReturnRef.current);
+    setSearchQuery("");
+  };
+  const handleSearchChange = (q: string) => openSearch(q);
 
   // Palette mail result: jump to the owning account (Combined stays put) and open.
   const handlePaletteOpenMessage = (message: GmailMessageSummary) => {
@@ -770,10 +793,8 @@ export function HomeView() {
                     onSelectLabel={handleSelectLabel}
                     views={views}
                     onCompose={() => setComposeOpen(true)}
-                    searchQuery={searchQuery}
-                    onSearchChange={handleSearchChange}
-                    searchRef={searchRef}
-                    searchPlaceholder="Search"
+                    searchSelected={searchActive}
+                    onOpenSearch={() => openSearch()}
                   />
                 )}
               </div>
@@ -811,7 +832,22 @@ export function HomeView() {
                   advanceRef={advanceRef}
                   onSelectionChange={setChatSelection}
                   onOpenChat={openChat}
-                  searchQuery={searchQuery}
+                  search={
+                    searchActive
+                      ? {
+                          query: searchQuery,
+                          // Default scope: the mailbox you searched from (all
+                          // accounts from Combined, else that account).
+                          accountIds:
+                            searchScope ??
+                            (isCombined || !effectiveAccountId ? accountIds : [effectiveAccountId]),
+                          onSearch: (q) => openSearch(q),
+                          onExit: exitSearch,
+                          onScope: setSearchScope,
+                          focusRef: searchRef,
+                        }
+                      : undefined
+                  }
                 />
               </div>
               <PaneResizer onPointerDown={listPane.start} />
@@ -854,7 +890,7 @@ export function HomeView() {
                     setMailtoSeq((n) => n + 1);
                     setComposeOpen(true);
                   }}
-                  onSearchSender={(email) => handleSearchChange(email)}
+                  onSearchSender={(email) => handleSearchChange(`from:${email}`)}
                 />
               ) : (
                 <div className="flex h-full items-center justify-center">
@@ -899,6 +935,7 @@ export function HomeView() {
           views={views}
           selectedAccountId={effectiveAccountId}
           onOpenMessage={handlePaletteOpenMessage}
+        onSearchMail={(q) => openSearch(q)}
           onGoToView={handlePaletteGoToView}
           onSelectAccount={handleSelectAccount}
           onCompose={() => setComposeOpen(true)}

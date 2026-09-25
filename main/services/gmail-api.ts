@@ -389,6 +389,36 @@ export async function listMessageIdsPage(
   };
 }
 
+/**
+ * One page of Gmail's own search (the same engine and operators as the Gmail
+ * web search box). Spam and Trash are left out unless the query asks for them,
+ * like Gmail does.
+ */
+export async function searchGmailPage(
+  accountId: string,
+  q: string,
+  pageToken?: string,
+  maxResults = 50,
+): Promise<{
+  refs: { id: string; threadId: string }[];
+  nextPageToken?: string;
+  resultSizeEstimate: number;
+}> {
+  const query = new URLSearchParams({ q, maxResults: String(maxResults) });
+  if (/\b(in|label):(spam|trash|anywhere)\b/i.test(q)) query.set("includeSpamTrash", "true");
+  if (pageToken) query.set("pageToken", pageToken);
+  const list = (await gmailFetch(accountId, `/messages?${query.toString()}`)) as {
+    messages?: { id: string; threadId: string }[];
+    nextPageToken?: string;
+    resultSizeEstimate?: number;
+  };
+  return {
+    refs: list.messages ?? [],
+    nextPageToken: list.nextPageToken,
+    resultSizeEstimate: list.resultSizeEstimate ?? 0,
+  };
+}
+
 export interface GmailHistoryPage {
   historyId?: string;
   nextPageToken?: string;

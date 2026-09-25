@@ -404,6 +404,9 @@ function ModelPickerContent({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search models..."
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
               aria-label="Search models"
               className="h-6.5 w-full bg-transparent ps-5 font-sans text-sm leading-6.5 text-foreground outline-none placeholder:text-muted-foreground/70"
               onKeyDown={(e) => {

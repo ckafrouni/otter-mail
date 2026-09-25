@@ -59,6 +59,8 @@ type CommandPaletteProps = {
   views: MailView[];
   selectedAccountId: string | null;
   onOpenMessage: (message: GmailMessageSummary) => void;
+  /** Runs the typed text as a Gmail search in the Search mailbox. */
+  onSearchMail: (query: string) => void;
   onGoToView: (viewId: string) => void;
   onSelectAccount: (accountId: string) => void;
   onCompose: () => void;
@@ -132,6 +134,7 @@ export function CommandPalette({
   views,
   selectedAccountId,
   onOpenMessage,
+  onSearchMail,
   onGoToView,
   onSelectAccount,
   onCompose,
@@ -334,9 +337,30 @@ export function CommandPalette({
         })
       : [];
 
-    return mail.length > 0
-      ? [...staticGroups, { id: "mail", label: "Mail", items: mail }]
-      : staticGroups;
+    // First option while typing: hand the text to the Search mailbox (Gmail's
+    // own search, every operator), like pressing Enter in Gmail's search bar.
+    const searchGroup = needle
+      ? [
+          {
+            id: "search",
+            label: "Search",
+            items: [
+              {
+                id: "search-mail",
+                icon: <SearchIcon className={ICON} />,
+                title: `Search mail for “${query.trim()}”`,
+                run: () => onSearchMail(query.trim()),
+              },
+            ],
+          },
+        ]
+      : [];
+
+    return [
+      ...searchGroup,
+      ...staticGroups,
+      ...(mail.length > 0 ? [{ id: "mail", label: "Mail", items: mail }] : []),
+    ];
   }, [
     keybindings,
     page,
@@ -356,6 +380,7 @@ export function CommandPalette({
     onSelectAccount,
     onGoToView,
     onOpenMessage,
+    onSearchMail,
   ]);
 
   const flat = groups.flatMap((g) => g.items);
@@ -436,6 +461,10 @@ export function CommandPalette({
             <SearchIcon className="size-4 shrink-0 text-icon-muted" aria-hidden />
             <input
               ref={inputRef}
+              autoCorrect="off"
+              autoCapitalize="off"
+              autoComplete="off"
+              spellCheck={false}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={onKeyDown}

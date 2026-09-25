@@ -531,6 +531,28 @@ export function getThreadsPage(
   return { messages: rows.slice(0, limit).map(rowToThreadSummary), hasMore };
 }
 
+/**
+ * Conversation rows for the given threads (Gmail search results), in the
+ * order given. Threads with nothing cached are skipped.
+ */
+export function getThreadSummaries(accountId: string, threadIds: string[]): GmailMessageSummary[] {
+  if (threadIds.length === 0) return [];
+  const rows = getDb()
+    .prepare(
+      threadPageQuery(`
+        SELECT DISTINCT m.accountId AS accountId, m.threadId AS threadId
+          FROM messages m
+         WHERE m.accountId = ? AND m.threadId IN (SELECT value FROM json_each(?))
+      `),
+    )
+    .all(accountId, JSON.stringify(threadIds), threadIds.length, 0) as unknown as ThreadRow[];
+  const byThread = new Map(rows.map((r) => [r.threadId, rowToThreadSummary(r)]));
+  return threadIds.flatMap((id) => {
+    const row = byThread.get(id);
+    return row ? [row] : [];
+  });
+}
+
 /** All locally-cached messages of a thread, oldest first. */
 export function getThreadMessages(accountId: string, threadId: string): GmailMessageSummary[] {
   const d = getDb();

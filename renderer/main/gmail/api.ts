@@ -72,6 +72,17 @@ export type ListCombinedMessagesParams = {
 
 export type CombinedCounts = { total: number; unread: number };
 
+/** One page of Gmail's own search (conversation rows, newest first). */
+export type GmailSearchResult = {
+  messages: GmailMessageSummary[];
+  /** Per-account cursors for the next page; undefined = no more results. */
+  cursors?: Record<string, string | null>;
+  /** Gmail's estimate of the total number of matches. */
+  estimate: number;
+  /** Gmail was unreachable: local results only. */
+  offline?: boolean;
+};
+
 /** Parsed mailto: link, delivered when OtterMail is the default mail app. */
 export type MailtoTarget = { to: string; cc: string; subject: string; body: string };
 
@@ -355,6 +366,13 @@ export const gmailApi = {
 
   listCombinedMessages: (params: ListCombinedMessagesParams): Promise<ListMessagesResult> =>
     ipc("gmail:listCombinedMessages", params),
+
+  /** Gmail's own search (all operators, all mail) across the given accounts. */
+  gmailSearch: (params: {
+    q: string;
+    accountIds: string[];
+    cursors?: Record<string, string | null>;
+  }): Promise<GmailSearchResult> => task("gmail:search", params),
 
   searchMessages: (params: SearchMessagesParams): Promise<ListMessagesResult> =>
     ipc("gmail:searchMessages", params),

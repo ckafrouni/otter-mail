@@ -1,7 +1,6 @@
 import {
   useState,
   type CSSProperties,
-  type RefObject,
   type DragEvent as ReactDragEvent,
   type ReactNode,
 } from "react";
@@ -28,7 +27,6 @@ import {
   TagIcon,
   SearchIcon,
   SquarePenIcon,
-  XIcon,
   RotateCwIcon,
 } from "lucide-react";
 import {
@@ -459,10 +457,9 @@ type AccountsSidebarProps = {
   onSelectLabel: (labelId: string) => void;
   views: MailView[];
   onCompose: () => void;
-  searchQuery: string;
-  onSearchChange: (q: string) => void;
-  searchRef: RefObject<HTMLInputElement | null>;
-  searchPlaceholder: string;
+  /** The Search mailbox is the one showing. */
+  searchSelected: boolean;
+  onOpenSearch: () => void;
 };
 
 export function AccountsSidebar({
@@ -478,10 +475,8 @@ export function AccountsSidebar({
   onSelectLabel,
   views,
   onCompose,
-  searchQuery,
-  onSearchChange,
-  searchRef,
-  searchPlaceholder,
+  searchSelected,
+  onOpenSearch,
 }: AccountsSidebarProps) {
   const isCombined = selectedAccountId === COMBINED_ACCOUNT_ID;
 
@@ -641,33 +636,15 @@ export function AccountsSidebar({
 
       {/* Search row + compose, like the workspace sidebar. */}
       <div className="flex h-10 shrink-0 items-center gap-1 px-(--sidebar-content-inset)">
-        <label className="group/search flex h-8 min-w-0 flex-1 cursor-text items-center gap-2 rounded-[var(--control-radius)] px-(--sidebar-row-content-inset) transition-colors hover:bg-sidebar-row-hover focus-within:bg-sidebar-row-hover">
-          <SearchIcon className="size-4 shrink-0 text-(--sidebar-icon-color) group-focus-within/search:text-sidebar-foreground" />
-          <input
-            ref={searchRef}
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                onSearchChange("");
-                e.currentTarget.blur();
-              }
-            }}
-            placeholder={searchPlaceholder}
-            aria-label="Search mail"
-            className="min-w-0 flex-1 bg-transparent text-sm font-medium text-sidebar-foreground outline-none placeholder:text-sidebar-muted-foreground"
+        {/* Search is a mailbox: selecting it opens Gmail search in the list. */}
+        <div className="min-w-0 flex-1">
+          <SkRow
+            icon={<SearchIcon className="size-4" />}
+            title="Search"
+            selected={searchSelected}
+            onClick={onOpenSearch}
           />
-          {searchQuery ? (
-            <button
-              type="button"
-              onClick={() => onSearchChange("")}
-              aria-label="Clear search"
-              className="shrink-0 text-muted-foreground hover:text-foreground"
-            >
-              <XIcon className="size-3.5" />
-            </button>
-          ) : null}
-        </label>
+        </div>
         <HintTooltip label="New message" shortcut="compose.new">
           <IconBtn label="New message" onClick={onCompose}>
             <SquarePenIcon className="size-4" />

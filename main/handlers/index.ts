@@ -12,6 +12,7 @@ import { setSettingsTarget, takeSettingsTarget } from "../windows/settings-windo
 import { registerGmailHandlers } from "./gmail.js";
 import { registerTrayPopoverHandlers } from "./tray-popover.js";
 import { registerAssistantHandlers } from "./assistant.js";
+import { registerSearchHandlers } from "./search.js";
 import { takePendingOpenMessage } from "../services/open-message-target.js";
 import { focusMainWindow } from "../services/tray.js";
 import { listMailApps, setDefaultMailHandler } from "../services/default-mail.js";
@@ -114,6 +115,7 @@ export function registerHandlers(): void {
   ipcMain.handle("app:listMailApps", async () => listMailApps());
 
   registerAssistantHandlers();
+  registerSearchHandlers();
 
   // Register Gmail handlers
   registerGmailHandlers();

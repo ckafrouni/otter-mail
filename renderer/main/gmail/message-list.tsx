@@ -1,6 +1,6 @@
 import type React from "react";
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, Text } from "@glaze/core/components";
 import {
   DropdownMenu,
@@ -37,6 +37,7 @@ import {
   useCombinedMessages,
   useCombinedCounts,
   useSearchMessages,
+  useGmailSearch,
   useDebouncedValue,
   useLabels,
   useModifyMessage,
@@ -54,6 +55,7 @@ import { INBOX_VIEW_ID, STARRED_VIEW_ID, SENT_VIEW_ID, DRAFTS_VIEW_ID } from "./
 import { buildLabelTree, isAssignableLabel } from "./label-tree";
 import { isTypingTarget } from "./keyboard";
 import { useCommandHandlers } from "../keybindings/dispatch";
+import { SEARCH_HINT, SearchHeader } from "./search-header";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
 import { SYSTEM_LABEL_NAMES, labelDisplayName } from "./label-names";
 import { decodeEntities } from "./text";
@@ -95,7 +97,18 @@ type MessageListProps = {
   /** Opens the in-app assistant chat panel. */
   onOpenChat?: () => void;
 
-  searchQuery: string;
+  /** Set when this is the Search mailbox (Gmail's own search). */
+  search?: SearchMode;
+};
+
+/** The Search mailbox: the query that ran, its account scope, and its controls. */
+export type SearchMode = {
+  query: string;
+  accountIds: string[];
+  onSearch: (q: string) => void;
+  onExit: () => void;
+  onScope: (accountIds: string[]) => void;
+  focusRef: React.RefObject<HTMLInputElement | null>;
 };
 
 /** A row's labels: rows are conversations, so the union over its messages
@@ -596,21 +609,18 @@ export function MessageList({
   advanceRef,
   onSelectionChange,
   onOpenChat,
-  searchQuery,
+  search,
 }: MessageListProps) {
   const isCombined = combined != null;
   // "All / Unread" mode switcher — a segmented control in the header, not a
   // buried icon toggle, so the current display mode is always visible.
   const [mailboxMode, setMailboxMode] = useState<"all" | "unread">("all");
-  const unreadOnly = mailboxMode === "unread";
+  const unreadOnly = mailboxMode === "unread" && !search;
 
-  // Search is local (FTS5 over the mail cache): account-scoped in account mode,
-  // across every account in Combined mode. Results are message-level rows.
-  // Two entry points: the TopBar search (app-wide) and the header's filter bar
-  // (same FTS, restricted to the current view, plus structured criteria that
-  // work with an empty query); an active filter wins.
-  const debouncedQuery = useDebouncedValue(searchQuery.trim(), 150);
-  const globalSearching = debouncedQuery.length > 0;
+  // Two kinds of search: the Search mailbox runs Gmail's own search (the
+  // truth, every operator); the header's filter bar narrows the current view
+  // instantly from the local cache (FTS plus structured criteria).
+  const globalSearching = search !== undefined;
 
   // Search and criteria are independent: filterOpen is ONLY the text input's
   // state (search icon), criteria live in `filters` (sliders menu). Each gets
@@ -623,6 +633,7 @@ export function MessageList({
   const debouncedFilter = useDebouncedValue(filterOpen ? filterQuery.trim() : "", 150);
   const filtering = debouncedFilter.length > 0 || filtersActive;
   const searching = filtering || globalSearching;
+  const searchQuery = search?.query ?? "";
 
   const closeSearch = () => {
     setFilterOpen(false);
@@ -641,11 +652,7 @@ export function MessageList({
     combined?.viewId ?? "",
     isCombined && !searching,
   );
-  const searchResults = useSearchMessages(
-    debouncedQuery,
-    isCombined ? null : accountId,
-    globalSearching && !filtering,
-  );
+  const gmailSearch = useGmailSearch(searchQuery, search?.accountIds ?? [], globalSearching);
   const filterResults = useSearchMessages(
     debouncedFilter,
     isCombined ? null : accountId,
@@ -658,10 +665,10 @@ export function MessageList({
       withinDays: filters.withinDays ?? undefined,
     },
   );
-  const messagesQuery = filtering
-    ? filterResults
-    : globalSearching
-      ? searchResults
+  const messagesQuery = globalSearching
+    ? gmailSearch
+    : filtering
+      ? filterResults
       : isCombined
         ? combinedMessages
         : accountMessages;
@@ -692,8 +699,20 @@ export function MessageList({
       }
     : { mailboxTotal: activeLabel?.total ?? 0, mailboxUnread: activeLabel?.unread ?? 0 };
 
-  const allMessages: GmailMessageSummary[] =
-    messagesQuery.data?.pages.flatMap((p) => p.messages) ?? [];
+  // Search pages are merged per account; a conversation seen on an earlier
+  // page isn't repeated.
+  const allMessages: GmailMessageSummary[] = useMemo(() => {
+    const pages: { messages: GmailMessageSummary[] }[] = messagesQuery.data?.pages ?? [];
+    const rows = pages.flatMap((p) => p.messages);
+    if (!globalSearching) return rows;
+    const seen = new Set<string>();
+    return rows.filter((m) => {
+      const key = `${m.accountId ?? ""}:${m.threadId || m.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [messagesQuery.data, globalSearching]);
   // In Unread mode, clicking a message marks it read (optimistically), which
   // would normally drop it from this filter instantly. Keep the currently
   // selected row pinned in place — Gmail-style — so it only disappears once the
@@ -1145,7 +1164,9 @@ export function MessageList({
     if (!el || !hasNextPage || isFetchingNextPage) return;
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 600) {
       console.log("[MessageList:autoLoadMore]");
-      void messagesQuery.fetchNextPage();
+      // The scroll handler and the effect can both fire before a re-render:
+      // never cancel an in-flight page to start the same one again.
+      void messagesQuery.fetchNextPage({ cancelRefetch: false });
     }
   };
   useEffect(maybeLoadMore);
@@ -1169,10 +1190,32 @@ export function MessageList({
     return new Set([labelId]);
   };
 
+  const firstSearchPage = globalSearching ? gmailSearch.data?.pages[0] : undefined;
+
   return (
     <div className="relative flex h-full min-w-0 flex-col">
+      {search ? (
+        <SearchHeader
+          query={search.query}
+          onSearch={search.onSearch}
+          onExit={search.onExit}
+          onOpenMessage={(m) => onSelectMessage(m.id, m.accountId ?? accountId)}
+          accounts={accounts}
+          scope={search.accountIds}
+          onScope={search.onScope}
+          estimate={firstSearchPage ? firstSearchPage.estimate : null}
+          offline={Boolean(firstSearchPage?.offline)}
+          loading={gmailSearch.isFetching && !gmailSearch.isFetchingNextPage}
+          focusRef={search.focusRef}
+        />
+      ) : null}
       {/* Header */}
-      <div className="drag-region flex h-(--workspace-topbar-height) shrink-0 items-center gap-2 border-b border-border px-4">
+      <div
+        className={cn(
+          "drag-region flex h-(--workspace-topbar-height) shrink-0 items-center gap-2 border-b border-border px-4",
+          search && "hidden",
+        )}
+      >
         {headerLeading}
         <div className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
           {formatMailboxSummary(mailboxTotal, mailboxUnread)}
@@ -1239,7 +1282,7 @@ export function MessageList({
         </HintTooltip>
       </div>
 
-      {filterOpen ? (
+      {filterOpen && !search ? (
         <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-border px-4">
           <SearchIcon className="size-3.5 shrink-0 text-muted-foreground/70" />
           <input
@@ -1266,7 +1309,7 @@ export function MessageList({
         </div>
       ) : null}
 
-      {filtersActive ? (
+      {filtersActive && !search ? (
         <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-4 py-1.5">
           {filters.starred ? (
             <FilterPill label="Flagged" onRemove={() => patchFilters({ starred: false })} />
@@ -1322,6 +1365,22 @@ export function MessageList({
           <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
             <RotateCwIcon className="size-4 animate-spin text-muted-foreground" />
             <span className="text-sm text-muted-foreground">Loading more mail…</span>
+          </div>
+        ) : search && !search.query ? (
+          <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center">
+            <span className="text-sm font-medium text-foreground">Search your mail</span>
+            <span className="text-sm text-muted-foreground">{SEARCH_HINT}</span>
+          </div>
+        ) : search && visibleMessages.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center">
+            <span className="text-sm font-medium text-foreground">
+              {gmailSearch.isError ? "Search failed" : "No messages matched your search"}
+            </span>
+            <span className="text-sm text-muted-foreground">
+              {gmailSearch.isError
+                ? String(gmailSearch.error?.message ?? "Gmail didn't answer.")
+                : "Try different words, or use Advanced search."}
+            </span>
           </div>
         ) : visibleMessages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
