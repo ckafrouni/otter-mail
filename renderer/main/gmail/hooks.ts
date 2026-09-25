@@ -845,6 +845,12 @@ export function useModifyMessage() {
         (old: InfiniteData<ListMessagesResult> | undefined) =>
           patchMessagesInInfiniteData(old, isTarget, applyPatch),
       );
+      // Gmail search results (the Search mailbox) show the same rows.
+      qc.setQueriesData(
+        { queryKey: ["gmail-search"] },
+        (old: InfiniteData<ListMessagesResult> | undefined) =>
+          patchMessagesInInfiniteData(old, isTarget, applyPatch),
+      );
       qc.setQueriesData({ queryKey: threadsKey }, (old: GmailMessageSummary[] | undefined) =>
         old?.map((m) => (isTarget(m) ? applyPatch(m) : m)),
       );
@@ -969,6 +975,12 @@ export function useTrashMessage() {
         (old: InfiniteData<ListMessagesResult> | undefined) =>
           removeMessagesFromInfiniteData(old, isTarget),
       );
+      // Gmail search keeps trashed mail in its results (as Gmail does): mark it.
+      qc.setQueriesData(
+        { queryKey: ["gmail-search"] },
+        (old: InfiniteData<ListMessagesResult> | undefined) =>
+          patchMessagesInInfiniteData(old, isTarget, trashPatch),
+      );
 
       if (priorMessage) {
         const deltas = new Map<string, LabelCountDelta>(
@@ -1073,6 +1085,12 @@ export function useModifyThread() {
       );
       qc.setQueriesData(
         { queryKey: ["gmail:searchMessages"] },
+        (old: InfiniteData<ListMessagesResult> | undefined) =>
+          patchMessagesInInfiniteData(old, inThread, applyPatch),
+      );
+      // Gmail search results (the Search mailbox) show the same rows.
+      qc.setQueriesData(
+        { queryKey: ["gmail-search"] },
         (old: InfiniteData<ListMessagesResult> | undefined) =>
           patchMessagesInInfiniteData(old, inThread, applyPatch),
       );
@@ -1221,6 +1239,12 @@ export function useTrashThread() {
         { queryKey: ["gmail:searchMessages"] },
         (old: InfiniteData<ListMessagesResult> | undefined) =>
           removeMessagesFromInfiniteData(old, inThread),
+      );
+      // Gmail search keeps trashed mail in its results (as Gmail does): mark it.
+      qc.setQueriesData(
+        { queryKey: ["gmail-search"] },
+        (old: InfiniteData<ListMessagesResult> | undefined) =>
+          patchMessagesInInfiniteData(old, inThread, threadTrashPatch),
       );
 
       if (prevThread) {
@@ -1600,6 +1624,12 @@ export function useDeleteThreadsForever() {
       );
       qc.setQueriesData(
         { queryKey: ["gmail:searchMessages"] },
+        (old: InfiniteData<ListMessagesResult> | undefined) =>
+          removeMessagesFromInfiniteData(old, inThreads),
+      );
+      // Deleted forever: gone from Gmail search results too.
+      qc.setQueriesData(
+        { queryKey: ["gmail-search"] },
         (old: InfiniteData<ListMessagesResult> | undefined) =>
           removeMessagesFromInfiniteData(old, inThreads),
       );
