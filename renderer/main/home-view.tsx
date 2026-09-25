@@ -7,6 +7,7 @@ import { NewMessageView } from "./gmail/new-message-view";
 import { CommandPalette } from "./gmail/command-palette";
 import { AssistantChatPanel } from "./gmail/assistant-chat";
 import { SEARCH_MAILBOX } from "./gmail/gmail-query";
+import { searchTabId, searchTitle, type SearchTab } from "./gmail/search-tabs";
 import { TitleControls, TitleTrailing, WindowTitle } from "./gmail/top-bar";
 import { SettingsPage, type SettingsRoute } from "./settings/settings-page";
 import { SettingsNav, settingsSectionLabel } from "./settings/settings-nav";
@@ -144,7 +145,11 @@ export function HomeView() {
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   // Account that owns the currently-open message (differs per row in combined views).
   const [readerAccountId, setReaderAccountId] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
+  // Open searches, each a sidebar row: the top Search row (all mail) and one
+  // per view it was started from (⌘F there). They keep their query and any
+  // unrun text while you visit other mailboxes; × or Escape closes them.
+  const [searchTabs, setSearchTabs] = useState<SearchTab[]>([]);
+  const [activeSearchId, setActiveSearchId] = useState<string | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
   // mailto: target from the OS (OtterMail as default mail app). The seq keys
   // NewMessageView so a link arriving while the composer is open re-seeds it.
@@ -312,7 +317,6 @@ export function HomeView() {
     setSelectedLabelId(isCombined ? combinedViewId : labelId);
     setSelectedMessageId(null);
     setReaderAccountId(null);
-    setSearchQuery("");
   };
   const jumpToMailbox = (digit: number) => {
     const { ids, select } = accountSwitchRef.current;
@@ -326,7 +330,7 @@ export function HomeView() {
     "commandPalette.toggle": () => setPaletteOpen((o) => !o),
     "sidebar.toggle": () => toggleSidebar(),
     "assistant.toggle": () => toggleChat(),
-    "search.focus": () => openSearch(),
+    "search.focus": () => searchFromView(),
     "compose.new": () => setComposeOpen(true),
     "keybindings.show": () =>
       setSettingsRoute({ pane: "keybindings", viewId: null, mailbox: null }),
@@ -423,7 +427,6 @@ export function HomeView() {
     setSelectedLabelId(loc.labelId);
     setSelectedMessageId(loc.messageId);
     setReaderAccountId(loc.readerAccountId);
-    setSearchQuery("");
   };
   const goBack = () => {
     if (nav.idx <= 0) return;
@@ -575,7 +578,6 @@ export function HomeView() {
     setSelectedLabelId(accountId === COMBINED_ACCOUNT_ID ? INBOX_VIEW_ID : "INBOX");
     setSelectedMessageId(null);
     setReaderAccountId(null);
-    setSearchQuery("");
   };
   accountSwitchRef.current = { ids: accountIds, select: handleSelectAccount };
 
@@ -585,7 +587,6 @@ export function HomeView() {
     setSelectedLabelId(labelId);
     setSelectedMessageId(null);
     setReaderAccountId(null);
-    setSearchQuery("");
   };
 
   const handleSelectMessage = (messageId: string, accountId: string) => {
@@ -596,29 +597,129 @@ export function HomeView() {
   };
 
   // ── Search mailbox ───────────────────────────────────────────────────────
-  // "Search" is a mailbox like Inbox: selecting it (sidebar, / or ⌘F, ⌘K, a
-  // sender's hovercard) shows Gmail's search in the list pane. Leaving it
-  // (Escape in an empty bar) returns to the mailbox the user came from.
+  // Search is a mailbox like Inbox: selecting a search row (the top Search
+  // row, or one under the view it was started from) shows Gmail's search in
+  // the list pane. Escape clears it, then closes it back to where you were.
   const searchActive = selectedLabelId === SEARCH_MAILBOX;
   const searchReturnRef = useRef<string>("INBOX");
-  const [searchScope, setSearchScope] = useState<string[] | null>(null);
-  const openSearch = (q?: string) => {
-    console.log("[HomeView:openSearch]", { hasQuery: Boolean(q) });
+  const searchMailbox = selectedAccountId ?? "";
+  const topSearchId = searchTabId(searchMailbox, null);
+  const activeSearch = searchActive
+    ? (searchTabs.find((t) => t.id === activeSearchId) ?? null)
+    : null;
+  const patchSearch = (id: string, patch: Partial<SearchTab>) =>
+    setSearchTabs((tabs) => tabs.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  // Where a new search looks by default: the mailbox you started it from.
+  const defaultScope = (): string[] =>
+    isCombined || !effectiveAccountId
+      ? combined && selectedLabelId !== SEARCH_MAILBOX
+        ? [...new Set(combined.rules.map((r) => r.accountId))]
+        : accountIds
+      : [effectiveAccountId];
+  const focusSearchEnd = () =>
+    setTimeout(() => {
+      const input = searchRef.current;
+      input?.focus();
+      input?.setSelectionRange(input.value.length, input.value.length);
+    }, 0);
+  const showSearch = (id: string) => {
     if (!searchActive) searchReturnRef.current = selectedLabelId;
     setComposeOpen(false);
     setSettingsRoute(null);
     setSelectedLabelId(SEARCH_MAILBOX);
-    if (q !== undefined) setSearchQuery(q);
+    setActiveSearchId(id);
     setSelectedMessageId(null);
     setReaderAccountId(null);
-    // Focus once the header has mounted (empty search: ready to type).
-    if (!q) setTimeout(() => searchRef.current?.focus(), 0);
   };
-  const exitSearch = () => {
-    setSelectedLabelId(searchReturnRef.current);
-    setSearchQuery("");
+  /** The top Search row (all mail), optionally running `q`. */
+  const openSearch = (q?: string) => {
+    console.log("[HomeView:openSearch]", { hasQuery: Boolean(q) });
+    setSearchTabs((tabs) => {
+      const existing = tabs.find((t) => t.id === topSearchId);
+      if (existing)
+        return q === undefined
+          ? tabs
+          : tabs.map((t) => (t.id === topSearchId ? { ...t, query: q, draft: q } : t));
+      return [
+        ...tabs,
+        {
+          id: topSearchId,
+          mailbox: searchMailbox,
+          parent: null,
+          base: "",
+          query: q ?? "",
+          draft: q ?? "",
+          scope: defaultScope(),
+        },
+      ];
+    });
+    showSearch(topSearchId);
+    // Focus once the header has mounted (no query: ready to type).
+    if (!q) focusSearchEnd();
+  };
+  // ⌘F / the list's search icon: the view's own search row, opened under it
+  // with its operators prefilled (`in:inbox `) and the cursor after them.
+  // Already in a search, it just focuses the bar.
+  const viewQueryRef = useRef("");
+  const searchFromView = () => {
+    if (searchActive && !settingsRoute) {
+      searchRef.current?.focus();
+      return;
+    }
+    const base = viewQueryRef.current;
+    if (!base) return openSearch();
+    const id = searchTabId(searchMailbox, selectedLabelId);
+    console.log("[HomeView:searchFromView]", { base });
+    setSearchTabs((tabs) =>
+      tabs.some((t) => t.id === id)
+        ? tabs
+        : [
+            ...tabs,
+            {
+              id,
+              mailbox: searchMailbox,
+              parent: selectedLabelId,
+              base,
+              query: "",
+              draft: `${base} `,
+              scope: defaultScope(),
+            },
+          ],
+    );
+    showSearch(id);
+    focusSearchEnd();
+  };
+  const runSearch = (q: string) => {
+    const tab = activeSearch;
+    if (!tab) return openSearch(q);
+    // Dropping the view's operators makes it a search of all mail: it moves
+    // up to the top Search row.
+    if (tab.parent && !q.includes(tab.base)) {
+      console.log("[HomeView:searchLeavesView]");
+      setSearchTabs((tabs) => [
+        ...tabs.filter((t) => t.id !== tab.id && t.id !== topSearchId),
+        { ...tab, id: topSearchId, parent: null, base: "", query: q, draft: q },
+      ]);
+      setActiveSearchId(topSearchId);
+      return;
+    }
+    patchSearch(tab.id, { query: q, draft: q });
+  };
+  const closeSearch = (id: string) => {
+    const tab = searchTabs.find((t) => t.id === id);
+    console.log("[HomeView:closeSearch]", { child: Boolean(tab?.parent) });
+    setSearchTabs((tabs) => tabs.filter((t) => t.id !== id));
+    if (searchActive && activeSearchId === id) {
+      setSelectedLabelId(tab?.parent ?? searchReturnRef.current);
+      setSelectedMessageId(null);
+      setReaderAccountId(null);
+    }
   };
   const handleSearchChange = (q: string) => openSearch(q);
+  // Back/forward into a search that was since closed: the top Search row.
+  useEffect(() => {
+    if (searchActive && !activeSearch) openSearch();
+  });
 
   // Palette mail result: jump to the owning account (Combined stays put) and open.
   const handlePaletteOpenMessage = (message: GmailMessageSummary) => {
@@ -631,7 +732,6 @@ export function HomeView() {
     if (!isCombined && owner !== effectiveAccountId) {
       setSelectedAccountId(owner);
       setSelectedLabelId("INBOX");
-      setSearchQuery("");
     }
     setSelectedMessageId(message.id);
     setReaderAccountId(owner);
@@ -643,7 +743,6 @@ export function HomeView() {
     if (!isCombined && owner !== effectiveAccountId) {
       setSelectedAccountId(owner);
       setSelectedLabelId("INBOX");
-      setSearchQuery("");
     }
     setSelectedMessageId(messageId);
     setReaderAccountId(owner);
@@ -655,7 +754,6 @@ export function HomeView() {
     setSelectedLabelId(viewId);
     setSelectedMessageId(null);
     setReaderAccountId(null);
-    setSearchQuery("");
   };
 
   const handleAddAccount = async () => {
@@ -806,7 +904,23 @@ export function HomeView() {
                     onSelectLabel={handleSelectLabel}
                     views={views}
                     onCompose={() => setComposeOpen(true)}
-                    searchSelected={searchActive}
+                    searchSelected={activeSearch?.id === topSearchId}
+                    searchPending={Boolean(
+                      searchTabs.find((t) => t.id === topSearchId)?.draft.trim(),
+                    )}
+                    searches={searchTabs
+                      .filter((t) => t.mailbox === searchMailbox && t.parent)
+                      .map((t) => ({
+                        id: t.id,
+                        parent: t.parent!,
+                        title: searchTitle(t),
+                        selected: activeSearch?.id === t.id,
+                      }))}
+                    onSelectSearch={(id) => {
+                      showSearch(id);
+                      focusSearchEnd();
+                    }}
+                    onCloseSearch={closeSearch}
                     onOpenSearch={() => openSearch()}
                   />
                 )}
@@ -845,19 +959,27 @@ export function HomeView() {
                   advanceRef={advanceRef}
                   onSelectionChange={setChatSelection}
                   onOpenChat={openChat}
+                  onSearchView={searchFromView}
+                  viewQueryRef={viewQueryRef}
                   search={
-                    searchActive
+                    activeSearch
                       ? {
-                          query: searchQuery,
-                          // Default scope: the mailbox you searched from (all
-                          // accounts from Combined, else that account).
-                          accountIds:
-                            searchScope ??
-                            (isCombined || !effectiveAccountId ? accountIds : [effectiveAccountId]),
-                          onSearch: (q) => openSearch(q),
-                          onExit: exitSearch,
-                          onScope: setSearchScope,
+                          id: activeSearch.id,
+                          query: activeSearch.query,
+                          base: activeSearch.base,
+                          accountIds: activeSearch.scope,
+                          onSearch: runSearch,
+                          onClear: () => {
+                            const base = activeSearch.base ? `${activeSearch.base} ` : "";
+                            patchSearch(activeSearch.id, { query: "", draft: base });
+                            focusSearchEnd();
+                          },
+                          onExit: () => closeSearch(activeSearch.id),
+                          onScope: (scope) => patchSearch(activeSearch.id, { scope }),
                           focusRef: searchRef,
+                          draft: activeSearch.draft,
+                          onDraftChange: (draft) => patchSearch(activeSearch.id, { draft }),
+                          messageOpen: selectedMessageId !== null,
                         }
                       : undefined
                   }

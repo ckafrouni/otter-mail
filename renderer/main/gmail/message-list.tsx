@@ -38,7 +38,6 @@ import {
   useCombinedCounts,
   useSearchMessages,
   useGmailSearch,
-  useDebouncedValue,
   useLabels,
   useModifyMessage,
   useModifyThread,
@@ -56,6 +55,7 @@ import { buildLabelTree, isAssignableLabel } from "./label-tree";
 import { isTypingTarget } from "./keyboard";
 import { useCommandHandlers } from "../keybindings/dispatch";
 import { SEARCH_HINT, SearchHeader } from "./search-header";
+import { labelSearchToken, viewSearchQuery } from "./gmail-query";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
 import { SYSTEM_LABEL_NAMES, labelDisplayName } from "./label-names";
 import { decodeEntities } from "./text";
@@ -96,6 +96,10 @@ type MessageListProps = {
   onSelectionChange?: (rows: GmailMessageSummary[]) => void;
   /** Opens the in-app assistant chat panel. */
   onOpenChat?: () => void;
+  /** Opens the Search mailbox prefilled with this mailbox (search icon, ⌘F). */
+  onSearchView?: () => void;
+  /** This mailbox as a Gmail query (`in:inbox`, `label:acme`), kept current. */
+  viewQueryRef?: React.MutableRefObject<string>;
 
   /** Set when this is the Search mailbox (Gmail's own search). */
   search?: SearchMode;
@@ -103,12 +107,22 @@ type MessageListProps = {
 
 /** The Search mailbox: the query that ran, its account scope, and its controls. */
 export type SearchMode = {
+  /** Which open search this is (each keeps its own bar state). */
+  id: string;
   query: string;
+  /** The parent view's operators, kept when clearing. */
+  base: string;
+  onClear: () => void;
   accountIds: string[];
   onSearch: (q: string) => void;
   onExit: () => void;
   onScope: (accountIds: string[]) => void;
   focusRef: React.RefObject<HTMLInputElement | null>;
+  /** Text typed but not run, kept while you're in another mailbox. */
+  draft: string;
+  onDraftChange: (draft: string) => void;
+  /** A message is open in the reader (Escape closes that first). */
+  messageOpen: boolean;
 };
 
 /** A row's labels: rows are conversations, so the union over its messages
@@ -609,6 +623,8 @@ export function MessageList({
   advanceRef,
   onSelectionChange,
   onOpenChat,
+  onSearchView,
+  viewQueryRef,
   search,
 }: MessageListProps) {
   const isCombined = combined != null;
@@ -617,28 +633,19 @@ export function MessageList({
   const [mailboxMode, setMailboxMode] = useState<"all" | "unread">("all");
   const unreadOnly = mailboxMode === "unread" && !search;
 
-  // Two kinds of search: the Search mailbox runs Gmail's own search (the
-  // truth, every operator); the header's filter bar narrows the current view
-  // instantly from the local cache (FTS plus structured criteria).
+  // Two kinds of narrowing: the Search mailbox runs Gmail's own search (the
+  // truth, every operator; the header's search icon opens it scoped to this
+  // mailbox); the sliders menu filters the current view instantly from the
+  // local cache (structured criteria).
   const globalSearching = search !== undefined;
 
-  // Search and criteria are independent: filterOpen is ONLY the text input's
-  // state (search icon), criteria live in `filters` (sliders menu). Each gets
-  // its own row under the header with its own dismiss.
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [filterQuery, setFilterQuery] = useState("");
   const [filters, setFilters] = useState<ViewFilters>(NO_FILTERS);
   const filtersActive =
     filters.starred || filters.important || filters.hasAttachments || filters.withinDays != null;
-  const debouncedFilter = useDebouncedValue(filterOpen ? filterQuery.trim() : "", 150);
-  const filtering = debouncedFilter.length > 0 || filtersActive;
+  const filtering = filtersActive;
   const searching = filtering || globalSearching;
   const searchQuery = search?.query ?? "";
 
-  const closeSearch = () => {
-    setFilterOpen(false);
-    setFilterQuery("");
-  };
   const clearFilters = () => setFilters(NO_FILTERS);
   const patchFilters = (patch: Partial<ViewFilters>) => {
     console.log("[MessageList:patchFilters]", patch);
@@ -653,18 +660,13 @@ export function MessageList({
     isCombined && !searching,
   );
   const gmailSearch = useGmailSearch(searchQuery, search?.accountIds ?? [], globalSearching);
-  const filterResults = useSearchMessages(
-    debouncedFilter,
-    isCombined ? null : accountId,
-    filtering,
-    {
-      ...(combined ? { rules: combined.rules } : { labelId }),
-      starred: filters.starred || undefined,
-      important: filters.important || undefined,
-      hasAttachments: filters.hasAttachments || undefined,
-      withinDays: filters.withinDays ?? undefined,
-    },
-  );
+  const filterResults = useSearchMessages("", isCombined ? null : accountId, filtering, {
+    ...(combined ? { rules: combined.rules } : { labelId }),
+    starred: filters.starred || undefined,
+    important: filters.important || undefined,
+    hasAttachments: filters.hasAttachments || undefined,
+    withinDays: filters.withinDays ?? undefined,
+  });
   const messagesQuery = globalSearching
     ? gmailSearch
     : filtering
@@ -687,11 +689,12 @@ export function MessageList({
     isCombined,
   );
   const activeLabel = resolveLabel(accountId, labelId);
-  const mailboxTitle = isCombined
-    ? combined.name
-    : activeLabel
-      ? labelDisplayName(activeLabel)
-      : (SYSTEM_LABEL_NAMES[labelId] ?? labelId);
+  if (viewQueryRef && !search) {
+    const nameOf = (owner: string, id: string) => resolveLabel(owner, id)?.name ?? null;
+    viewQueryRef.current = isCombined
+      ? viewSearchQuery(combined.rules, nameOf)
+      : (labelSearchToken(labelId, nameOf(accountId, labelId)) ?? "");
+  }
   const { mailboxTotal, mailboxUnread } = isCombined
     ? {
         mailboxTotal: combinedCounts.data?.total ?? 0,
@@ -1196,7 +1199,10 @@ export function MessageList({
     <div className="relative flex h-full min-w-0 flex-col">
       {search ? (
         <SearchHeader
+          key={search.id}
           query={search.query}
+          base={search.base}
+          onClear={search.onClear}
           onSearch={search.onSearch}
           onExit={search.onExit}
           onOpenMessage={(m) => onSelectMessage(m.id, m.accountId ?? accountId)}
@@ -1207,6 +1213,9 @@ export function MessageList({
           offline={Boolean(firstSearchPage?.offline)}
           loading={gmailSearch.isFetching && !gmailSearch.isFetchingNextPage}
           focusRef={search.focusRef}
+          draft={search.draft}
+          onDraftChange={search.onDraftChange}
+          messageOpen={search.messageOpen}
         />
       ) : null}
       {/* Header */}
@@ -1220,12 +1229,8 @@ export function MessageList({
         <div className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
           {formatMailboxSummary(mailboxTotal, mailboxUnread)}
         </div>
-        <HintTooltip label={filterOpen ? "Hide search" : "Search this mailbox"}>
-          <IconBtn
-            label={filterOpen ? "Hide search" : "Search this mailbox"}
-            active={filterOpen}
-            onClick={() => (filterOpen ? closeSearch() : setFilterOpen(true))}
-          >
+        <HintTooltip label="Search this mailbox" shortcut="search.focus">
+          <IconBtn label="Search this mailbox" onClick={onSearchView}>
             <SearchIcon className="size-3.5" />
           </IconBtn>
         </HintTooltip>
@@ -1281,33 +1286,6 @@ export function MessageList({
           </button>
         </HintTooltip>
       </div>
-
-      {filterOpen && !search ? (
-        <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-border px-4">
-          <SearchIcon className="size-3.5 shrink-0 text-muted-foreground/70" />
-          <input
-            autoFocus
-            value={filterQuery}
-            onChange={(e) => setFilterQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                e.stopPropagation();
-                closeSearch();
-              }
-            }}
-            placeholder={`Search in ${mailboxTitle}`}
-            className="h-6 min-w-24 flex-1 bg-transparent text-sm text-foreground/90 outline-none placeholder:text-placeholder"
-          />
-          <button
-            type="button"
-            onClick={closeSearch}
-            aria-label="Close search"
-            className="shrink-0 text-muted-foreground/70 hover:text-foreground"
-          >
-            <XIcon className="size-3.5" />
-          </button>
-        </div>
-      ) : null}
 
       {filtersActive && !search ? (
         <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-4 py-1.5">

@@ -6,6 +6,62 @@
 
 export const SEARCH_MAILBOX = "__search__";
 
+// ---------------------------------------------------------------------------
+// The mailbox you search from, as Gmail operators (⌘F prefills it)
+// ---------------------------------------------------------------------------
+
+const SYSTEM_OPERATORS: Record<string, string> = {
+  INBOX: "in:inbox",
+  SENT: "in:sent",
+  DRAFT: "in:drafts",
+  STARRED: "is:starred",
+  IMPORTANT: "is:important",
+  UNREAD: "is:unread",
+  SPAM: "in:spam",
+  TRASH: "in:trash",
+  CHAT: "in:chats",
+  CATEGORY_PERSONAL: "category:primary",
+  CATEGORY_SOCIAL: "category:social",
+  CATEGORY_PROMOTIONS: "category:promotions",
+  CATEGORY_UPDATES: "category:updates",
+  CATEGORY_FORUMS: "category:forums",
+};
+
+/** A label as Gmail writes it in the search bar: `in:inbox`, `label:clients-acme`. */
+export function labelSearchToken(labelId: string, labelName: string | null): string | null {
+  const system = SYSTEM_OPERATORS[labelId];
+  if (system) return system;
+  if (!labelName) return null;
+  // Gmail's own form: spaces and nesting slashes become dashes.
+  return `label:${labelName.trim().replace(/[\s/]+/g, "-")}`;
+}
+
+/**
+ * A mailbox view's rules as one query. Rules that differ per account are
+ * OR-ed with Gmail's `{ }`; a rule taking all of an account's mail means the
+ * view has no label restriction at all.
+ */
+export function viewSearchQuery(
+  rules: { accountId: string; allOf: string[]; noneOf: string[] }[],
+  nameOf: (accountId: string, labelId: string) => string | null,
+): string {
+  const clauses = rules.map((r) =>
+    [
+      ...r.allOf.map((id) => labelSearchToken(id, nameOf(r.accountId, id))),
+      ...r.noneOf.map((id) => {
+        const token = labelSearchToken(id, nameOf(r.accountId, id));
+        return token ? `-${token}` : null;
+      }),
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+  if (clauses.length === 0 || clauses.some((c) => !c)) return "";
+  const distinct = [...new Set(clauses)];
+  if (distinct.length === 1) return distinct[0];
+  return `{${distinct.map((c) => (c.includes(" ") ? `(${c})` : c)).join(" ")}}`;
+}
+
 /** One `key:value` operator; the value keeps its quotes/parens verbatim. */
 type Operator = { key: string; value: string; negated: boolean; raw: string };
 

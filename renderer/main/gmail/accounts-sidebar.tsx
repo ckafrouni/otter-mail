@@ -1,4 +1,7 @@
 import {
+  Fragment,
+  createContext,
+  useContext,
   useState,
   type CSSProperties,
   type DragEvent as ReactDragEvent,
@@ -19,6 +22,7 @@ import {
   FileIcon,
   BookmarkIcon,
   ArchiveXIcon,
+  XIcon,
   Trash2Icon,
   SettingsIcon,
   PlusIcon,
@@ -107,6 +111,52 @@ function viewIcon(view: MailView): ReactNode {
   return <LayersIcon className="size-3.5" />;
 }
 
+/** An open search, listed under the view it was started from. */
+export type SidebarSearch = { id: string; parent: string; title: string; selected: boolean };
+
+/** Renders a view's / label's open search row (if any) right below it. */
+const SearchRowsContext = createContext<(parent: string, depth: number) => ReactNode>(() => null);
+
+function SearchRows({ parent, depth = 0 }: { parent: string; depth?: number }) {
+  return useContext(SearchRowsContext)(parent, depth);
+}
+
+function SearchRow({
+  search,
+  depth,
+  onSelect,
+  onClose,
+}: {
+  search: SidebarSearch;
+  depth: number;
+  onSelect: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <SkRow
+      icon={<SearchIcon className="size-3.5" />}
+      title={search.title}
+      depth={depth + 1}
+      selected={search.selected}
+      onClick={onSelect}
+      trailing={
+        <span
+          role="button"
+          tabIndex={-1}
+          aria-label="Close search"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+          className="flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-sidebar-foreground"
+        >
+          <XIcon className="size-3.5" />
+        </span>
+      }
+    />
+  );
+}
+
 /** Sidebar row: muted at rest, inverted block when selected; counts live in the badge only. */
 function SkRow({
   icon,
@@ -118,6 +168,7 @@ function SkRow({
   onClick,
   dragProps,
   dropActive,
+  dot,
 }: {
   icon: ReactNode;
   title: string;
@@ -128,6 +179,8 @@ function SkRow({
   onClick?: () => void;
   dragProps?: RowDragProps;
   dropActive?: boolean;
+  /** A small dot on the right: something is waiting here (a kept search). */
+  dot?: boolean;
 }) {
   const style: CSSProperties = { paddingLeft: 10 + depth * 16 };
   return (
@@ -170,6 +223,8 @@ function SkRow({
         </span>
       ) : badge != null ? (
         <UnreadPill count={badge} selected={selected} />
+      ) : dot ? (
+        <span aria-hidden className="ml-auto size-1.5 shrink-0 rounded-full bg-primary" />
       ) : null}
     </button>
   );
@@ -426,6 +481,7 @@ function LabelNode({
       ) : (
         row
       )}
+      {label ? <SearchRows parent={label.id} depth={depth} /> : null}
       {open
         ? children.map((child) => (
             <LabelNode
@@ -459,7 +515,13 @@ type AccountsSidebarProps = {
   onCompose: () => void;
   /** The Search mailbox is the one showing. */
   searchSelected: boolean;
+  /** A search is kept (typed or run) — shown as a dot on the Search row. */
+  searchPending: boolean;
   onOpenSearch: () => void;
+  /** Searches opened from views (⌘F), nested under them. */
+  searches: SidebarSearch[];
+  onSelectSearch: (id: string) => void;
+  onCloseSearch: (id: string) => void;
 };
 
 export function AccountsSidebar({
@@ -476,7 +538,11 @@ export function AccountsSidebar({
   views,
   onCompose,
   searchSelected,
+  searchPending,
   onOpenSearch,
+  searches,
+  onSelectSearch,
+  onCloseSearch,
 }: AccountsSidebarProps) {
   const isCombined = selectedAccountId === COMBINED_ACCOUNT_ID;
 
@@ -609,250 +675,276 @@ export function AccountsSidebar({
   };
 
   const viewRow = (view: MailView) => (
-    <ViewRow
-      key={view.id}
-      view={view}
-      selected={selectedLabelId === view.id}
-      unreadCount={viewUnreadCounts[view.id] ?? 0}
-      onSelect={() => onSelectLabel(view.id)}
-      onDelete={() => void deleteView(view.id)}
-      onReset={() => void resetView(view.id)}
-      onEdit={() => openViewEditor(view.id)}
-    />
+    <Fragment key={view.id}>
+      <ViewRow
+        view={view}
+        selected={selectedLabelId === view.id}
+        unreadCount={viewUnreadCounts[view.id] ?? 0}
+        onSelect={() => onSelectLabel(view.id)}
+        onDelete={() => void deleteView(view.id)}
+        onReset={() => void resetView(view.id)}
+        onEdit={() => openViewEditor(view.id)}
+      />
+      <SearchRows parent={view.id} />
+    </Fragment>
   );
 
-  return (
-    <div className="flex h-full min-w-0 flex-col">
-      <WindowTitle sidebarOpen={sidebarOpen} onToggleSidebar={onToggleSidebar} />
-
-      {/* Mailbox switcher row (All mailboxes / an account). */}
-      <div className="shrink-0 px-(--sidebar-content-inset) pb-1">
-        <MailboxSwitcher
-          accounts={accounts}
-          selectedAccountId={selectedAccountId}
-          onSelectAccount={onSelectAccount}
+  const renderSearchRows = (parent: string, depth: number) =>
+    searches
+      .filter((sr) => sr.parent === parent)
+      .map((sr) => (
+        <SearchRow
+          key={sr.id}
+          search={sr}
+          depth={depth}
+          onSelect={() => onSelectSearch(sr.id)}
+          onClose={() => onCloseSearch(sr.id)}
         />
-      </div>
+      ));
 
-      {/* Search row + compose, like the workspace sidebar. */}
-      <div className="flex h-10 shrink-0 items-center gap-1 px-(--sidebar-content-inset)">
-        {/* Search is a mailbox: selecting it opens Gmail search in the list. */}
-        <div className="min-w-0 flex-1">
-          <SkRow
-            icon={<SearchIcon className="size-4" />}
-            title="Search"
-            selected={searchSelected}
-            onClick={onOpenSearch}
+  return (
+    <SearchRowsContext.Provider value={renderSearchRows}>
+      <div className="flex h-full min-w-0 flex-col">
+        <WindowTitle sidebarOpen={sidebarOpen} onToggleSidebar={onToggleSidebar} />
+
+        {/* Mailbox switcher row (All mailboxes / an account). */}
+        <div className="shrink-0 px-(--sidebar-content-inset) pb-1">
+          <MailboxSwitcher
+            accounts={accounts}
+            selectedAccountId={selectedAccountId}
+            onSelectAccount={onSelectAccount}
           />
         </div>
-        <HintTooltip label="New message" shortcut="compose.new">
-          <IconBtn label="New message" onClick={onCompose}>
-            <SquarePenIcon className="size-4" />
-          </IconBtn>
-        </HintTooltip>
-      </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-(--sidebar-content-inset) pb-4 pt-1">
-        {isCombined ? (
-          <>
-            {views
-              .filter((v) => v.kind !== "custom")
-              .map((view) => (
-                <SkRow
-                  key={view.id}
-                  icon={viewIcon(view)}
-                  title={view.name}
-                  selected={selectedLabelId === view.id}
-                  badge={viewUnreadCounts[view.id] ?? 0}
-                  onClick={() => {
-                    console.log("[AccountsSidebar:selectView]", { viewId: view.id });
-                    onSelectLabel(view.id);
-                  }}
-                />
-              ))}
-
-            <Section
-              title="Views"
-              action={<SectionAddButton label="Add view" onClick={() => openViewEditor("new")} />}
-            >
-              {combinedViews.map(viewRow)}
-            </Section>
-          </>
-        ) : (
-          <>
-            {(systemLabels.length > 0
-              ? systemLabels.map((l) => ({ id: l.id, unread: l.unread ?? 0, total: l.total ?? 0 }))
-              : Object.keys(SYSTEM_LABEL_MAP).map((id) => ({ id, unread: 0, total: 0 }))
-            ).map(({ id, unread, total }) => {
-              const meta = SYSTEM_LABEL_MAP[id];
-              if (!meta) return null;
-              // Drafts is a raw count of drafts, not an unread signal.
-              const isDrafts = id === "DRAFT";
-              return (
-                <SkRow
-                  key={id}
-                  icon={meta.icon}
-                  title={meta.name}
-                  selected={selectedLabelId === id}
-                  badge={isDrafts ? total : unread}
-                  onClick={() => {
-                    console.log("[AccountsSidebar:selectLabel]", { labelId: id });
-                    onSelectLabel(id);
-                  }}
-                />
-              );
-            })}
-
-            <Section
-              title="Views"
-              action={<SectionAddButton label="Add view" onClick={() => openViewEditor("new")} />}
-            >
-              {accountViews.map(viewRow)}
-            </Section>
-
-            {selectedAccountId ? (
-              <Section
-                title="Labels"
-                action={
-                  <SectionAddButton label="Add label" onClick={() => setCreateLabelOpen(true)} />
-                }
-                dropZone={{
-                  active: rootDropActive,
-                  onDragOver: (e) => {
-                    if (!e.dataTransfer.types.includes(LABEL_DRAG_MIME)) return;
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = "move";
-                    setRootDropActive(true);
-                  },
-                  onDragLeave: () => setRootDropActive(false),
-                  onDrop: (e) => {
-                    setRootDropActive(false);
-                    const raw = e.dataTransfer.getData(LABEL_DRAG_MIME);
-                    if (!raw) return;
-                    e.preventDefault();
-                    handleMoveLabel(JSON.parse(raw) as LabelDragPayload, null);
-                  },
-                }}
-              >
-                {userLabelTree.map((node) => (
-                  <LabelNode
-                    key={node.key}
-                    node={node}
-                    depth={0}
-                    selectedLabelId={selectedLabelId}
-                    onSelectLabel={onSelectLabel}
-                    actions={labelActions}
-                  />
-                ))}
-              </Section>
-            ) : null}
-
-            {accounts.length === 0 ? (
-              <AddRow label="Add Gmail account" onClick={() => void handleAddAccount()} />
-            ) : null}
-          </>
-        )}
-      </div>
-
-      {/* Footer utilities, like the workspace sidebar's bottom row. */}
-      <div className="flex shrink-0 items-center gap-1 px-(--sidebar-content-inset) py-1">
-        <HintTooltip label="Settings" hint="⌘,">
-          <IconBtn label="Settings" onClick={onOpenSettings} className="size-8">
-            <SettingsIcon className="size-4" />
-          </IconBtn>
-        </HintTooltip>
-        <span className="flex-1" />
-        <HintTooltip label={syncing ? "Syncing…" : "Sync now"}>
-          <IconBtn label="Sync now" onClick={onSync} disabled={syncing} className="size-8">
-            <RotateCwIcon className={syncing ? "size-4 animate-spin" : "size-4"} />
-          </IconBtn>
-        </HintTooltip>
-      </div>
-
-      <Dialog
-        open={createLabelOpen}
-        onOpenChange={setCreateLabelOpen}
-        title="New Label"
-        confirmLabel="Create"
-        confirmVariant="accent"
-        confirmDisabled={!newLabelName.trim() || createLabel.isPending}
-        onConfirm={handleCreateLabel}
-      >
-        <Field label="Name" orientation="vertical">
-          <Input
-            value={newLabelName}
-            onChange={(e) => setNewLabelName(e.target.value)}
-            placeholder="e.g. 04 Follow-up"
-            autoFocus
-          />
-        </Field>
-      </Dialog>
-
-      <Dialog
-        open={renameTarget != null}
-        onOpenChange={(o) => {
-          if (!o) setRenameTarget(null);
-        }}
-        title="Rename Label"
-        confirmLabel="Rename"
-        confirmVariant="accent"
-        confirmDisabled={!renameValue.trim()}
-        onConfirm={handleRenameConfirm}
-      >
-        <Field label="Name" orientation="vertical">
-          <Input
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            placeholder="e.g. 90 Ops/alerts"
-            autoFocus
-          />
-        </Field>
-        <Text variant="mini" color="tertiary">
-          Use / to nest, e.g. "90 Ops/alerts". Nested labels move along.
-        </Text>
-      </Dialog>
-
-      <Dialog
-        open={colorTarget != null}
-        onOpenChange={(o) => {
-          if (!o) setColorTarget(null);
-        }}
-        title={colorTarget ? `Color for "${colorTarget.name.split("/").pop()}"` : "Label Color"}
-      >
-        <div className="grid grid-cols-8 gap-2 py-1">
-          {GMAIL_LABEL_COLORS.map((color) => (
-            <button
-              key={color.backgroundColor}
-              type="button"
-              aria-label={`Use ${color.backgroundColor}`}
-              onClick={() => handlePickColor(color)}
-              className={[
-                "size-6 rounded-full",
-                colorTarget?.color?.backgroundColor === color.backgroundColor
-                  ? "ring-2 ring-accent ring-offset-1"
-                  : "hover:ring-2 hover:ring-input",
-              ].join(" ")}
-              style={{ backgroundColor: color.backgroundColor }}
+        {/* Search row + compose, like the workspace sidebar. */}
+        <div className="flex h-10 shrink-0 items-center gap-1 px-(--sidebar-content-inset)">
+          {/* Search is a mailbox: selecting it opens Gmail search in the list. */}
+          <div className="min-w-0 flex-1">
+            <SkRow
+              icon={<SearchIcon className="size-4" />}
+              title="Search"
+              selected={searchSelected}
+              dot={searchPending}
+              onClick={onOpenSearch}
             />
-          ))}
+          </div>
+          <HintTooltip label="New message" shortcut="compose.new">
+            <IconBtn label="New message" onClick={onCompose}>
+              <SquarePenIcon className="size-4" />
+            </IconBtn>
+          </HintTooltip>
         </div>
-      </Dialog>
 
-      <Dialog
-        open={deleteTarget != null}
-        onOpenChange={(o) => {
-          if (!o) setDeleteTarget(null);
-        }}
-        title="Delete Label"
-        confirmLabel="Delete"
-        confirmVariant="accent"
-        onConfirm={handleDeleteConfirm}
-      >
-        <Text variant="small">
-          Delete "{deleteTarget?.name}"? It is removed from every message; the messages themselves
-          and any nested labels are kept.
-        </Text>
-      </Dialog>
-    </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-(--sidebar-content-inset) pb-4 pt-1">
+          {isCombined ? (
+            <>
+              {views
+                .filter((v) => v.kind !== "custom")
+                .map((view) => (
+                  <Fragment key={view.id}>
+                    <SkRow
+                      icon={viewIcon(view)}
+                      title={view.name}
+                      selected={selectedLabelId === view.id}
+                      badge={viewUnreadCounts[view.id] ?? 0}
+                      onClick={() => {
+                        console.log("[AccountsSidebar:selectView]", { viewId: view.id });
+                        onSelectLabel(view.id);
+                      }}
+                    />
+                    <SearchRows parent={view.id} />
+                  </Fragment>
+                ))}
+
+              <Section
+                title="Views"
+                action={<SectionAddButton label="Add view" onClick={() => openViewEditor("new")} />}
+              >
+                {combinedViews.map(viewRow)}
+              </Section>
+            </>
+          ) : (
+            <>
+              {(systemLabels.length > 0
+                ? systemLabels.map((l) => ({
+                    id: l.id,
+                    unread: l.unread ?? 0,
+                    total: l.total ?? 0,
+                  }))
+                : Object.keys(SYSTEM_LABEL_MAP).map((id) => ({ id, unread: 0, total: 0 }))
+              ).map(({ id, unread, total }) => {
+                const meta = SYSTEM_LABEL_MAP[id];
+                if (!meta) return null;
+                // Drafts is a raw count of drafts, not an unread signal.
+                const isDrafts = id === "DRAFT";
+                return (
+                  <Fragment key={id}>
+                    <SkRow
+                      icon={meta.icon}
+                      title={meta.name}
+                      selected={selectedLabelId === id}
+                      badge={isDrafts ? total : unread}
+                      onClick={() => {
+                        console.log("[AccountsSidebar:selectLabel]", { labelId: id });
+                        onSelectLabel(id);
+                      }}
+                    />
+                    <SearchRows parent={id} />
+                  </Fragment>
+                );
+              })}
+
+              <Section
+                title="Views"
+                action={<SectionAddButton label="Add view" onClick={() => openViewEditor("new")} />}
+              >
+                {accountViews.map(viewRow)}
+              </Section>
+
+              {selectedAccountId ? (
+                <Section
+                  title="Labels"
+                  action={
+                    <SectionAddButton label="Add label" onClick={() => setCreateLabelOpen(true)} />
+                  }
+                  dropZone={{
+                    active: rootDropActive,
+                    onDragOver: (e) => {
+                      if (!e.dataTransfer.types.includes(LABEL_DRAG_MIME)) return;
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = "move";
+                      setRootDropActive(true);
+                    },
+                    onDragLeave: () => setRootDropActive(false),
+                    onDrop: (e) => {
+                      setRootDropActive(false);
+                      const raw = e.dataTransfer.getData(LABEL_DRAG_MIME);
+                      if (!raw) return;
+                      e.preventDefault();
+                      handleMoveLabel(JSON.parse(raw) as LabelDragPayload, null);
+                    },
+                  }}
+                >
+                  {userLabelTree.map((node) => (
+                    <LabelNode
+                      key={node.key}
+                      node={node}
+                      depth={0}
+                      selectedLabelId={selectedLabelId}
+                      onSelectLabel={onSelectLabel}
+                      actions={labelActions}
+                    />
+                  ))}
+                </Section>
+              ) : null}
+
+              {accounts.length === 0 ? (
+                <AddRow label="Add Gmail account" onClick={() => void handleAddAccount()} />
+              ) : null}
+            </>
+          )}
+        </div>
+
+        {/* Footer utilities, like the workspace sidebar's bottom row. */}
+        <div className="flex shrink-0 items-center gap-1 px-(--sidebar-content-inset) py-1">
+          <HintTooltip label="Settings" hint="⌘,">
+            <IconBtn label="Settings" onClick={onOpenSettings} className="size-8">
+              <SettingsIcon className="size-4" />
+            </IconBtn>
+          </HintTooltip>
+          <span className="flex-1" />
+          <HintTooltip label={syncing ? "Syncing…" : "Sync now"}>
+            <IconBtn label="Sync now" onClick={onSync} disabled={syncing} className="size-8">
+              <RotateCwIcon className={syncing ? "size-4 animate-spin" : "size-4"} />
+            </IconBtn>
+          </HintTooltip>
+        </div>
+
+        <Dialog
+          open={createLabelOpen}
+          onOpenChange={setCreateLabelOpen}
+          title="New Label"
+          confirmLabel="Create"
+          confirmVariant="accent"
+          confirmDisabled={!newLabelName.trim() || createLabel.isPending}
+          onConfirm={handleCreateLabel}
+        >
+          <Field label="Name" orientation="vertical">
+            <Input
+              value={newLabelName}
+              onChange={(e) => setNewLabelName(e.target.value)}
+              placeholder="e.g. 04 Follow-up"
+              autoFocus
+            />
+          </Field>
+        </Dialog>
+
+        <Dialog
+          open={renameTarget != null}
+          onOpenChange={(o) => {
+            if (!o) setRenameTarget(null);
+          }}
+          title="Rename Label"
+          confirmLabel="Rename"
+          confirmVariant="accent"
+          confirmDisabled={!renameValue.trim()}
+          onConfirm={handleRenameConfirm}
+        >
+          <Field label="Name" orientation="vertical">
+            <Input
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              placeholder="e.g. 90 Ops/alerts"
+              autoFocus
+            />
+          </Field>
+          <Text variant="mini" color="tertiary">
+            Use / to nest, e.g. "90 Ops/alerts". Nested labels move along.
+          </Text>
+        </Dialog>
+
+        <Dialog
+          open={colorTarget != null}
+          onOpenChange={(o) => {
+            if (!o) setColorTarget(null);
+          }}
+          title={colorTarget ? `Color for "${colorTarget.name.split("/").pop()}"` : "Label Color"}
+        >
+          <div className="grid grid-cols-8 gap-2 py-1">
+            {GMAIL_LABEL_COLORS.map((color) => (
+              <button
+                key={color.backgroundColor}
+                type="button"
+                aria-label={`Use ${color.backgroundColor}`}
+                onClick={() => handlePickColor(color)}
+                className={[
+                  "size-6 rounded-full",
+                  colorTarget?.color?.backgroundColor === color.backgroundColor
+                    ? "ring-2 ring-accent ring-offset-1"
+                    : "hover:ring-2 hover:ring-input",
+                ].join(" ")}
+                style={{ backgroundColor: color.backgroundColor }}
+              />
+            ))}
+          </div>
+        </Dialog>
+
+        <Dialog
+          open={deleteTarget != null}
+          onOpenChange={(o) => {
+            if (!o) setDeleteTarget(null);
+          }}
+          title="Delete Label"
+          confirmLabel="Delete"
+          confirmVariant="accent"
+          onConfirm={handleDeleteConfirm}
+        >
+          <Text variant="small">
+            Delete "{deleteTarget?.name}"? It is removed from every message; the messages themselves
+            and any nested labels are kept.
+          </Text>
+        </Dialog>
+      </div>
+    </SearchRowsContext.Provider>
   );
 }

@@ -45,6 +45,7 @@ import {
   toggleToken,
   type AdvancedFields,
 } from "./gmail-query";
+import { isTypingTarget } from "./keyboard";
 
 const FIELD =
   "h-7.5 w-full min-w-0 rounded-lg border border-input bg-canvas px-2.5 text-sm text-foreground shadow-xs/5 outline-none placeholder:text-placeholder focus-visible:border-focus-ring focus-visible:ring-[3px] focus-visible:ring-focus-ring/24 dark:bg-input/32";
@@ -592,11 +593,16 @@ export function SearchHeader({
   offline,
   loading,
   focusRef,
+  draft: keptDraft,
+  base,
+  onClear,
+  onDraftChange,
+  messageOpen,
 }: {
   /** The query that ran (the results on screen). */
   query: string;
   onSearch: (q: string) => void;
-  /** Leave the Search mailbox (Escape in an empty bar). */
+  /** Leave the Search mailbox (Escape once the search is empty). */
   onExit: () => void;
   onOpenMessage: (message: GmailMessageSummary) => void;
   accounts: GmailAccount[];
@@ -606,14 +612,63 @@ export function SearchHeader({
   offline: boolean;
   loading: boolean;
   focusRef: RefObject<HTMLInputElement | null>;
+  /** Unrun text kept from the last visit; handed back when the header unmounts. */
+  draft: string;
+  /** The parent view's operators (`in:inbox`): what clearing leaves behind. */
+  base: string;
+  /** Empties the query (back to just `base`). */
+  onClear: () => void;
+  onDraftChange: (draft: string) => void;
+  messageOpen: boolean;
 }) {
-  const [draft, setDraft] = useState(query);
+  const [draft, setDraft] = useState(keptDraft || query);
   const [suggesting, setSuggesting] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const [, forceRecent] = useState(0);
   const boxRef = useRef<HTMLDivElement>(null);
-  useEffect(() => setDraft(query), [query]);
+  const lastQueryRef = useRef(query);
+  useEffect(() => {
+    if (lastQueryRef.current === query) return;
+    lastQueryRef.current = query;
+    setDraft(query || (base ? `${base} ` : ""));
+  }, [query]);
+
+  // Leaving for another mailbox keeps what was typed (the sidebar shows a dot).
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const onDraftChangeRef = useRef(onDraftChange);
+  onDraftChangeRef.current = onDraftChange;
+  useEffect(() => () => onDraftChangeRef.current(draftRef.current), []);
+
+  // Escape: the first clears the search, the next (already empty) returns to
+  // the mailbox you came from.
+  const escape = () => {
+    if (query || draftRef.current.trim() !== base) {
+      console.log("[SearchHeader:clear]");
+      setDraft(base ? `${base} ` : "");
+      setSuggesting(false);
+      setAdvancedOpen(false);
+      onClear();
+    } else onExit();
+  };
+  const escapeRef = useRef(escape);
+  escapeRef.current = escape;
+  const messageOpenRef = useRef(messageOpen);
+  messageOpenRef.current = messageOpen;
+  // The same with focus outside the bar, when no message is open (Escape
+  // closes the reader first).
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || isTypingTarget(e)) return;
+      if (messageOpenRef.current) return;
+      if (document.querySelector('[role="menu"]')) return;
+      e.preventDefault();
+      escapeRef.current();
+    };
+    window.addEventListener("keydown", down);
+    return () => window.removeEventListener("keydown", down);
+  }, []);
 
   const suggestions = useSuggestions(draft, scope, suggesting);
   useEffect(() => setHighlight(0), [draft]);
@@ -685,9 +740,7 @@ export function SearchHeader({
               } else if (e.key === "Escape") {
                 e.preventDefault();
                 e.stopPropagation();
-                if (suggesting) setSuggesting(false);
-                else if (draft) setDraft(query);
-                else onExit();
+                escape();
               }
             }}
             placeholder="Search mail"
@@ -700,7 +753,7 @@ export function SearchHeader({
               type="button"
               aria-label="Clear search"
               onClick={() => {
-                setDraft("");
+                setDraft(base ? `${base} ` : "");
                 focusRef.current?.focus();
               }}
               className="shrink-0 text-muted-foreground/70 hover:text-foreground"
