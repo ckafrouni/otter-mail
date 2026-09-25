@@ -697,8 +697,8 @@ const TAB_STATE_LABEL: Record<ChatTab["state"], string | null> = {
 };
 
 /**
- * Otter Code's tab strip for chats open side by side — shown only once a
- * second chat is open. The icon slot doubles as the close button on hover
+ * Otter Code's tab strip for chats open side by side — always shown, so
+ * the current chat is named even when it's the only one. The icon slot doubles as the close button on hover
  * (Otter Code's PanelTabCloseButton) and carries the chat's state: working,
  * waiting on an approval, or finished while you were elsewhere.
  */
@@ -1477,10 +1477,22 @@ export function AssistantChatPanel({
     });
   };
 
-  /** Closes a tab; the chat stays in history (a running turn finishes there). */
+  /**
+   * Closes a tab; the chat stays in history (a running turn finishes there).
+   * The last tab gives way to a fresh "New chat".
+   */
   const closeTab = (id: string) => {
     setStore((s) => {
-      if (s.tabs.length < 2) return s;
+      if (s.tabs.length < 2) {
+        const current = s.conversations.find((c) => c.id === id);
+        if (!current || current.turns.length === 0) return s;
+        const fresh = newConversation(selectedKind);
+        return {
+          conversations: pruned([fresh, ...s.conversations], [fresh.id]),
+          activeId: fresh.id,
+          tabs: [fresh.id],
+        };
+      }
       const at = s.tabs.indexOf(id);
       const tabs = s.tabs.filter((t) => t !== id);
       const activeId = s.activeId === id ? tabs[Math.max(0, at - 1)] : s.activeId;
@@ -1628,7 +1640,7 @@ export function AssistantChatPanel({
       {/* Header: chat actions on the left; the panel toggle stays at the
           window's top-right, exactly where it sits while the panel is closed. */}
       <div className="drag-region flex h-(--workspace-topbar-height) shrink-0 items-center gap-1 px-4">
-        {store.tabs.length > 1 ? (
+        {store.tabs.length > 0 ? (
           <ChatTabs
             tabs={store.tabs.map((id) => {
               const convo = conversations.find((c) => c.id === id);

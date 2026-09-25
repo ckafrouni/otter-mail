@@ -19,6 +19,8 @@ import {
  */
 
 export const DEFAULT_THEME_ID = "otter";
+/** What a fresh install wears (both appearances) until the user picks a theme. */
+export const INITIAL_THEME_ID = "ocean";
 
 /** The stock palette as a definition, for previews (it is never written as overrides). */
 export const OTTER_THEME: ThemeDefinition = {
@@ -42,7 +44,7 @@ export type ThemeChoice = Record<ThemeAppearance, string>;
 export function getThemeChoice(): ThemeChoice {
   const read = (mode: ThemeAppearance) => {
     const id = localStorage.getItem(STORAGE_KEY[mode]);
-    return id && APP_THEMES.some((t) => t.id === id) ? id : DEFAULT_THEME_ID;
+    return id && APP_THEMES.some((t) => t.id === id) ? id : INITIAL_THEME_ID;
   };
   return { light: read("light"), dark: read("dark") };
 }
