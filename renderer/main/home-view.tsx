@@ -205,6 +205,18 @@ export function HomeView() {
     void pull();
     return window.glazeAPI.glaze.ipc.onNotification("settings:open", () => void pull());
   }, []);
+
+  // ⌘W (File ▸ Close): the assistant's active chat tab closes first; with no
+  // tab left to close, the window does (Otter Code).
+  const closeChatTabRef = useRef<(() => boolean) | null>(null);
+  useEffect(
+    () =>
+      window.glazeAPI.glaze.ipc.onNotification("window:closeRequest", () => {
+        if (closeChatTabRef.current?.()) return;
+        void gmailApi.closeMainWindow();
+      }),
+    [],
+  );
   // Escape leaves settings (blurring a focused field first, like a dialog).
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -1092,6 +1104,7 @@ export function HomeView() {
                   className={`${PANE_CHAT} shrink-0`}
                 >
                   <AssistantChatPanel
+                    closeTabRef={closeChatTabRef}
                     accountId={selectedMessageId ? readerAccount : null}
                     messageId={selectedMessageId}
                     selectedRows={chatSelection}

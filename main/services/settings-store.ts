@@ -18,7 +18,7 @@ export type AppSettings = {
   notificationsMode: NotificationsMode;
   /** Automatically open the app when the user logs in. */
   launchAtLogin: boolean;
-  /** Show the menu-bar icon and mini-inbox popover. */
+  /** Show the menu-bar icon and mini-inbox popover (opt-in). */
   trayEnabled: boolean;
 };
 
@@ -26,7 +26,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   syncIntervalSeconds: 30,
   notificationsMode: "inbox",
   launchAtLogin: false,
-  trayEnabled: true,
+  trayEnabled: false,
 };
 
 async function getSettingsPath(): Promise<string> {

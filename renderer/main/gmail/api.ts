@@ -402,8 +402,11 @@ export const gmailApi = {
     accountId: string,
     messageId: string,
     fromEmail: string,
-  ): Promise<{ method: "oneClick" | "mailto" | "web"; target: string; unsubscribed: boolean } | null> =>
-    ipc("gmail:getUnsubscribe", { accountId, messageId, fromEmail }),
+  ): Promise<{
+    method: "oneClick" | "mailto" | "web";
+    target: string;
+    unsubscribed: boolean;
+  } | null> => ipc("gmail:getUnsubscribe", { accountId, messageId, fromEmail }),
 
   /** Unsubscribes in place, or returns the page to open (web-only lists). */
   unsubscribe: (
@@ -421,8 +424,7 @@ export const gmailApi = {
     accountId: string,
     messageId: string,
     response: RsvpResponse,
-  ): Promise<CalendarInvite | null> =>
-    task("calendar:respond", { accountId, messageId, response }),
+  ): Promise<CalendarInvite | null> => task("calendar:respond", { accountId, messageId, response }),
 
   /** Gmail's own search (all operators, all mail) across the given accounts. */
   gmailSearch: (params: {
@@ -547,6 +549,7 @@ export const gmailApi = {
   importViews: (views: MailView[]): Promise<MailView[]> => ipc("gmail:importViews", { views }),
 
   openSettings: (target?: SettingsTarget): Promise<void> => ipc("window:openSettings", target),
+  closeMainWindow: (): Promise<void> => ipc("window:closeMain"),
 
   getSettingsTarget: (): Promise<SettingsTarget | null> => ipc("window:getSettingsTarget"),
 

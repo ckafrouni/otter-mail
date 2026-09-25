@@ -192,10 +192,48 @@ async function setupApplicationMenu() {
         { role: "hideOthers" },
         { role: "unhide" },
         { type: "separator" },
-        { role: "quit" },
+        // Like Mail-style apps that keep working in the background: ⌘Q only
+        // closes the window (sync and notifications carry on; the Dock icon
+        // brings it back); ⌥⌘Q quits. Quitting from the Dock, logging out
+        // and Glaze restarts still quit normally.
+        {
+          label: "Close Otter Mail",
+          accelerator: "Command+Q",
+          click: () => {
+            logger.info("main", "Menu: close to background");
+            if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
+          },
+        },
+        {
+          label: "Quit Otter Mail",
+          accelerator: "Alt+Command+Q",
+          click: () => {
+            logger.info("main", "Menu: quit");
+            app.quit();
+          },
+        },
       ],
     },
-    { role: "fileMenu" },
+    {
+      label: "File",
+      submenu: [
+        // Otter Code's ⌘W: closes the active chat tab first; the window only
+        // closes once there's no tab left to close. The main window decides
+        // (window:closeRequest → assistant tab, or window:closeMain).
+        {
+          label: "Close",
+          accelerator: "Command+W",
+          click: () => {
+            const focused = BrowserWindow.getFocusedWindow();
+            if (focused && focused === mainWindow && !focused.isDestroyed()) {
+              ipcMain.broadcast("window:closeRequest");
+              return;
+            }
+            focused?.close();
+          },
+        },
+      ],
+    },
     { role: "editMenu" },
     { role: "viewMenu" },
     {
@@ -240,6 +278,10 @@ async function setupApplicationMenu() {
   Menu.setApplicationMenu(menu);
   logger.info("main", "Application menu configured with Settings");
 }
+
+ipcMain.handle("window:closeMain", async () => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+});
 
 // ── Lifecycle events ──────────────────────────────────────────────────
 app.on("window-all-closed", () => {

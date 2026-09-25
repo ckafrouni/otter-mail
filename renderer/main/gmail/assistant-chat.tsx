@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { MessageScroller } from "@shadcn/react/message-scroller";
 import {
@@ -11,12 +11,13 @@ import {
   LayersIcon,
   MailIcon,
   SendIcon,
-  SquarePlusIcon,
   TerminalIcon,
   TextQuoteIcon,
   Trash2Icon,
   WrenchIcon,
   XIcon,
+  MessageSquareIcon,
+  PlusIcon,
   CheckIcon,
   CornerUpRightIcon,
   ListPlusIcon,
@@ -191,7 +192,11 @@ type Conversation = {
   updatedAt: number;
 };
 
-type Store = { conversations: Conversation[]; activeId: string };
+/** `tabs`: chats open side by side (Otter Code's tabs), in order; the strip shows from two. */
+type Store = { conversations: Conversation[]; activeId: string; tabs: string[] };
+
+/** A turn in flight, bound to its conversation (several chats can run at once). */
+type Run = { requestId: string; convoId: string; provider: ProviderKind };
 
 /** A composed message, before it becomes a turn (or a steer). */
 type Outgoing = {
@@ -295,6 +300,7 @@ function turnsFromMessages(messages: ChatSessionMessage[]): ChatTurn[] {
 function loadStore(): Store {
   let conversations: Conversation[] = [];
   let activeId: string | null = null;
+  let tabs: string[] = [];
   try {
     const v2 = JSON.parse(localStorage.getItem(STORE_KEY) ?? "") as Partial<Store>;
     if (Array.isArray(v2.conversations)) {
@@ -306,6 +312,7 @@ function loadStore(): Store {
         sessionOwned: c.sessionOwned ?? false,
       }));
       activeId = v2.activeId ?? null;
+      tabs = Array.isArray(v2.tabs) ? v2.tabs : [];
     }
   } catch {
     // fall through to legacy migration
@@ -341,14 +348,19 @@ function loadStore(): Store {
     conversations = [fresh, ...conversations];
     activeId = fresh.id;
   }
-  return { conversations, activeId };
+  tabs = tabs.filter((id) => conversations.some((c) => c.id === id));
+  if (!tabs.includes(activeId)) tabs = [...tabs, activeId];
+  return { conversations, activeId, tabs };
 }
 
 function saveStore(store: Store): void {
   const conversations = store.conversations
     .slice(0, MAX_CONVERSATIONS)
     .map((c) => ({ ...c, turns: c.turns.slice(-MAX_STORED_TURNS) }));
-  localStorage.setItem(STORE_KEY, JSON.stringify({ conversations, activeId: store.activeId }));
+  localStorage.setItem(
+    STORE_KEY,
+    JSON.stringify({ conversations, activeId: store.activeId, tabs: store.tabs }),
+  );
 }
 
 function formatAgo(ts: number): string {
@@ -671,12 +683,109 @@ function HistoryList({
  * events. The local store mirrors transcripts for instant paint (history
  * dropdown); "attach" adds pointer-only context.
  */
+type ChatTab = {
+  id: string;
+  title: string;
+  state: "idle" | "working" | "approval" | "unseen";
+};
+
+const TAB_STATE_LABEL: Record<ChatTab["state"], string | null> = {
+  idle: null,
+  working: "Working",
+  approval: "Waiting for your approval",
+  unseen: "Finished",
+};
+
+/**
+ * Otter Code's tab strip for chats open side by side — shown only once a
+ * second chat is open. The icon slot doubles as the close button on hover
+ * (Otter Code's PanelTabCloseButton) and carries the chat's state: working,
+ * waiting on an approval, or finished while you were elsewhere.
+ */
+function ChatTabs({
+  tabs,
+  activeId,
+  onSelect,
+  onClose,
+}: {
+  tabs: ChatTab[];
+  activeId: string;
+  onSelect: (id: string) => void;
+  onClose: (id: string) => void;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Open chats"
+      className="no-drag flex min-w-0 shrink items-center gap-1 overflow-x-auto [scrollbar-width:none]"
+    >
+      {tabs.map((tab) => {
+        const selected = tab.id === activeId;
+        const status = TAB_STATE_LABEL[tab.state];
+        return (
+          <div
+            key={tab.id}
+            role="tab"
+            aria-selected={selected}
+            tabIndex={selected ? 0 : -1}
+            title={status ? `${tab.title} — ${status}` : tab.title}
+            onClick={() => onSelect(tab.id)}
+            onAuxClick={(e) => {
+              // Middle-click closes, like browser tabs.
+              if (e.button === 1) onClose(tab.id);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelect(tab.id);
+              }
+            }}
+            className={cn(
+              "group/tab flex h-6 max-w-36 shrink-0 cursor-pointer items-center gap-1 rounded-md pl-1 pr-2 text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-focus-ring",
+              selected
+                ? "bg-accent-surface text-foreground"
+                : "text-muted-foreground hover:bg-accent-surface/60 hover:text-foreground",
+            )}
+          >
+            <button
+              type="button"
+              aria-label={`Close ${tab.title}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose(tab.id);
+              }}
+              className="group/close relative flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm hover:bg-accent-surface"
+            >
+              <span className="relative flex size-3 items-center justify-center group-hover/tab:hidden group-focus-visible/close:hidden">
+                <MessageSquareIcon className="size-3" />
+                {tab.state !== "idle" ? (
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "absolute -bottom-0.5 -right-0.5 size-1.5 rounded-full ring-1 ring-canvas",
+                      tab.state === "approval" ? "bg-warning" : "bg-primary",
+                      tab.state === "working" && "animate-status-pulse",
+                    )}
+                  />
+                ) : null}
+              </span>
+              <XIcon className="hidden size-3 group-hover/tab:block group-focus-visible/close:block" />
+            </button>
+            <span className="min-w-0 truncate">{tab.title}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function AssistantChatPanel({
   accountId,
   messageId,
   selectedRows,
   quote,
   onClearQuote,
+  closeTabRef,
 }: {
   /** Account of the open conversation (context attach), null when none. */
   accountId: string | null;
@@ -686,6 +795,8 @@ export function AssistantChatPanel({
   /** A highlighted excerpt to attach; overrides the auto-derived context. */
   quote?: QuoteContext | null;
   onClearQuote?: () => void;
+  /** ⌘W: closes the active tab (true), or false when it's the only one. */
+  closeTabRef?: MutableRefObject<(() => boolean) | null>;
 }) {
   const [store, setStore] = useState<Store>(() => loadStore());
   const { conversations, activeId } = store;
@@ -693,13 +804,12 @@ export function AssistantChatPanel({
   const turns = active?.turns ?? [];
 
   const [draft, setDraft] = useState("");
-  // The in-flight stream is bound to its conversation so switching sessions
-  // mid-run doesn't misroute deltas.
-  const [streaming, setStreaming] = useState<{
-    requestId: string;
-    convoId: string;
-    provider: ProviderKind;
-  } | null>(null);
+  // Turns in flight, one per conversation: each streams into its own chat, so
+  // tabs can work in parallel.
+  const [runs, setRuns] = useState<Record<string, Run>>({});
+  const run = runs[activeId] ?? null;
+  // Background tabs whose turn finished since you last looked at them.
+  const [unseen, setUnseen] = useState<Set<string>>(() => new Set());
   const [attach, setAttach] = useState(true);
   const [queue, setQueue] = useState<QueuedMessage[]>([]);
   // Pasted / dropped / picked files for the next message.
@@ -862,15 +972,27 @@ export function AssistantChatPanel({
   // active one); the listener mounts once and reads the stream via a ref.
   const storeRef = useRef(store);
   storeRef.current = store;
-  const streamingRef = useRef(streaming);
-  streamingRef.current = streaming;
+  const runsRef = useRef(runs);
+  runsRef.current = runs;
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
+  const endRun = (requestId: string) =>
+    setRuns((all) => {
+      const entry = Object.values(all).find((r) => r.requestId === requestId);
+      if (!entry) return all;
+      const next = { ...all };
+      delete next[entry.convoId];
+      return next;
+    });
   useEffect(() => {
     const unsub = window.glazeAPI.glaze.ipc.onNotification(
       "assistant:chatEvent",
       (raw: unknown) => {
         const event = raw as ChatEvent;
-        const s = streamingRef.current;
-        if (!event || !s || event.requestId !== s.requestId) return;
+        const s = event
+          ? Object.values(runsRef.current).find((r) => r.requestId === event.requestId)
+          : undefined;
+        if (!event || !s) return;
         // Approvals live beside the transcript, not in it.
         if (event.type === "approval") {
           setApprovals((list) => [
@@ -920,7 +1042,10 @@ export function AssistantChatPanel({
             };
           }),
         }));
-        if (event.type === "done" || event.type === "error") setStreaming(null);
+        if (event.type === "done" || event.type === "error") {
+          endRun(event.requestId);
+          if (s.convoId !== activeIdRef.current) setUnseen((u) => new Set(u).add(s.convoId));
+        }
         // A steer the agent never got to: it goes first in line.
         if (event.type === "steerReturned")
           setQueue((q) => [
@@ -1039,7 +1164,9 @@ export function AssistantChatPanel({
       title: firstTurn ? msg.title : c.title,
     }));
     appendExchange(msg.convoId, msg, requestId, intent);
-    setStreaming({ requestId, convoId: msg.convoId, provider: kind });
+    const started: Run = { requestId, convoId: msg.convoId, provider: kind };
+    runsRef.current = { ...runsRef.current, [msg.convoId]: started };
+    setRuns((all) => ({ ...all, [msg.convoId]: started }));
     // Returns at once; the turn streams as chat events (incl. the new session id).
     gmailApi
       .assistantSend({
@@ -1066,7 +1193,7 @@ export function AssistantChatPanel({
               : t,
           ),
         }));
-        setStreaming((cur) => (cur?.requestId === requestId ? null : cur));
+        endRun(requestId);
       });
   };
 
@@ -1075,17 +1202,17 @@ export function AssistantChatPanel({
    * prompt, Hermes' run steer). Refused → it goes (back) to the queue.
    */
   const steer = (msg: Outgoing, intent: "steer" | "promoted" = "steer") => {
-    const run = streamingRef.current;
-    if (!run || run.convoId !== msg.convoId) return startTurn(msg);
-    console.log("[AssistantChat:steer]", { provider: run.provider, intent });
-    const key = `${run.requestId}-${msg.id}`;
+    const target = runsRef.current[msg.convoId];
+    if (!target) return startTurn(msg);
+    console.log("[AssistantChat:steer]", { provider: target.provider, intent });
+    const key = `${target.requestId}-${msg.id}`;
     appendExchange(msg.convoId, msg, key, intent);
     const refused = () => {
       undoExchange(msg.convoId, key);
       setQueue((q) => [msg, ...q]);
     };
     gmailApi
-      .assistantSteer(run.provider, run.requestId, msg.input)
+      .assistantSteer(target.provider, target.requestId, msg.input)
       .then(({ accepted }) => !accepted && refused(), refused);
   };
 
@@ -1108,9 +1235,7 @@ export function AssistantChatPanel({
     }
     const msg = compose();
     if (!msg) return;
-    const run = streamingRef.current;
-    if (!run) return startTurn(msg);
-    if (run.convoId !== msg.convoId) return setQueue((q) => [...q, msg]);
+    if (!runsRef.current[msg.convoId]) return startTurn(msg);
     // Steering sends text only; a message with files waits for its own turn.
     if ((followUp === "queue") !== alternate || msg.attachments) setQueue((q) => [...q, msg]);
     else steer(msg);
@@ -1119,8 +1244,7 @@ export function AssistantChatPanel({
   /** Promote a queued message to steer the active run (Otter Code's "Steer"). */
   const steerQueued = (id: string) => {
     const msg = queue.find((m) => m.id === id);
-    const run = streamingRef.current;
-    if (!msg || !run || run.convoId !== msg.convoId) return;
+    if (!msg || !runsRef.current[msg.convoId]) return;
     setQueue((q) => q.filter((m) => m.id !== id));
     steer(msg, "promoted");
   };
@@ -1217,10 +1341,16 @@ export function AssistantChatPanel({
       lastResponseId: null,
       updatedAt: session.lastActive || Date.now(),
     };
-    setStore((s) => ({
-      conversations: [convo, ...s.conversations.filter((c) => c.turns.length > 0)],
-      activeId: convo.id,
-    }));
+    setStore((s) => {
+      // A new tab, like any chat opened from history (an empty tab is reused).
+      const at = s.tabs.indexOf(s.activeId);
+      const current = s.conversations.find((c) => c.id === s.activeId);
+      const tabs =
+        current && current.turns.length === 0 && !runsRef.current[s.activeId]
+          ? s.tabs.map((t) => (t === s.activeId ? convo.id : t))
+          : [...s.tabs.slice(0, at + 1), convo.id, ...s.tabs.slice(at + 1)];
+      return { conversations: pruned([convo, ...s.conversations], tabs), activeId: convo.id, tabs };
+    });
     setHydrating(convo.id);
     gmailApi
       .assistantSessionMessages(providerKind, session.id)
@@ -1241,8 +1371,10 @@ export function AssistantChatPanel({
   };
 
   const respondApproval = (approvalId: string, decision: ApprovalDecision) => {
-    if (!streaming) return;
-    const { provider: kind, requestId } = streaming;
+    const pending = approvals.find((a) => a.approval.id === approvalId);
+    const owner = pending && Object.values(runs).find((r) => r.requestId === pending.requestId);
+    if (!owner) return;
+    const { provider: kind, requestId } = owner;
     console.log("[AssistantChat:approval]", { kind, decision });
     setRespondingApproval(approvalId);
     gmailApi
@@ -1264,12 +1396,14 @@ export function AssistantChatPanel({
 
   /** Interrupts the active run; the queue stays and its next message starts (Otter Code). */
   const stop = () => {
-    if (streaming) void gmailApi.assistantCancel(streaming.provider, streaming.requestId);
+    if (run) void gmailApi.assistantCancel(run.provider, run.requestId);
   };
 
   const activeQueue = queue.filter((m) => m.convoId === activeId);
+  // This chat's approvals (other tabs' runs wait in their own tab).
+  const activeApprovals = run ? approvals.filter((a) => a.requestId === run.requestId) : [];
   // Steer needs a running turn in this chat that isn't waiting on an approval.
-  const canSteer = streaming?.convoId === activeId && approvals.length === 0;
+  const canSteer = run != null && activeApprovals.length === 0;
   useCommandHandlers({
     "assistant.sendQueuedNow": () => {
       const next = activeQueue[0];
@@ -1284,15 +1418,21 @@ export function AssistantChatPanel({
     },
   });
 
-  // A queued message starts once no turn is running (after completion, an
-  // error, or Stop) — never at a tool boundary; that's what Steer is for.
-  const nextQueued = queue[0];
+  // A chat's queued message starts once no turn is running in it (after
+  // completion, an error, or Stop) — never at a tool boundary; that's what
+  // Steer is for. Each chat drains its own queue.
+  const nextQueued = queue.find((m) => !runs[m.convoId] && editing?.id !== m.id);
   useEffect(() => {
-    if (!nextQueued || streaming || editing?.id === nextQueued.id) return;
-    setQueue((q) => q.slice(1));
+    if (!nextQueued) return;
+    setQueue((q) => q.filter((m) => m.id !== nextQueued.id));
     startTurn(nextQueued, "queued");
-  }, [nextQueued, streaming, editing]);
+  }, [nextQueued, runs, editing]);
 
+  /** Empty chats that aren't open anywhere are dropped (no litter). */
+  const pruned = (conversations: Conversation[], tabs: string[]) =>
+    conversations.filter((c) => c.turns.length > 0 || tabs.includes(c.id));
+
+  /** A fresh chat, in a new tab beside the current one. */
   const newChat = () => {
     setHistoryOpen(false);
     // An already-empty active session just refocuses — no empty duplicates.
@@ -1302,26 +1442,57 @@ export function AssistantChatPanel({
     }
     console.log("[AssistantChat:newChat]");
     const fresh = newConversation(selectedKind);
-    setStore((s) => ({
-      conversations: [fresh, ...s.conversations.filter((c) => c.turns.length > 0)],
-      activeId: fresh.id,
-    }));
+    setStore((s) => {
+      const at = s.tabs.indexOf(s.activeId);
+      const tabs = [...s.tabs.slice(0, at + 1), fresh.id, ...s.tabs.slice(at + 1)];
+      return {
+        conversations: pruned([fresh, ...s.conversations], tabs),
+        activeId: fresh.id,
+        tabs,
+      };
+    });
     inputRef.current?.focus();
   };
 
+  /** Shows a chat: its tab if open, else a new tab. */
   const switchTo = (id: string) => {
     setHistoryOpen(false);
-    setStore((s) => ({
-      // Drop the current active session if it was still empty (avoids litter).
-      conversations: s.conversations.filter((c) => c.id === id || c.turns.length > 0),
-      activeId: id,
-    }));
+    setUnseen((u) => {
+      if (!u.has(id)) return u;
+      const next = new Set(u);
+      next.delete(id);
+      return next;
+    });
+    setStore((s) => {
+      // Opens in a new tab beside the current one (an empty "New chat" tab
+      // is simply reused).
+      const at = s.tabs.indexOf(s.activeId);
+      const current = s.conversations.find((c) => c.id === s.activeId);
+      const tabs = s.tabs.includes(id)
+        ? s.tabs
+        : current && current.turns.length === 0 && !runsRef.current[s.activeId]
+          ? s.tabs.map((t) => (t === s.activeId ? id : t))
+          : [...s.tabs.slice(0, at + 1), id, ...s.tabs.slice(at + 1)];
+      return { conversations: pruned(s.conversations, tabs), activeId: id, tabs };
+    });
+  };
+
+  /** Closes a tab; the chat stays in history (a running turn finishes there). */
+  const closeTab = (id: string) => {
+    setStore((s) => {
+      if (s.tabs.length < 2) return s;
+      const at = s.tabs.indexOf(id);
+      const tabs = s.tabs.filter((t) => t !== id);
+      const activeId = s.activeId === id ? tabs[Math.max(0, at - 1)] : s.activeId;
+      return { conversations: pruned(s.conversations, tabs), activeId, tabs };
+    });
   };
 
   const deleteConversation = (id: string) => {
-    if (streaming?.convoId === id) {
-      void gmailApi.assistantCancel(streaming.provider, streaming.requestId);
-      setStreaming(null);
+    const running = runsRef.current[id];
+    if (running) {
+      void gmailApi.assistantCancel(running.provider, running.requestId);
+      endRun(running.requestId);
     }
     // Sessions this app created go with the chat; ones opened from the provider only unlink.
     const target = conversations.find((c) => c.id === id);
@@ -1330,15 +1501,52 @@ export function AssistantChatPanel({
     }
     setStore((s) => {
       const remaining = s.conversations.filter((c) => c.id !== id);
-      if (s.activeId !== id) return { ...s, conversations: remaining };
-      const nonEmpty = remaining.filter((c) => c.turns.length > 0);
-      if (nonEmpty.length > 0) return { conversations: remaining, activeId: nonEmpty[0].id };
+      const openTabs = s.tabs.filter((t) => t !== id);
+      if (s.activeId !== id) return { ...s, conversations: remaining, tabs: openTabs };
+      // The deleted chat was showing: its neighbour tab, else the latest chat.
+      const at = s.tabs.indexOf(id);
+      if (openTabs.length > 0)
+        return {
+          conversations: remaining,
+          activeId: openTabs[Math.max(0, at - 1)],
+          tabs: openTabs,
+        };
+      const latest = remaining.find((c) => c.turns.length > 0);
+      if (latest) return { conversations: remaining, activeId: latest.id, tabs: [latest.id] };
       const fresh = newConversation(selectedKind);
-      return { conversations: [fresh, ...remaining], activeId: fresh.id };
+      return { conversations: [fresh, ...remaining], activeId: fresh.id, tabs: [fresh.id] };
     });
   };
 
   useCommandHandlers({ "assistant.newChat": () => newChat() });
+
+  const closeActiveTab = () => {
+    if (storeRef.current.tabs.length < 2) return false;
+    closeTab(storeRef.current.activeId);
+    return true;
+  };
+  useEffect(() => {
+    if (!closeTabRef) return;
+    closeTabRef.current = closeActiveTab;
+    return () => {
+      closeTabRef.current = null;
+    };
+  });
+
+  // Each tab keeps its own unsent draft.
+  const draftsRef = useRef<Record<string, string>>({});
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const shownIdRef = useRef(activeId);
+  useEffect(() => {
+    const prev = shownIdRef.current;
+    if (prev === activeId) return;
+    draftsRef.current[prev] = draftRef.current;
+    setDraft(draftsRef.current[activeId] ?? "");
+    setActiveSkill(null);
+    setEditing(null);
+    shownIdRef.current = activeId;
+  }, [activeId]);
 
   useKeybindingContext("assistantOpen", true);
 
@@ -1361,7 +1569,7 @@ export function AssistantChatPanel({
   // Hermes' approval mode is server-side config; Codex / Claude pick it per turn.
   const runtimeMode =
     providerKind === "hermes" ? null : (providersState?.settings[providerKind].runtimeMode ?? null);
-  const pendingApproval = approvals[0];
+  const pendingApproval = activeApprovals[0];
 
   // Reasoning / Service Tier of the model in use, with the saved choices.
   const currentModel = provider?.models.find((m) => m.slug === provider.model);
@@ -1393,8 +1601,11 @@ export function AssistantChatPanel({
   // turn runs; holding ⌘ flips it for one message.
   const hasDraft = Boolean(draft.trim() || activeSkill || files.count > 0);
   const alternateAction = followUp === "queue" ? "steer" : "queue";
-  const submitMode: "send" | "queue" | "steer" =
-    streaming?.convoId === activeId ? (modHeld ? alternateAction : followUp) : "send";
+  const submitMode: "send" | "queue" | "steer" = run
+    ? modHeld
+      ? alternateAction
+      : followUp
+    : "send";
   const submitLabel = editing
     ? "Update queued message"
     : submitMode === "queue"
@@ -1408,8 +1619,8 @@ export function AssistantChatPanel({
       : `Click to ${followUp}, ⌘-click or ⌘↩ to ${alternateAction}`;
 
   // Only the active conversation drives the "working…" / stop UI.
-  const streamingActive = streaming != null && streaming.convoId === activeId;
-  const busy = streaming != null;
+  const streamingActive = run != null;
+  const busy = run != null;
 
   return (
     <div className="relative flex h-full min-w-0 flex-col" {...(needsSetup ? {} : drop.handlers)}>
@@ -1417,18 +1628,41 @@ export function AssistantChatPanel({
       {/* Header: chat actions on the left; the panel toggle stays at the
           window's top-right, exactly where it sits while the panel is closed. */}
       <div className="drag-region flex h-(--workspace-topbar-height) shrink-0 items-center gap-1 px-4">
+        {store.tabs.length > 1 ? (
+          <ChatTabs
+            tabs={store.tabs.map((id) => {
+              const convo = conversations.find((c) => c.id === id);
+              const tabRun = runs[id];
+              return {
+                id,
+                title: convo && convo.turns.length > 0 ? convo.title : "New chat",
+                state: tabRun
+                  ? approvals.some((a) => a.requestId === tabRun.requestId)
+                    ? "approval"
+                    : "working"
+                  : unseen.has(id)
+                    ? "unseen"
+                    : "idle",
+              };
+            })}
+            activeId={activeId}
+            onSelect={switchTo}
+            onClose={closeTab}
+          />
+        ) : null}
         <HintTooltip label="Chat history" side="bottom">
           <IconBtn
             label="Chat history"
             active={historyOpen}
+            className="shrink-0"
             onClick={() => setHistoryOpen((o) => !o)}
           >
             <HistoryIcon className="size-4" />
           </IconBtn>
         </HintTooltip>
         <HintTooltip label="New chat" shortcut="assistant.newChat" side="bottom">
-          <IconBtn label="New chat" onClick={newChat}>
-            <SquarePlusIcon className="size-4" />
+          <IconBtn label="New chat" className="shrink-0" onClick={() => newChat()}>
+            <PlusIcon className="size-4" />
           </IconBtn>
         </HintTooltip>
         <span className="min-w-0 flex-1" />
@@ -1632,7 +1866,7 @@ export function AssistantChatPanel({
               {pendingApproval && streamingActive ? (
                 <ApprovalBanner
                   approval={pendingApproval.approval}
-                  pendingCount={approvals.length}
+                  pendingCount={activeApprovals.length}
                   responding={respondingApproval === pendingApproval.approval.id}
                   onRespond={(decision) => respondApproval(pendingApproval.approval.id, decision)}
                   onCancel={stop}
