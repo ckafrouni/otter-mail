@@ -947,7 +947,7 @@ export function AccountsSidebar({
             </IconBtn>
           </HintTooltip>
           <span className="flex-1" />
-          <HintTooltip label={syncing ? "Syncing…" : "Sync now"}>
+          <HintTooltip label={syncing ? "Syncing…" : "Sync now"} hint="⌘R">
             <IconBtn label="Sync now" onClick={onSync} disabled={syncing} className="size-8">
               <RotateCwIcon className={syncing ? "size-4 animate-spin" : "size-4"} />
             </IconBtn>

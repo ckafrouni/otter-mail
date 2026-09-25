@@ -885,6 +885,13 @@ export function HomeView() {
       }
     })();
   };
+  // ⌘R (Mailbox › Sync Now in the app menu) is the same manual refresh.
+  const syncNowRef = useRef(syncNow);
+  syncNowRef.current = syncNow;
+  useEffect(
+    () => window.glazeAPI.glaze.ipc.onNotification("mail:syncNow", () => syncNowRef.current()),
+    [],
+  );
   // With a conversation open, its header is the title band (subject, actions
   // and the panel toggle in one row) instead of an empty band above it.
   const readerOwnsBand =
