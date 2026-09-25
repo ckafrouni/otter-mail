@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Nothing in CI launches Electron; skip the ~100 MB runtime download.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Format
+        run: vp run fmt:check
+
+      - name: Lint
+        run: vp run lint
+
+      - name: Typecheck
+        run: vp run typecheck
+
+      - name: Test
+        run: vp run test
+
+      - name: Build web and desktop bundles
+        run: vp run build
+
+      - name: Check release scripts
+        run: |
+          node scripts/resolve-nightly-release.ts --date 20260101 --run-number 1 --sha 0123456789abcdef
+          node scripts/build-desktop-artifact.ts --help > /dev/null
+          node scripts/dev-runner.ts --dry-run
+
+  # Apple Translation's TranslationSession(installedSource:target:) is macOS 26
+  # API, so the translator needs Xcode 26+ (Swift 6, macOS 26 SDK). No Node
+  # needed: this only compiles the Swift package.
+  translator:
+    name: Translator (Swift)
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Select Xcode
+        uses: ./.github/actions/select-xcode
+        with:
+          # Pin a path (e.g. /Applications/Xcode_26.0.app) if the newest misbehaves.
+          xcode-app: ${{ vars.XCODE_APP }}
+
+      - name: Build translator (universal)
+        run: swift build -c release --package-path native/translator --arch arm64 --arch x86_64

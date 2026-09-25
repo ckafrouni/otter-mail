@@ -1,0 +1,12 @@
+// mail.otterware.dev: Otter Mail's home page, privacy policy and terms.
+// Static files only; `cf deploy` (or `wrangler deploy`) from this folder.
+{
+  "name": "otter-mail-site",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./public",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page",
+  },
+  "routes": [{ "pattern": "mail.otterware.dev", "custom_domain": true }],
+}

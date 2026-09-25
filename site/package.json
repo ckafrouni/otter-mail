@@ -1,0 +1,12 @@
+{
+  "name": "@otter-mail/site",
+  "version": "0.0.0",
+  "private": true,
+  "description": "mail.otterware.dev: home page, privacy policy and terms.",
+  "scripts": {
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.141.0"
+  }
+}

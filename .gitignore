@@ -1,32 +1,28 @@
-# Dependencies
 node_modules/
-
-# Agent context (auto-generated, not worth versioning)
-.glaze_memory/
-
-# App icons (binary, auto-generated)
-app-icon.*
-
-# OS files
 .DS_Store
-Thumbs.db
-
-# Logs
 *.log
+*.tsbuildinfo
+.env
+.env.local
+.env*
+!.env.example
 
-# Glaze agent temporary files
-tmp/*
-
-# Glaze agent debug artifacts (DOM snapshots, etc. — may contain personal data)
-.glaze-tool-output/
-
-# Glaze-managed external-agent resources
-.claude/rules/
-.cursor/rules/
-GLAZE-APP-GUIDE.md
-GLAZE-AGENT-INSTRUCTIONS.md
-.glaze-runtime-context.md
-
-# Native helper build output and its generated bindings
+# Build output
+apps/*/dist
+dist-electron/
+.electron-runtime/
+release/
 native/*/.build/
-main/glaze-swift.d.ts
+
+# pnpm content-addressable store
+.pnpm-store/
+
+# Development data homes (see apps/desktop/src/paths.ts)
+.otter-mail/
+
+# Agent scratch space
+tmp/
+.claude/skills/synced
+
+# Wrangler state (site/)
+.wrangler/

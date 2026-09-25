@@ -1,0 +1,30 @@
+name: Select Xcode
+description: >-
+  Switches to the newest Xcode 26+ installed on the runner (or the one given
+  by `xcode-app`). native/translator uses Apple Translation's macOS 26 API
+  (TranslationSession(installedSource:target:)), so it needs the macOS 26 SDK.
+
+inputs:
+  xcode-app:
+    description: Path to an Xcode.app to use instead, e.g. /Applications/Xcode_26.0.app.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Select Xcode
+      shell: bash
+      env:
+        XCODE_APP: ${{ inputs.xcode-app }}
+      run: |
+        set -euo pipefail
+        app="${XCODE_APP:-$(ls -d /Applications/Xcode_*.app | grep -Eiv '_beta|_rc|release_candidate' | sort -V | tail -n1)}"
+        sudo xcode-select --switch "$app/Contents/Developer"
+        xcodebuild -version
+        swift --version
+        major="$(xcodebuild -version | awk 'NR==1 { split($2, v, "."); print v[1] }')"
+        if (( major < 26 )); then
+          echo "::error::native/translator needs Xcode 26 or newer; $app is Xcode $major. Pass xcode-app or use a newer runner image."
+          exit 1
+        fi
