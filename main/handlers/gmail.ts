@@ -43,6 +43,7 @@ import {
 import * as mailStore from "../services/mail-store.js";
 import { IPC_WRITE_BUDGET_MS, atMost, runAsTask, settleGmailWrite, sleep } from "./ipc-budget.js";
 import { forgetLiveCursors, pageWithLiveFill, reconcileUnread } from "./live-paging.js";
+import { trackLabelWrite } from "../services/pending-label-writes.js";
 import {
   draftSessionId,
   mirrorDraft,
@@ -101,6 +102,24 @@ function applyLocalLabelChange(
     for (const u of undo) mailStore.applyLabelChange(accountId, u.id, u.reAdd, u.reRemove);
     updateDockBadge();
   };
+}
+
+/** Mirrors a label change locally, then settles its Gmail write within the IPC
+ *  budget. While the write is pending, reads from Gmail keep the change (see
+ *  pending-label-writes); if it fails, the local change is reverted. */
+function settleLabelWrite(
+  channel: string,
+  accountId: string,
+  messageIds: string[],
+  add: string[],
+  remove: string[],
+  write: () => Promise<unknown>,
+): Promise<{ ok: true; pending?: boolean }> {
+  const revert = applyLocalLabelChange(accountId, messageIds, add, remove);
+  const tracked = trackLabelWrite(accountId, messageIds, add, remove);
+  const running = write();
+  running.then(tracked.settled, tracked.dropped);
+  return settleGmailWrite(channel, running, revert);
 }
 
 function parseRules(raw: unknown): ViewRule[] {
@@ -575,16 +594,13 @@ export function registerGmailHandlers(): void {
       const messageId = assertString(p?.messageId, "messageId");
       const addLabelIds = asStringArray(p?.addLabelIds);
       const removeLabelIds = asStringArray(p?.removeLabelIds);
-      const revert = applyLocalLabelChange(
+      return await settleLabelWrite(
+        "gmail:modifyMessage",
         accountId,
         [messageId],
         addLabelIds ?? [],
         removeLabelIds ?? [],
-      );
-      return await settleGmailWrite(
-        "gmail:modifyMessage",
-        modifyMessage(accountId, messageId, { addLabelIds, removeLabelIds }),
-        revert,
+        () => modifyMessage(accountId, messageId, { addLabelIds, removeLabelIds }),
       );
     } catch (err) {
       console.log("[gmail:modifyMessage] error", { error: String(err) });
@@ -601,12 +617,14 @@ export function registerGmailHandlers(): void {
       const messageId = assertString(p?.messageId, "messageId");
       // Mirror locally first (lists drop it now, counts update) and answer
       // inside the IPC budget; Gmail + the metadata refresh finish after.
-      const revert = applyLocalLabelChange(accountId, [messageId], ["TRASH"], []);
-      updateDockBadge();
-      return await settleGmailWrite(
+      return await settleLabelWrite(
         "gmail:trashMessage",
-        trashMessage(accountId, messageId).then(() => refreshMetadata(accountId, [messageId])),
-        revert,
+        accountId,
+        [messageId],
+        ["TRASH"],
+        [],
+        () =>
+          trashMessage(accountId, messageId).then(() => refreshMetadata(accountId, [messageId])),
       );
     } catch (err) {
       console.log("[gmail:trashMessage] error", { error: String(err) });
@@ -637,16 +655,13 @@ export function registerGmailHandlers(): void {
       const threadId = assertString(p?.threadId, "threadId");
       const addLabelIds = asStringArray(p?.addLabelIds);
       const removeLabelIds = asStringArray(p?.removeLabelIds);
-      const revert = applyLocalLabelChange(
+      return await settleLabelWrite(
+        "gmail:modifyThread",
         accountId,
         mailStore.getThreadMessages(accountId, threadId).map((m) => m.id),
         addLabelIds ?? [],
         removeLabelIds ?? [],
-      );
-      return await settleGmailWrite(
-        "gmail:modifyThread",
-        modifyThread(accountId, threadId, { addLabelIds, removeLabelIds }),
-        revert,
+        () => modifyThread(accountId, threadId, { addLabelIds, removeLabelIds }),
       );
     } catch (err) {
       console.log("[gmail:modifyThread] error", { error: String(err) });
@@ -664,12 +679,8 @@ export function registerGmailHandlers(): void {
       // Keep the rows (the Trash view reads them from the cache), mirrored as
       // trashed right away; Gmail + the metadata refresh finish after.
       const ids = mailStore.getThreadMessages(accountId, threadId).map((m) => m.id);
-      const revert = applyLocalLabelChange(accountId, ids, ["TRASH"], []);
-      updateDockBadge();
-      return await settleGmailWrite(
-        "gmail:trashThread",
+      return await settleLabelWrite("gmail:trashThread", accountId, ids, ["TRASH"], [], () =>
         trashThread(accountId, threadId).then(() => refreshMetadata(accountId, ids)),
-        revert,
       );
     } catch (err) {
       console.log("[gmail:trashThread] error", { error: String(err) });
@@ -686,10 +697,7 @@ export function registerGmailHandlers(): void {
       const accountId = assertString(p?.accountId, "accountId");
       const threadId = assertString(p?.threadId, "threadId");
       const ids = mailStore.getThreadMessages(accountId, threadId).map((m) => m.id);
-      const revert = applyLocalLabelChange(accountId, ids, [], ["TRASH"]);
-      updateDockBadge();
-      return await settleGmailWrite(
-        "gmail:untrashThread",
+      return await settleLabelWrite("gmail:untrashThread", accountId, ids, [], ["TRASH"], () =>
         untrashThread(accountId, threadId).then((fresh) => {
           mailStore.upsertMessages(accountId, fresh);
           mailStore.recountLabels(accountId, [
@@ -698,7 +706,6 @@ export function registerGmailHandlers(): void {
           ]);
           updateDockBadge();
         }),
-        revert,
       );
     } catch (err) {
       console.log("[gmail:untrashThread] error", { error: String(err) });
@@ -712,19 +719,21 @@ export function registerGmailHandlers(): void {
     try {
       const accountId = assertString(p?.accountId, "accountId");
       const messageId = assertString(p?.messageId, "messageId");
-      const revert = applyLocalLabelChange(accountId, [messageId], [], ["TRASH"]);
-      updateDockBadge();
-      return await settleGmailWrite(
+      return await settleLabelWrite(
         "gmail:untrashMessage",
-        untrashMessage(accountId, messageId).then((fresh) => {
-          mailStore.upsertMessages(accountId, fresh);
-          mailStore.recountLabels(accountId, [
-            ...new Set(fresh.flatMap((m) => m.labelIds)),
-            "TRASH",
-          ]);
-          updateDockBadge();
-        }),
-        revert,
+        accountId,
+        [messageId],
+        [],
+        ["TRASH"],
+        () =>
+          untrashMessage(accountId, messageId).then((fresh) => {
+            mailStore.upsertMessages(accountId, fresh);
+            mailStore.recountLabels(accountId, [
+              ...new Set(fresh.flatMap((m) => m.labelIds)),
+              "TRASH",
+            ]);
+            updateDockBadge();
+          }),
       );
     } catch (err) {
       console.log("[gmail:untrashMessage] error", { error: String(err) });
