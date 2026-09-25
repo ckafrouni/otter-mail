@@ -47,12 +47,25 @@ export function isMoveSourceLabel(labelId: string | null, targetLabelId: string)
   );
 }
 
-/** "3 conversations" pill used as the drag image for multi-row drags. */
-export function setCountDragImage(dataTransfer: DataTransfer, count: number): void {
+/** Compact card used as the drag image, instead of the full-size row: sender
+    and subject for one conversation, "3 conversations" for several. */
+export function setThreadDragImage(
+  dataTransfer: DataTransfer,
+  preview: { title: string; subtitle?: string },
+): void {
   const el = document.createElement("div");
-  el.textContent = `${count} conversations`;
   el.className =
-    "dropdown-glass fixed -top-96 left-0 rounded-lg px-2.5 py-1 text-xs font-medium text-foreground";
+    "dropdown-glass fixed -top-96 left-0 flex max-w-56 flex-col rounded-lg px-2.5 py-1 text-xs text-foreground";
+  const title = document.createElement("span");
+  title.className = "truncate font-medium";
+  title.textContent = preview.title;
+  el.appendChild(title);
+  if (preview.subtitle) {
+    const subtitle = document.createElement("span");
+    subtitle.className = "truncate text-muted-foreground";
+    subtitle.textContent = preview.subtitle;
+    el.appendChild(subtitle);
+  }
   document.body.appendChild(el);
   dataTransfer.setDragImage(el, -8, -8);
   // The image is snapshotted synchronously; the element can go right away.

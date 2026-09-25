@@ -65,7 +65,7 @@ import { parseAddressEntry, splitAddressList } from "./address";
 import type { GmailAccount, GmailLabel, GmailMessageSummary, ViewRule } from "./types";
 import { pickAdvanceTarget } from "./advance-direction";
 import { beginUndoGroup, clearUndo } from "./undo";
-import { isMoveSourceLabel, setCountDragImage, writeThreadDrag } from "./thread-drag";
+import { isMoveSourceLabel, setThreadDragImage, writeThreadDrag } from "./thread-drag";
 
 type ResolveLabel = (accountId: string | undefined, labelId: string) => GmailLabel | undefined;
 
@@ -1441,7 +1441,15 @@ export function MessageList({
       })),
       fromLabelId: moveContextLabelId,
     });
-    if (rows.length > 1) setCountDragImage(e.dataTransfer, rows.length);
+    setThreadDragImage(
+      e.dataTransfer,
+      rows.length > 1
+        ? { title: `${rows.length} conversations` }
+        : {
+            title: message.fromName || message.fromEmail,
+            subtitle: message.subject || "(no subject)",
+          },
+    );
   };
 
   return (
