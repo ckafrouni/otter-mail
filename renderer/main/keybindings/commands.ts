@@ -58,6 +58,7 @@ export const KEYBINDING_COMMANDS = [
   "go.sent",
   "go.starred",
   "go.drafts",
+  "go.allMail",
   ...MAILBOX_JUMP_COMMANDS,
   "list.next",
   "list.previous",
@@ -146,6 +147,7 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "g t", command: "go.sent", when: IN_MAIL },
   { key: "g s", command: "go.starred", when: IN_MAIL },
   { key: "g d", command: "go.drafts", when: IN_MAIL },
+  { key: "g a", command: "go.allMail", when: IN_MAIL },
   ...MAILBOX_JUMP_COMMANDS.map((command, i): KeybindingRule => ({
     key: `mod+${i + 1}`,
     command,

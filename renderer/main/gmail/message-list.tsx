@@ -52,7 +52,7 @@ import { useCommandHandlers } from "../keybindings/dispatch";
 import { SEARCH_HINT, SearchHeader } from "./search-header";
 import { labelSearchToken, viewSearchQuery } from "./gmail-query";
 import { getAccountColor, getAccountDisplayName } from "./account-style";
-import { SYSTEM_LABEL_NAMES, labelDisplayName } from "./label-names";
+import { ALL_MAIL_LABEL_ID, SYSTEM_LABEL_NAMES, labelDisplayName } from "./label-names";
 import { decodeEntities } from "./text";
 import { parseAddressEntry, splitAddressList } from "./address";
 import type { GmailAccount, GmailLabel, GmailMessageSummary, ViewRule } from "./types";
@@ -618,10 +618,13 @@ export function MessageList({
   // Header title + "N messages, M unread". Combined counts come from the local
   // store (rules can't be summed from Gmail's per-label counters); account mode
   // still uses Gmail's own label counters.
+  // All Mail has no Gmail label (so no counters): count it from the store too.
+  const allMailRules =
+    !isCombined && labelId === ALL_MAIL_LABEL_ID ? [{ accountId, allOf: [], noneOf: [] }] : [];
   const combinedCounts = useCombinedCounts(
-    combined?.rules ?? [],
-    combined?.viewId ?? "",
-    isCombined,
+    isCombined ? (combined?.rules ?? []) : allMailRules,
+    isCombined ? (combined?.viewId ?? "") : `${accountId}:${ALL_MAIL_LABEL_ID}`,
+    isCombined || allMailRules.length > 0,
   );
   const activeLabel = resolveLabel(accountId, labelId);
   if (viewQueryRef && !search) {
@@ -630,12 +633,13 @@ export function MessageList({
       ? viewSearchQuery(combined.rules, nameOf)
       : (labelSearchToken(labelId, nameOf(accountId, labelId)) ?? "");
   }
-  const { mailboxTotal, mailboxUnread } = isCombined
-    ? {
-        mailboxTotal: combinedCounts.data?.total ?? 0,
-        mailboxUnread: combinedCounts.data?.unread ?? 0,
-      }
-    : { mailboxTotal: activeLabel?.total ?? 0, mailboxUnread: activeLabel?.unread ?? 0 };
+  const { mailboxTotal, mailboxUnread } =
+    isCombined || allMailRules.length > 0
+      ? {
+          mailboxTotal: combinedCounts.data?.total ?? 0,
+          mailboxUnread: combinedCounts.data?.unread ?? 0,
+        }
+      : { mailboxTotal: activeLabel?.total ?? 0, mailboxUnread: activeLabel?.unread ?? 0 };
 
   // Search pages are merged per account; a conversation seen on an earlier
   // page isn't repeated.
@@ -944,7 +948,8 @@ export function MessageList({
       moveContextLabelId &&
       moveContextLabelId !== pickedId &&
       moveContextLabelId !== "SENT" &&
-      moveContextLabelId !== "DRAFT";
+      moveContextLabelId !== "DRAFT" &&
+      moveContextLabelId !== ALL_MAIL_LABEL_ID;
     console.log("[MessageList:moveTo]", { rowThreadId, pickedId, from: moveContextLabelId });
     if (removable) advanceFrom(row.id);
     void listModifyThread.mutateAsync({

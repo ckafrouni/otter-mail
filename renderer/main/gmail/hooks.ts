@@ -14,6 +14,7 @@ import {
   type ModifyThreadParams,
   type SendMessageParams,
 } from "./api";
+import { ALL_MAIL_LABEL_ID } from "./label-names";
 import { PENDING_LABEL_PREFIX } from "./label-tree";
 import type {
   ContactSuggestion,
@@ -503,7 +504,8 @@ export function useViewUnreadCounts(
       return {
         queryKey: queryKeys.combinedCounts(view.id, rules),
         queryFn: () => gmailApi.countCombinedMessages({ rules }),
-        enabled: enabled && rules.length > 0,
+        // All Mail carries no badge (Gmail parity) — skip a whole-mailbox count.
+        enabled: enabled && rules.length > 0 && view.kind !== "allmail",
         staleTime: STALE_TIME,
       };
     }),
@@ -1100,10 +1102,17 @@ export function useModifyThread() {
       // longer match, so archive/move/junk clear the view instantly like trash.
       // Safe only here (whole-thread removal); single-message ops can't know
       // whether sibling messages still match.
-      if (removeLabelIds.length > 0) {
+      // All Mail (per account, or Combined rules without labels) only loses
+      // threads that become spam/trash.
+      const leavesAllMail = addLabelIds.includes("SPAM") || addLabelIds.includes("TRASH");
+      if (removeLabelIds.length > 0 || leavesAllMail) {
         for (const [key] of prevMessagesQueries) {
           const listLabelId = key[2];
-          if (typeof listLabelId === "string" && removeLabelIds.includes(listLabelId)) {
+          if (
+            typeof listLabelId === "string" &&
+            (removeLabelIds.includes(listLabelId) ||
+              (leavesAllMail && listLabelId === ALL_MAIL_LABEL_ID))
+          ) {
             qc.setQueryData(key, (old: InfiniteData<ListMessagesResult> | undefined) =>
               removeMessagesFromInfiniteData(old, inThread),
             );
@@ -1114,7 +1123,11 @@ export function useModifyThread() {
           if (
             Array.isArray(rules) &&
             rules.length > 0 &&
-            rules.every((r) => r.allOf.some((id) => removeLabelIds.includes(id)))
+            rules.every(
+              (r) =>
+                r.allOf.some((id) => removeLabelIds.includes(id)) ||
+                (leavesAllMail && r.allOf.length === 0),
+            )
           ) {
             qc.setQueryData(key, (old: InfiniteData<ListMessagesResult> | undefined) =>
               removeMessagesFromInfiniteData(old, inThread),

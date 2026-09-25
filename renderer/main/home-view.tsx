@@ -53,7 +53,9 @@ import {
   SENT_VIEW_ID,
   STARRED_VIEW_ID,
   DRAFTS_VIEW_ID,
+  ALL_MAIL_VIEW_ID,
 } from "./gmail/custom-views";
+import { ALL_MAIL_LABEL_ID } from "./gmail/label-names";
 
 /** Narrowest the reader gets when the chat panel is dragged wider. */
 const READER_MIN_WIDTH = 360;
@@ -350,6 +352,7 @@ export function HomeView() {
     "go.sent": () => goTo(SENT_VIEW_ID, "SENT"),
     "go.starred": () => goTo(STARRED_VIEW_ID, "STARRED"),
     "go.drafts": () => goTo(DRAFTS_VIEW_ID, "DRAFT"),
+    "go.allMail": () => goTo(ALL_MAIL_VIEW_ID, ALL_MAIL_LABEL_ID),
     "message.close": () => {
       setSelectedMessageId(null);
       setReaderAccountId(null);

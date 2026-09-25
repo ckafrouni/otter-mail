@@ -1,5 +1,8 @@
 import type { GmailLabel } from "./types";
 
+/** Pseudo label id for "All Mail" (every message but Spam/Trash) — mirrors the backend. */
+export const ALL_MAIL_LABEL_ID = "ALL_MAIL";
+
 /** Friendly display names for Gmail's system labels. */
 export const SYSTEM_LABEL_NAMES: Record<string, string> = {
   INBOX: "Inbox",
