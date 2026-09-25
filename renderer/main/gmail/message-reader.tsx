@@ -275,6 +275,45 @@ function adaptForDarkCanvas(doc: Document | null | undefined) {
 }
 
 /**
+ * Dark mode honors the email's own dark styles, but many only half-apply:
+ * LinkedIn's turn paragraph text light grey while the card behind it keeps
+ * its white background. Where text sits on a light background the email
+ * painted itself and is barely readable (contrast under 3:1), make it dark.
+ */
+function fixLightOnLightText(doc: Document | null | undefined) {
+  if (!doc?.body) return;
+  /** Luminance of the nearest painted background; null over the dark canvas or an image. */
+  const paintedBg = (start: Element): number | null => {
+    let node: Element | null = start;
+    while (node && node !== doc.documentElement) {
+      const style = getComputedStyle(node);
+      if (style.backgroundImage !== "none") return null;
+      const bg = parseRgb(style.backgroundColor);
+      if (bg && bg.a > 0.5) return relativeLuminance(bg.r, bg.g, bg.b);
+      node = node.parentElement;
+    }
+    return null;
+  };
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_ELEMENT);
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    const element = node as HTMLElement;
+    const hasOwnText = Array.from(element.childNodes).some(
+      (n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").trim().length > 0,
+    );
+    if (!hasOwnText) continue;
+    const color = parseRgb(getComputedStyle(element).color);
+    if (!color || color.a < 0.05) continue;
+    const bg = paintedBg(element);
+    if (bg === null || bg < 0.5) continue; // not on a light surface
+    const text = relativeLuminance(color.r, color.g, color.b);
+    const contrast = (Math.max(text, bg) + 0.05) / (Math.min(text, bg) + 0.05);
+    if (contrast >= 3) continue;
+    element.style.setProperty("color", "#1f1f1f", "important");
+  }
+}
+
+/**
  * The email canvas is always white, but the reader's WebView carries the app's
  * dark appearance, so `prefers-color-scheme` evaluates to `dark` INSIDE the
  * iframe (a CSS `color-scheme: light` on :root doesn't change that). Emails that
@@ -529,6 +568,7 @@ function HtmlBody({
   const adaptColors = (doc: Document | null | undefined) => {
     if (dark) {
       adaptForDarkCanvas(doc);
+      fixLightOnLightText(doc);
     } else {
       neutralizeDarkScheme(doc);
       fixWhiteOnWhiteText(doc);
