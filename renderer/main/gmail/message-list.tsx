@@ -1,7 +1,7 @@
 import type React from "react";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Dialog, Text } from "@glaze/core/components";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Dialog, Text, toast } from "@glaze/core/components";
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -26,6 +26,8 @@ import {
   XIcon,
   CircleIcon,
   CircleDotIcon,
+  CircleChevronDownIcon,
+  PaperclipIcon,
 } from "lucide-react";
 import { IconBtn, HintTooltip, cn } from "./ui";
 import {
@@ -36,8 +38,12 @@ import {
   useLabels,
   useModifyMessage,
   useModifyThread,
+  useTrashMessage,
   useTrashThread,
+  useUntrashMessage,
   useUntrashThread,
+  useThreads,
+  useAllAccountLabels,
   useDeleteThreadsForever,
   useLabelResolver,
   useSyncAccountLabels,
@@ -58,6 +64,7 @@ import { parseAddressEntry, splitAddressList } from "./address";
 import type { GmailAccount, GmailLabel, GmailMessageSummary, ViewRule } from "./types";
 import { pickAdvanceTarget } from "./advance-direction";
 import { beginUndoGroup, clearUndo } from "./undo";
+import { isMoveSourceLabel, setCountDragImage, writeThreadDrag } from "./thread-drag";
 
 type ResolveLabel = (accountId: string | undefined, labelId: string) => GmailLabel | undefined;
 
@@ -82,7 +89,11 @@ type MessageListProps = {
   /** Connected accounts (name/color), for the Combined view's mailbox-account line. */
   accounts: GmailAccount[];
   selectedMessageId: string | null;
-  onSelectMessage: (messageId: string, accountId: string) => void;
+  /** A single message of the selected row's conversation shown on its own. */
+  focusedMessageId: string | null;
+  /** Selects a row; `focusId` picks one message of its conversation instead
+      of the whole conversation. */
+  onSelectMessage: (messageId: string, accountId: string, focusId?: string) => void;
   /** Clears the selection (mark-unread returns to the list, Gmail-style). */
   onDeselect: () => void;
   /** Reader actions (archive/trash) advance through here; false = no next row. */
@@ -218,6 +229,11 @@ type MessageRowProps = {
   /** Closes the reader — used after marking the open row unread, so the
       reader's auto mark-read doesn't immediately undo it (Gmail does this too). */
   onDeselect: () => void;
+  /** Its conversation's messages are listed under it. */
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  /** Starts dragging this row (or the whole multi-selection) onto a label. */
+  onDragStart: (e: React.DragEvent<HTMLButtonElement>) => void;
 };
 
 function MessageRow({
@@ -233,6 +249,9 @@ function MessageRow({
   onDeleteForever,
   onChatAssistant,
   onDeselect,
+  expanded,
+  onToggleExpanded,
+  onDragStart,
 }: MessageRowProps) {
   const modifyMessage = useModifyMessage();
   const modifyThread = useModifyThread();
@@ -378,6 +397,8 @@ function MessageRow({
             ref={rowRef}
             type="button"
             onClick={onRowClick}
+            draggable
+            onDragStart={onDragStart}
             // shift-click must not start a text selection
             onMouseDown={(e) => {
               if (e.shiftKey) e.preventDefault();
@@ -432,8 +453,24 @@ function MessageRow({
                 </span>
                 <div className="flex shrink-0 items-center gap-1.5">
                   {threadCount > 1 ? (
-                    <span className="text-xs tabular-nums text-muted-foreground">
+                    // Count + chevron: lists the conversation's messages
+                    // under the row (Apple Mail). A span, since the row is
+                    // already a button.
+                    <span
+                      role="button"
+                      tabIndex={-1}
+                      aria-label={expanded ? "Hide messages" : `Show ${threadCount} messages`}
+                      aria-expanded={expanded}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleExpanded();
+                      }}
+                      className="-my-0.5 flex items-center gap-0.5 rounded-sm px-0.5 text-xs tabular-nums text-muted-foreground hover:text-foreground"
+                    >
                       {threadCount}
+                      <CircleChevronDownIcon
+                        className={cn("size-3.5 transition-transform", expanded && "rotate-180")}
+                      />
                     </span>
                   ) : null}
                   {combinedMeta ? (
@@ -559,6 +596,68 @@ function MessageRow({
   );
 }
 
+/** One message of an expanded conversation, listed under its row (newest
+    first, like the list): sender, date, and a line of its text. Opening it
+    shows just this message. */
+function ThreadMessageRow({
+  message,
+  selected,
+  onClick,
+}: {
+  message: GmailMessageSummary;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  const ref = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (selected) ref.current?.scrollIntoView({ block: "nearest", behavior: "instant" });
+  }, [selected]);
+  const isDraft = message.labelIds.includes("DRAFT");
+  return (
+    <button
+      ref={ref}
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "group flex w-full cursor-pointer select-none flex-col gap-px rounded-md py-1.5 pr-(--sidebar-row-content-inset) pl-6 text-left outline-none focus-visible:ring-2 focus-visible:ring-focus-ring",
+        selected ? "bg-sidebar-row-active" : "hover:bg-sidebar-row-hover",
+      )}
+    >
+      <span className="flex items-center justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-1.5">
+          {message.unread && !selected ? (
+            <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
+          ) : null}
+          {isDraft ? (
+            <span className="shrink-0 text-xs font-semibold text-destructive-foreground">
+              Draft
+            </span>
+          ) : null}
+          <span
+            className={cn(
+              "min-w-0 truncate text-xs",
+              message.unread ? "font-semibold text-foreground" : "font-medium text-foreground/85",
+            )}
+          >
+            {message.fromName || message.fromEmail}
+          </span>
+        </span>
+        <span className="shrink-0 text-2xs tabular-nums text-muted-foreground/55">
+          {formatRelativeDate(message.date)}
+        </span>
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground/70">
+          {decodeEntities(message.snippet) || " "}
+        </span>
+        {message.hasAttachments ? (
+          <PaperclipIcon className="size-3 shrink-0 text-muted-foreground/55" aria-hidden />
+        ) : null}
+      </span>
+    </button>
+  );
+}
+
 /** "260 messages, 7 unread" — omits the unread clause when nothing is unread. */
 function formatMailboxSummary(total: number, unread: number): string {
   const messages = `${total.toLocaleString()} message${total === 1 ? "" : "s"}`;
@@ -573,6 +672,7 @@ export function MessageList({
   accountIds,
   accounts,
   selectedMessageId,
+  focusedMessageId,
   onSelectMessage,
   onDeselect,
   advanceRef,
@@ -674,9 +774,64 @@ export function MessageList({
   const listModifyThread = useModifyThread();
   const listTrashThread = useTrashThread();
   const listUntrashThread = useUntrashThread();
+  const listTrashMessage = useTrashMessage();
+  const listUntrashMessage = useUntrashMessage();
 
   const selectedRow = visibleMessages.find((m) => m.id === selectedMessageId) ?? null;
   const selectedOwner = selectedRow ? (selectedRow.accountId ?? accountId) : null;
+
+  // Conversations opened up in place (Apple Mail), keyed `${owner}:${threadId}`;
+  // cleared with the multi-selection when the view changes.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const threadKey = (m: GmailMessageSummary) => `${m.accountId ?? accountId}:${m.threadId || m.id}`;
+  const expandedRows = visibleMessages.filter(
+    (m) => (m.threadCount ?? 1) > 1 && expanded.has(threadKey(m)),
+  );
+  const threadsByKey = useThreads(
+    expandedRows.map((m) => ({
+      accountId: m.accountId ?? accountId,
+      threadId: m.threadId || m.id,
+    })),
+  );
+  /** An expanded row's messages, newest first (like the list); [] when collapsed. */
+  const threadMessagesOf = (m: GmailMessageSummary): GmailMessageSummary[] =>
+    expanded.has(threadKey(m)) ? [...(threadsByKey.get(threadKey(m)) ?? [])].reverse() : [];
+  // What ↑/↓ walk through: every row, and the messages of expanded ones.
+  type NavItem = { row: GmailMessageSummary; focus: GmailMessageSummary | null };
+  const navItems: NavItem[] = visibleMessages.flatMap((row) => [
+    { row, focus: null },
+    ...threadMessagesOf(row).map((m) => ({ row, focus: m })),
+  ]);
+  const focusedMessage =
+    (selectedRow && threadMessagesOf(selectedRow).find((m) => m.id === focusedMessageId)) ?? null;
+
+  /** After the message open from `row`'s conversation leaves it: open its
+      neighbor there, or the whole conversation when none is left. */
+  const advanceFocusIn = (row: GmailMessageSummary, focus: GmailMessageSummary) => {
+    const siblings = threadMessagesOf(row);
+    const next = pickAdvanceTarget(
+      siblings,
+      siblings.findIndex((m) => m.id === focus.id),
+    );
+    onSelectMessage(row.id, row.accountId ?? accountId, next?.id);
+  };
+
+  const setThreadExpanded = (row: GmailMessageSummary, open: boolean) => {
+    const key = threadKey(row);
+    console.log("[MessageList:expandThread]", { key, open });
+    setExpanded((prev) => {
+      if (prev.has(key) === open) return prev;
+      const next = new Set(prev);
+      if (open) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+    // Collapsing the conversation a message is open from falls back to the
+    // whole conversation.
+    if (!open && row.id === selectedMessageId && focusedMessageId) {
+      onSelectMessage(row.id, row.accountId ?? accountId);
+    }
+  };
 
   // The single label the current view IS (Gmail's v "move" needs a label to
   // leave). Built-in combined views map to their system label; rule-based
@@ -705,6 +860,7 @@ export function MessageList({
   };
   useEffect(() => {
     clearChecked();
+    setExpanded(new Set());
   }, [labelId, combined?.viewId, searching, unreadOnly]);
 
   const checkedRef = useRef(checked);
@@ -919,6 +1075,11 @@ export function MessageList({
     else onDeselect();
   };
   advanceRef.current = (fromMessageId: string) => {
+    // A single message open from an expanded conversation moves on within it.
+    if (focusedMessage && selectedRow && fromMessageId === selectedRow.id) {
+      advanceFocusIn(selectedRow, focusedMessage);
+      return true;
+    }
     const idx = visibleMessages.findIndex((m) => m.id === fromMessageId);
     if (idx === -1) return false;
     const next = pickAdvanceTarget(visibleMessages, idx);
@@ -942,14 +1103,8 @@ export function MessageList({
       });
       return;
     }
-    // Move: apply the picked label and leave the current one. SENT/DRAFT are
-    // immutable in Gmail, so moving out of those views only applies the label.
-    const removable =
-      moveContextLabelId &&
-      moveContextLabelId !== pickedId &&
-      moveContextLabelId !== "SENT" &&
-      moveContextLabelId !== "DRAFT" &&
-      moveContextLabelId !== ALL_MAIL_LABEL_ID;
+    // Move: apply the picked label and leave the current one.
+    const removable = moveContextLabelId && isMoveSourceLabel(moveContextLabelId, pickedId);
     console.log("[MessageList:moveTo]", { rowThreadId, pickedId, from: moveContextLabelId });
     if (removable) advanceFrom(row.id);
     void listModifyThread.mutateAsync({
@@ -960,13 +1115,26 @@ export function MessageList({
     });
   };
 
+  const allLabels = useAllAccountLabels(accountIds);
+
   const shortcutState = useRef({
     visibleMessages,
     selectedMessageId,
     accountId,
     moveContextLabelId,
+    navItems,
+    focusedMessage,
+    allLabels,
   });
-  shortcutState.current = { visibleMessages, selectedMessageId, accountId, moveContextLabelId };
+  shortcutState.current = {
+    visibleMessages,
+    selectedMessageId,
+    accountId,
+    moveContextLabelId,
+    navItems,
+    focusedMessage,
+    allLabels,
+  };
   // Keyboard commands on the open/selected row (Settings › Keybindings).
   // Each handler returns false when it doesn't apply, so the key passes on.
   const rowCommand =
@@ -979,6 +1147,11 @@ export function MessageList({
         threadId: string;
         select: (m: GmailMessageSummary) => void;
         advance: () => void;
+        /** The single message open from an expanded conversation, if any. */
+        focus: GmailMessageSummary | null;
+        /** After `focus` is archived/trashed: open its neighbor in the
+            conversation, or the whole conversation when it was the only one. */
+        advanceFocus: () => void;
       }) => boolean | void,
     ) =>
     (e: KeyboardEvent) => {
@@ -990,6 +1163,7 @@ export function MessageList({
         visibleMessages: rows,
         selectedMessageId: selId,
         accountId: fallbackAccount,
+        focusedMessage: focus,
       } = shortcutState.current;
       if (rows.length === 0) return false;
       const idx = rows.findIndex((m) => m.id === selId);
@@ -1008,22 +1182,57 @@ export function MessageList({
           if (next) select(next);
           else onDeselect();
         },
+        focus,
+        advanceFocus: () => {
+          if (row && focus) advanceFocusIn(row, focus);
+        },
       });
     };
-  useCommandHandlers({
+  /** ↑/↓ over rows and the messages of expanded conversations. */
+  const navCommand = (step: 1 | -1) => (e: KeyboardEvent) => {
+    if (e.repeat && performance.now() - e.timeStamp > 80) return;
+    const {
+      navItems: nav,
+      selectedMessageId: selId,
+      focusedMessage: focus,
+    } = shortcutState.current;
+    if (nav.length === 0) return false;
+    const idx = nav.findIndex(
+      (n) => n.row.id === selId && (n.focus?.id ?? null) === (focus?.id ?? null),
+    );
     // Handled even at the ends of the list — arrows must never scroll it.
-    "list.next": rowCommand(({ rows, idx, select }) => {
-      const next = idx === -1 ? rows[0] : rows[idx + 1];
-      if (next) select(next);
+    const target = idx === -1 ? nav[0] : nav[idx + step];
+    if (!target) return;
+    const owner = target.row.accountId ?? shortcutState.current.accountId;
+    onSelectMessage(target.row.id, owner, target.focus?.id);
+  };
+  useCommandHandlers({
+    "list.next": navCommand(1),
+    "list.previous": navCommand(-1),
+    "list.expandThread": rowCommand(({ row }) => {
+      if (!row || (row.threadCount ?? 1) <= 1) return false;
+      setThreadExpanded(row, true);
     }),
-    "list.previous": rowCommand(({ rows, idx, select }) => {
-      const prev = idx === -1 ? rows[0] : rows[idx - 1];
-      if (prev) select(prev);
+    "list.collapseThread": rowCommand(({ row }) => {
+      if (!row || !expanded.has(threadKey(row))) return false;
+      setThreadExpanded(row, false);
     }),
-    // With rows multi-selected, triage keys act on the whole selection.
-    "message.archive": rowCommand(({ row, owner, threadId, advance }) => {
+    // With rows multi-selected, triage keys act on the whole selection; with
+    // one message of a conversation open, on that message alone.
+    "message.archive": rowCommand(({ row, owner, threadId, advance, focus, advanceFocus }) => {
       if (checkedRef.current.size > 0) return bulkArchive();
       if (!row) return false;
+      if (focus) {
+        const focusInInbox = focus.labelIds.includes("INBOX");
+        if (focusInInbox) advanceFocus();
+        void listModifyMessage.mutateAsync({
+          accountId: owner,
+          messageId: focus.id,
+          addLabelIds: focusInInbox ? undefined : ["INBOX"],
+          removeLabelIds: focusInInbox ? ["INBOX"] : undefined,
+        });
+        return;
+      }
       // Archived rows un-archive; rows still in the inbox archive (and
       // advance, since they leave the current view).
       const rowInInbox = rowLabels(row).includes("INBOX");
@@ -1035,12 +1244,21 @@ export function MessageList({
         removeLabelIds: rowInInbox ? ["INBOX"] : undefined,
       });
     }),
-    "message.trash": rowCommand(({ row, owner, threadId, advance }) => {
+    "message.trash": rowCommand(({ row, owner, threadId, advance, focus, advanceFocus }) => {
       if (checkedRef.current.size > 0) {
         trashCheckedRef.current();
         return;
       }
       if (!row) return false;
+      if (focus) {
+        if (focus.labelIds.includes("TRASH")) {
+          void listUntrashMessage.mutateAsync({ accountId: owner, messageId: focus.id });
+        } else {
+          advanceFocus();
+          void listTrashMessage.mutateAsync({ accountId: owner, messageId: focus.id });
+        }
+        return;
+      }
       // Trashed rows restore in place; live rows trash and advance.
       if (rowLabels(row).includes("TRASH")) {
         void listUntrashThread.mutateAsync({ accountId: owner, threadId });
@@ -1049,9 +1267,20 @@ export function MessageList({
         void listTrashThread.mutateAsync({ accountId: owner, threadId });
       }
     }),
-    "message.junk": rowCommand(({ row, owner, threadId, advance }) => {
+    "message.junk": rowCommand(({ row, owner, threadId, advance, focus, advanceFocus }) => {
       if (checkedRef.current.size > 0) return allJunk ? bulkNotJunk() : bulkJunk();
       if (!row) return false;
+      if (focus) {
+        const focusJunk = focus.labelIds.includes("SPAM");
+        advanceFocus();
+        void listModifyMessage.mutateAsync({
+          accountId: owner,
+          messageId: focus.id,
+          addLabelIds: focusJunk ? ["INBOX"] : ["SPAM"],
+          removeLabelIds: focusJunk ? ["SPAM"] : ["INBOX"],
+        });
+        return;
+      }
       // Junk rows come back to the inbox; either way the row leaves the view.
       const rowJunk = rowLabels(row).includes("SPAM");
       advance();
@@ -1062,30 +1291,39 @@ export function MessageList({
         removeLabelIds: rowJunk ? ["SPAM"] : ["INBOX"],
       });
     }),
-    "message.star": rowCommand(({ row, owner }) => {
+    "message.star": rowCommand(({ row, owner, focus }) => {
       if (!row) return false;
+      const target = focus ?? row;
       void listModifyMessage.mutateAsync({
         accountId: owner,
-        messageId: row.id,
-        addLabelIds: row.starred ? undefined : ["STARRED"],
-        removeLabelIds: row.starred ? ["STARRED"] : undefined,
+        messageId: target.id,
+        addLabelIds: target.starred ? undefined : ["STARRED"],
+        removeLabelIds: target.starred ? ["STARRED"] : undefined,
       });
     }),
-    "message.markUnread": rowCommand(({ row, owner }) => {
+    "message.markUnread": rowCommand(({ row, owner, focus }) => {
       if (checkedRef.current.size > 0) return bulkMarkUnread();
       if (!row) return false;
       void listModifyMessage.mutateAsync({
         accountId: owner,
-        messageId: row.id,
+        messageId: (focus ?? row).id,
         addLabelIds: ["UNREAD"],
       });
       // Gmail returns to the list on mark-unread; also keeps the open
       // reader from immediately re-marking it read.
       onDeselect();
     }),
-    "message.markRead": rowCommand(({ row, owner, threadId }) => {
+    "message.markRead": rowCommand(({ row, owner, threadId, focus }) => {
       if (checkedRef.current.size > 0) return bulkMarkRead();
       if (!row) return false;
+      if (focus) {
+        void listModifyMessage.mutateAsync({
+          accountId: owner,
+          messageId: focus.id,
+          removeLabelIds: ["UNREAD"],
+        });
+        return;
+      }
       void listModifyThread.mutateAsync({ accountId: owner, threadId, removeLabelIds: ["UNREAD"] });
     }),
     "message.label": rowCommand(({ row }) => {
@@ -1096,6 +1334,60 @@ export function MessageList({
       if (!row || !shortcutState.current.moveContextLabelId) return false;
       setLabelOverlay("move");
     }),
+    // A label's own shortcut (label.toggle:<name>): labels the selection, or
+    // takes the label off when every conversation already has it. Resolved by
+    // name so one binding works in every account.
+    "label.toggle": (_e, labelName) => {
+      const {
+        visibleMessages: rows,
+        selectedMessageId: selId,
+        accountId: fallbackAccount,
+        moveContextLabelId: viewLabelId,
+        allLabels: labelsByAccount,
+      } = shortcutState.current;
+      if (!labelName) return false;
+      const multi = checkedRef.current.size > 0;
+      const targets = multi
+        ? rows.filter((m) => checkedRef.current.has(m.id))
+        : rows.filter((m) => m.id === selId);
+      if (targets.length === 0) return false;
+      const labelFor = (m: GmailMessageSummary) =>
+        labelsByAccount
+          .find((a) => a.accountId === (m.accountId ?? fallbackAccount))
+          ?.labels.find((l) => l.type === "user" && l.name === labelName);
+      const labeled = targets.filter((m) => labelFor(m));
+      if (labeled.length === 0) {
+        toast.error(`No label named “${labelName}” in this account`);
+        return;
+      }
+      const remove = labeled.every((m) => rowLabels(m).includes(labelFor(m)!.id));
+      console.log("[MessageList:labelShortcut]", { labelName, remove, count: labeled.length });
+      // Taking the label you're browsing off drops the open row from the view.
+      const single = !multi ? labeled[0] : null;
+      if (single && remove && labelFor(single)!.id === viewLabelId) {
+        const idx = rows.findIndex((m) => m.id === single.id);
+        const next = pickAdvanceTarget(rows, idx);
+        if (next) onSelectMessage(next.id, next.accountId ?? fallbackAccount);
+        else onDeselect();
+      }
+      if (multi) beginUndoGroup(labeled.length);
+      for (const m of labeled) {
+        const id = labelFor(m)!.id;
+        void listModifyThread.mutateAsync({
+          accountId: m.accountId ?? fallbackAccount,
+          threadId: m.threadId || m.id,
+          addLabelIds: remove ? undefined : [id],
+          removeLabelIds: remove ? [id] : undefined,
+        });
+      }
+      if (multi) clearChecked();
+      const count = labeled.length === 1 ? "" : ` ${labeled.length} conversations`;
+      toast.success(
+        remove
+          ? `Removed “${labelName}”${count && ` from${count}`}`
+          : `Added “${labelName}”${count && ` to${count}`}`,
+      );
+    },
   });
 
   // Infinite scroll: pull the next page whenever the bottom comes within
@@ -1134,6 +1426,21 @@ export function MessageList({
   };
 
   const firstSearchPage = globalSearching ? gmailSearch.data?.pages[0] : undefined;
+
+  // Dragging a row onto a sidebar label: the whole multi-selection when the
+  // row is part of it, else just that row.
+  const handleRowDragStart = (e: React.DragEvent, message: GmailMessageSummary) => {
+    const rows = checked.has(message.id) ? checkedRows : [message];
+    console.log("[MessageList:dragStart]", { count: rows.length });
+    writeThreadDrag(e.dataTransfer, {
+      threads: rows.map((m) => ({
+        accountId: m.accountId ?? accountId,
+        threadId: m.threadId || m.id,
+      })),
+      fromLabelId: moveContextLabelId,
+    });
+    if (rows.length > 1) setCountDragImage(e.dataTransfer, rows.length);
+  };
 
   return (
     <div className="relative flex h-full min-w-0 flex-col">
@@ -1248,26 +1555,48 @@ export function MessageList({
         ) : (
           <>
             {visibleMessages.map((message) => (
-              <MessageRow
-                viewLabelIds={viewLabelIdsFor(message.accountId ?? accountId)}
-                key={`${message.accountId ?? accountId}:${message.id}`}
-                message={message}
-                selected={selectedMessageId === message.id}
-                checked={checked.has(message.id)}
-                onRowClick={(e) => handleRowClick(e, message)}
-                accountId={accountId}
-                resolveLabel={resolveLabel}
-                combinedMeta={resolveCombinedMeta(message, combined, accounts, resolveLabel)}
-                showInboxChip={!inInboxContext}
-                onDeleteForever={() => setConfirmDeleteRows([message])}
-                onDeselect={onDeselect}
-                onChatAssistant={() => {
-                  // Open this conversation in the reader so it becomes the
-                  // chat panel's attached context, then reveal the panel.
-                  onSelectMessage(message.id, message.accountId ?? accountId);
-                  onOpenChat?.();
-                }}
-              />
+              <Fragment key={`${message.accountId ?? accountId}:${message.id}`}>
+                <MessageRow
+                  viewLabelIds={viewLabelIdsFor(message.accountId ?? accountId)}
+                  message={message}
+                  selected={selectedMessageId === message.id && !focusedMessageId}
+                  checked={checked.has(message.id)}
+                  expanded={expanded.has(threadKey(message))}
+                  onToggleExpanded={() =>
+                    setThreadExpanded(message, !expanded.has(threadKey(message)))
+                  }
+                  onDragStart={(e) => handleRowDragStart(e, message)}
+                  onRowClick={(e) => handleRowClick(e, message)}
+                  accountId={accountId}
+                  resolveLabel={resolveLabel}
+                  combinedMeta={resolveCombinedMeta(message, combined, accounts, resolveLabel)}
+                  showInboxChip={!inInboxContext}
+                  onDeleteForever={() => setConfirmDeleteRows([message])}
+                  onDeselect={onDeselect}
+                  onChatAssistant={() => {
+                    // Open this conversation in the reader so it becomes the
+                    // chat panel's attached context, then reveal the panel.
+                    onSelectMessage(message.id, message.accountId ?? accountId);
+                    onOpenChat?.();
+                  }}
+                />
+                {threadMessagesOf(message).length > 0 ? (
+                  <div className="flex flex-col px-2 pb-1">
+                    {threadMessagesOf(message).map((m) => (
+                      <ThreadMessageRow
+                        key={m.id}
+                        message={m}
+                        selected={selectedMessageId === message.id && focusedMessageId === m.id}
+                        onClick={() => {
+                          clearChecked();
+                          console.log("[MessageList:selectThreadMessage]", { messageId: m.id });
+                          onSelectMessage(message.id, message.accountId ?? accountId, m.id);
+                        }}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+              </Fragment>
             ))}
             {isFetchingNextPage ? (
               <div className="flex items-center justify-center gap-1.5 py-3">

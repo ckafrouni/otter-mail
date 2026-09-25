@@ -578,6 +578,25 @@ export function useThread(accountId: string | null, threadId: string | null) {
   });
 }
 
+/** Several threads at once (the list's expanded conversations), each oldest first. */
+export function useThreads(
+  threads: { accountId: string; threadId: string }[],
+): Map<string, GmailMessageSummary[]> {
+  const results = useQueries({
+    queries: threads.map((t) => ({
+      queryKey: queryKeys.thread(t.accountId, t.threadId),
+      queryFn: () => gmailApi.getThread(t.accountId, t.threadId),
+      staleTime: STALE_TIME,
+    })),
+  });
+  const byKey = new Map<string, GmailMessageSummary[]>();
+  threads.forEach((t, i) => {
+    const data = results[i]?.data as GmailMessageSummary[] | undefined;
+    if (data) byKey.set(`${t.accountId}:${t.threadId}`, data);
+  });
+  return byKey;
+}
+
 // ---- Message Detail ----
 export function useMessage(accountId: string | null, messageId: string | null) {
   return useQuery<GmailMessageDetail>({

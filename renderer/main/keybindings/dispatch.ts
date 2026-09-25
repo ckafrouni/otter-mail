@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { KeybindingCommand } from "./commands";
+import { labelToggleName, type CommandHandlerKey, type KeybindingCommand } from "./commands";
 import { evaluateWhen, isModifierOnly, matchesStroke, type WhenContext } from "./keys";
 import { getKeybindings, type ResolvedKeybinding } from "./store";
 
@@ -13,10 +13,19 @@ import { getKeybindings, type ResolvedKeybinding } from "./store";
  * components publish with `useKeybindingContext` (settingsOpen, messageOpen).
  */
 
-/** Return `false` when the command doesn't apply right now. */
-export type CommandHandler = (event: KeyboardEvent) => boolean | void;
+/** Return `false` when the command doesn't apply right now. `arg` is the
+    label name for `label.toggle:<name>` rules. */
+export type CommandHandler = (event: KeyboardEvent, arg?: string) => boolean | void;
 
-const handlers = new Map<KeybindingCommand, { run: CommandHandler }[]>();
+const handlers = new Map<CommandHandlerKey, { run: CommandHandler }[]>();
+
+/** Where a rule's command is handled, plus its argument (label toggles). */
+function handlerFor(command: KeybindingCommand): { key: CommandHandlerKey; arg?: string } {
+  const labelName = labelToggleName(command);
+  if (labelName !== null) return { key: "label.toggle", arg: labelName };
+  return { key: command as CommandHandlerKey };
+}
+
 const published = new Map<string, boolean>();
 
 function isEditable(target: EventTarget | null): boolean {
@@ -39,10 +48,11 @@ export function keybindingContext(event?: KeyboardEvent): WhenContext {
 }
 
 function run(command: KeybindingCommand, event: KeyboardEvent): boolean {
-  const list = handlers.get(command);
+  const { key, arg } = handlerFor(command);
+  const list = handlers.get(key);
   if (!list?.length) return false;
   // The most recently mounted owner handles it.
-  return list[list.length - 1].run(event) !== false;
+  return list[list.length - 1].run(event, arg) !== false;
 }
 
 const SEQUENCE_TIMEOUT_MS = 1500;
@@ -82,7 +92,7 @@ function onKeyDown(event: KeyboardEvent): void {
   const starts = resolved.filter(
     (r) =>
       r.shortcut.length === 2 &&
-      handlers.get(r.rule.command)?.length &&
+      handlers.get(handlerFor(r.rule.command).key)?.length &&
       matchesStroke(event, r.shortcut[0]) &&
       evaluateWhen(r.whenAst, context),
   );
@@ -102,14 +112,14 @@ export function useKeybindingDispatcher(): void {
 }
 
 /** Registers what commands do while the calling component is mounted. */
-export function useCommandHandlers(map: Partial<Record<KeybindingCommand, CommandHandler>>): void {
+export function useCommandHandlers(map: Partial<Record<CommandHandlerKey, CommandHandler>>): void {
   const ref = useRef(map);
   ref.current = map;
-  const commands = (Object.keys(map) as KeybindingCommand[]).sort().join(",");
+  const commands = (Object.keys(map) as CommandHandlerKey[]).sort().join(",");
   useEffect(() => {
     const entries = (commands ? commands.split(",") : []).map((c) => {
-      const command = c as KeybindingCommand;
-      const entry = { run: (e: KeyboardEvent) => ref.current[command]?.(e) };
+      const command = c as CommandHandlerKey;
+      const entry = { run: (e: KeyboardEvent, arg?: string) => ref.current[command]?.(e, arg) };
       handlers.set(command, [...(handlers.get(command) ?? []), entry]);
       return [command, entry] as const;
     });

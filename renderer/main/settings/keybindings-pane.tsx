@@ -9,7 +9,7 @@ import {
   TriangleAlertIcon,
   XIcon,
 } from "lucide-react";
-import { toast } from "@glaze/core/components";
+import { Dialog, Text, toast } from "@glaze/core/components";
 import { Btn, HintTooltip, IconBtn, Kbd, cn, restoreFocusForKeyboardOnly } from "../gmail/ui";
 import {
   DropdownMenu,
@@ -20,9 +20,11 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../gmail/select";
 import {
   DEFAULT_KEYBINDINGS,
+  IN_MAIL,
   KEYBINDING_COMMANDS,
   WHEN_VARIABLES,
   commandLabel,
+  labelToggleCommand,
   type KeybindingCommand,
   type KeybindingRule,
 } from "../keybindings/commands";
@@ -44,6 +46,7 @@ import {
   useKeybindingsState,
 } from "../keybindings/store";
 import { useCommandHandlers } from "../keybindings/dispatch";
+import { useAccounts, useAllAccountLabels } from "../gmail/hooks";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settings-ui";
 
 /**
@@ -453,7 +456,95 @@ const COMMAND_OPTIONS = [...KEYBINDING_COMMANDS].sort((a, b) =>
   commandLabel(a).localeCompare(commandLabel(b)),
 );
 
+/** Every user label name across the connected accounts, sorted. */
+function useUserLabelNames(): string[] {
+  const accountIds = (useAccounts().data ?? []).map((a) => a.id);
+  const perAccount = useAllAccountLabels(accountIds);
+  const names = new Set<string>();
+  for (const { labels } of perAccount) {
+    for (const l of labels) if (l.type === "user") names.add(l.name);
+  }
+  return [...names].sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * Records the keyboard shortcut that toggles one label on the selected
+ * conversations (opened from a label's menu in the sidebar). It's a regular
+ * `label.toggle:<name>` keybinding, listed with the rest in Settings.
+ */
+export function LabelShortcutDialog({
+  labelName,
+  onClose,
+}: {
+  /** The label's full name; null keeps the dialog closed. */
+  labelName: string | null;
+  onClose: () => void;
+}) {
+  const { rules } = useKeybindingsState();
+  const command = labelName ? labelToggleCommand(labelName) : null;
+  const existing = rules.find((r) => r.command === command) ?? null;
+  const [key, setKey] = useState("");
+  const [recording, setRecording] = useState(false);
+  useEffect(() => {
+    setKey(existing?.key ?? "");
+    // A new binding starts recording right away.
+    setRecording(labelName !== null && !existing);
+    // Only when the dialog opens for a label.
+  }, [labelName]);
+  const rows = useMemo<Row[]>(
+    () => rules.map((rule, i) => ({ id: `${i}`, rule, source: "Custom" as const })),
+    [rules],
+  );
+  const ownId = existing ? `${rules.indexOf(existing)}` : "__new__";
+  const warning = key ? warningFor(rows, ownId, key, existing?.when ?? IN_MAIL) : null;
+  const segment = labelName?.split("/").pop() ?? "";
+
+  return (
+    <Dialog
+      open={labelName !== null}
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+      title={`Shortcut for “${segment}”`}
+      confirmLabel="Save"
+      confirmDisabled={!command || parseShortcut(key) === null}
+      onConfirm={() => {
+        if (!command) return;
+        onClose();
+        void save({ command, key, when: existing?.when ?? IN_MAIL }, existing ?? undefined);
+      }}
+      destructiveAction={
+        existing
+          ? {
+              label: "Remove",
+              onClick: () => {
+                onClose();
+                void removeKeybinding(existing);
+              },
+            }
+          : undefined
+      }
+    >
+      <div className="flex items-center justify-between gap-3">
+        <Text variant="small" color="secondary">
+          Adds or removes this label on the open or selected conversations.
+        </Text>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <WarningIcon message={warning} />
+          <KeyControl
+            value={key}
+            recording={recording}
+            onRecordingChange={setRecording}
+            onChange={setKey}
+          />
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
 function NewKeybindingRow({ rows, onDone }: { rows: Row[]; onDone: () => void }) {
+  const labelNames = useUserLabelNames();
   const [command, setCommand] = useState<KeybindingCommand | "">("");
   const [key, setKey] = useState("");
   const [when, setWhen] = useState("");
@@ -476,6 +567,11 @@ function NewKeybindingRow({ rows, onDone }: { rows: Row[]; onDone: () => void })
               {COMMAND_OPTIONS.map((c) => (
                 <SelectItem key={c} value={c}>
                   {commandLabel(c)}
+                </SelectItem>
+              ))}
+              {labelNames.map((name) => (
+                <SelectItem key={name} value={labelToggleCommand(name)}>
+                  {commandLabel(labelToggleCommand(name))}
                 </SelectItem>
               ))}
             </SelectContent>

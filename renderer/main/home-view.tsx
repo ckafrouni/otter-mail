@@ -171,6 +171,15 @@ export function HomeView() {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [selectedLabelId, setSelectedLabelId] = useState<string>("INBOX");
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
+  // One message picked from an expanded conversation in the list: the reader
+  // shows just that message. Tied to the row it came from, so it lapses as
+  // soon as the selection moves anywhere else.
+  const [focusedMessage, setFocusedMessage] = useState<{ rowId: string; id: string } | null>(null);
+  const focusedMessageId =
+    focusedMessage && focusedMessage.rowId === selectedMessageId ? focusedMessage.id : null;
+  useEffect(() => {
+    if (focusedMessage && focusedMessage.rowId !== selectedMessageId) setFocusedMessage(null);
+  }, [focusedMessage, selectedMessageId]);
   // Account that owns the currently-open message (differs per row in combined views).
   const [readerAccountId, setReaderAccountId] = useState<string | null>(null);
   // Open searches, each a sidebar row: the top Search row (all mail) and one
@@ -644,11 +653,12 @@ export function HomeView() {
     setReaderAccountId(null);
   };
 
-  const handleSelectMessage = (messageId: string, accountId: string) => {
-    console.log("[HomeView:selectMessage]", { messageId, accountId });
+  const handleSelectMessage = (messageId: string, accountId: string, focusId?: string) => {
+    console.log("[HomeView:selectMessage]", { messageId, accountId, focusId });
     setComposeOpen(false);
     setSelectedMessageId(messageId);
     setReaderAccountId(accountId);
+    setFocusedMessage(focusId ? { rowId: messageId, id: focusId } : null);
   };
 
   // ── Search mailbox ───────────────────────────────────────────────────────
@@ -1003,6 +1013,7 @@ export function HomeView() {
                   accountIds={accountIds}
                   accounts={accounts}
                   selectedMessageId={selectedMessageId}
+                  focusedMessageId={focusedMessageId}
                   onSelectMessage={handleSelectMessage}
                   onDeselect={() => {
                     setSelectedMessageId(null);
@@ -1060,7 +1071,9 @@ export function HomeView() {
                 <MessageReader
                   titleTrailing={titleTrailing}
                   accountId={readerAccount}
-                  messageId={selectedMessageId}
+                  messageId={focusedMessageId ?? selectedMessageId}
+                  single={focusedMessageId != null}
+                  onShowConversation={() => setFocusedMessage(null)}
                   onDeselect={() => {
                     setSelectedMessageId(null);
                     setReaderAccountId(null);
