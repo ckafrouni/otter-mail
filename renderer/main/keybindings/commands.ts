@@ -10,6 +10,9 @@
  * - messageOpen:   a conversation is open in the reader
  * - assistantOpen:  the assistant chat panel is showing
  * - modelPickerOpen: the composer's model picker is open
+ *
+ * Besides the closed set, `label.toggle:<label name>` rules toggle one of the
+ * user's labels (by full name, so one binding works in every account).
  */
 
 export const MAILBOX_JUMP_COMMANDS = [
@@ -62,6 +65,8 @@ export const KEYBINDING_COMMANDS = [
   ...MAILBOX_JUMP_COMMANDS,
   "list.next",
   "list.previous",
+  "list.expandThread",
+  "list.collapseThread",
   "message.close",
   "message.reply",
   "message.replyAll",
@@ -76,10 +81,30 @@ export const KEYBINDING_COMMANDS = [
   "message.move",
 ] as const;
 
-export type KeybindingCommand = (typeof KEYBINDING_COMMANDS)[number];
+export const LABEL_TOGGLE_PREFIX = "label.toggle:";
+
+export type LabelToggleCommand = `${typeof LABEL_TOGGLE_PREFIX}${string}`;
+
+export type KeybindingCommand = (typeof KEYBINDING_COMMANDS)[number] | LabelToggleCommand;
+
+/** What a handler registers under: a fixed command, or every label toggle. */
+export type CommandHandlerKey = (typeof KEYBINDING_COMMANDS)[number] | "label.toggle";
+
+export function labelToggleCommand(labelName: string): LabelToggleCommand {
+  return `${LABEL_TOGGLE_PREFIX}${labelName}`;
+}
+
+/** The label name of a `label.toggle:<name>` command, else null. */
+export function labelToggleName(command: string): string | null {
+  if (!command.startsWith(LABEL_TOGGLE_PREFIX)) return null;
+  const name = command.slice(LABEL_TOGGLE_PREFIX.length).trim();
+  return name || null;
+}
 
 export function isKeybindingCommand(value: string): value is KeybindingCommand {
-  return (KEYBINDING_COMMANDS as readonly string[]).includes(value);
+  return (
+    (KEYBINDING_COMMANDS as readonly string[]).includes(value) || labelToggleName(value) !== null
+  );
 }
 
 export type KeybindingRule = {
@@ -101,7 +126,7 @@ export const WHEN_VARIABLES = [
 ] as const;
 
 const OUTSIDE_FIELDS = "!editableFocus && !dialogOpen";
-const IN_MAIL = "!editableFocus && !dialogOpen && !settingsOpen";
+export const IN_MAIL = "!editableFocus && !dialogOpen && !settingsOpen";
 const ON_MESSAGE = `${IN_MAIL} && messageOpen`;
 
 export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
@@ -132,11 +157,13 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
     command: "modelPicker.nextProvider",
     when: "modelPickerOpen",
   },
-  ...MODEL_PICKER_JUMP_COMMANDS.map((command, i): KeybindingRule => ({
-    key: `mod+${i + 1}`,
-    command,
-    when: "modelPickerOpen",
-  })),
+  ...MODEL_PICKER_JUMP_COMMANDS.map(
+    (command, i): KeybindingRule => ({
+      key: `mod+${i + 1}`,
+      command,
+      when: "modelPickerOpen",
+    }),
+  ),
   { key: "/", command: "search.focus", when: OUTSIDE_FIELDS },
   { key: "mod+f", command: "search.focus", when: "!dialogOpen" },
   { key: "c", command: "compose.new", when: OUTSIDE_FIELDS },
@@ -148,15 +175,19 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "g s", command: "go.starred", when: IN_MAIL },
   { key: "g d", command: "go.drafts", when: IN_MAIL },
   { key: "g a", command: "go.allMail", when: IN_MAIL },
-  ...MAILBOX_JUMP_COMMANDS.map((command, i): KeybindingRule => ({
-    key: `mod+${i + 1}`,
-    command,
-    when: "!dialogOpen",
-  })),
+  ...MAILBOX_JUMP_COMMANDS.map(
+    (command, i): KeybindingRule => ({
+      key: `mod+${i + 1}`,
+      command,
+      when: "!dialogOpen",
+    }),
+  ),
   { key: "j", command: "list.next", when: IN_MAIL },
   { key: "arrowdown", command: "list.next", when: IN_MAIL },
   { key: "k", command: "list.previous", when: IN_MAIL },
   { key: "arrowup", command: "list.previous", when: IN_MAIL },
+  { key: "arrowright", command: "list.expandThread", when: IN_MAIL },
+  { key: "arrowleft", command: "list.collapseThread", when: IN_MAIL },
   { key: "u", command: "message.close", when: ON_MESSAGE },
   { key: "escape", command: "message.close", when: ON_MESSAGE },
   { key: "r", command: "message.reply", when: ON_MESSAGE },
@@ -183,7 +214,9 @@ function titleCaseSegment(segment: string): string {
     .join(" ");
 }
 
-/** "message.markUnread" → "Message: Mark Unread". */
+/** "message.markUnread" → "Message: Mark Unread"; label toggles → "Label: Clients/Acme". */
 export function commandLabel(command: string): string {
+  const labelName = labelToggleName(command);
+  if (labelName !== null) return `Label: ${labelName}`;
   return command.split(".").map(titleCaseSegment).join(": ");
 }

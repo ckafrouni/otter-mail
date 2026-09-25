@@ -2,6 +2,8 @@ import { createElement, useSyncExternalStore } from "react";
 import {
   DEFAULT_KEYBINDINGS,
   isKeybindingCommand,
+  labelToggleCommand,
+  labelToggleName,
   type KeybindingCommand,
   type KeybindingRule,
 } from "./commands";
@@ -182,6 +184,20 @@ export async function openKeybindingsFile(): Promise<void> {
   const file = await ipc<FileResult>("keybindings:read");
   if (file.rules === null) await write(state.rules);
   await ipc("keybindings:openFile");
+}
+
+/** Keeps label shortcuts on a renamed (or re-nested) label and the labels under it. */
+export async function renameLabelKeybindings(from: string, to: string): Promise<void> {
+  let changed = false;
+  const rules = state.rules.map((rule) => {
+    const name = labelToggleName(rule.command);
+    if (name === null || (name !== from && !name.startsWith(`${from}/`))) return rule;
+    changed = true;
+    return { ...rule, command: labelToggleCommand(to + name.slice(from.length)) };
+  });
+  if (!changed) return;
+  console.log("[Keybindings:renameLabel]", { from, to });
+  await write(rules);
 }
 
 export function isDefaultRule(rule: KeybindingRule): boolean {

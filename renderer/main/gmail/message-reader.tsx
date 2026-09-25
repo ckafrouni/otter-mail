@@ -107,6 +107,11 @@ import type {
 type MessageReaderProps = {
   accountId: string;
   messageId: string | null;
+  /** Show only this message, not its whole conversation (picked from an
+      expanded conversation in the list); actions then apply to it alone. */
+  single?: boolean;
+  /** Leaves `single` mode for the whole conversation. */
+  onShowConversation?: () => void;
   /** Clears the selection (drafts return to the list after send/discard). */
   onDeselect?: () => void;
   /** Toolbar archive/trash move on to the next conversation through this. */
@@ -1904,6 +1909,8 @@ function ReaderShell({ children, trailing }: { children: ReactNode; trailing?: R
 export function MessageReader({
   accountId,
   messageId,
+  single = false,
+  onShowConversation,
   onDeselect,
   onAdvance,
   onOpenChat,
@@ -1965,7 +1972,7 @@ export function MessageReader({
   const threadId = message?.threadId || null;
   const threadQuery = useThread(messageId ? accountId : null, threadId);
   const threadMessages = threadQuery.data ?? [];
-  const isThread = threadMessages.length > 1;
+  const isThread = !single && threadMessages.length > 1;
 
   const [inline, setInline] = useState<InlineMode | null>(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
@@ -2089,7 +2096,8 @@ export function MessageReader({
 
   // From here on the conversation is renderable — a thread of one message
   // falls back to the opened message itself.
-  const rows: GmailMessageSummary[] = threadMessages.length > 0 ? threadMessages : [message];
+  const rows: GmailMessageSummary[] =
+    !single && threadMessages.length > 0 ? threadMessages : [message];
   // Reply/forward target the last real message — never your own saved draft.
   const sentRows = rows.filter((m) => !m.labelIds.includes("DRAFT"));
   const lastRow = sentRows[sentRows.length - 1] ?? rows[rows.length - 1];
@@ -2524,6 +2532,22 @@ export function MessageReader({
         {compactTitle ? (
           <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-border/60 px-6 py-3">
             {renderTitle(true)}
+          </div>
+        ) : null}
+
+        {single && threadMessages.length > 1 ? (
+          <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-5 py-1.5">
+            <span className="text-xs text-muted-foreground">
+              One message of {threadMessages.length} in this conversation
+            </span>
+            <span className="flex-1" />
+            <button
+              type="button"
+              onClick={onShowConversation}
+              className={buttonClass("ghost-muted", "xs")}
+            >
+              Show conversation
+            </button>
           </div>
         ) : null}
 

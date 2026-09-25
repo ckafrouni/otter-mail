@@ -41,12 +41,24 @@ import {
   useCreateLabel,
   useUpdateLabel,
   useDeleteLabel,
+  useModifyThread,
   useViewUnreadCounts,
 } from "./hooks";
 import type { GmailLabel, MailView } from "./types";
 import { COMBINED_ACCOUNT_ID, useMailViews } from "./custom-views";
 import { ALL_MAIL_LABEL_ID } from "./label-names";
 import { buildLabelTree, type LabelTreeNode } from "./label-tree";
+import {
+  isMoveSourceLabel,
+  isThreadDrag,
+  readThreadDrag,
+  type ThreadDragPayload,
+} from "./thread-drag";
+import { beginUndoGroup } from "./undo";
+import { labelToggleCommand } from "../keybindings/commands";
+import { renameLabelKeybindings, useKeybindingsState } from "../keybindings/store";
+import { formatShortcut, parseShortcut } from "../keybindings/keys";
+import { LabelShortcutDialog } from "../settings/keybindings-pane";
 import { UnreadPill, HintTooltip, IconBtn } from "./ui";
 import { MailboxSwitcher, WindowTitle } from "./top-bar";
 
@@ -384,6 +396,11 @@ type LabelActions = {
   onRecolor: (label: GmailLabel) => void;
   onDelete: (label: GmailLabel) => void;
   onMove: (source: LabelDragPayload, targetParentName: string | null) => void;
+  /** Conversations dropped from the message list; `keep` = ⌥ held (label only). */
+  onDropThreads: (payload: ThreadDragPayload, label: GmailLabel, keep: boolean) => void;
+  onEditShortcut: (label: GmailLabel) => void;
+  /** The label's own toggle shortcut, formatted (⌘⇧1), if it has one. */
+  shortcutFor: (label: GmailLabel) => string | undefined;
 };
 
 function LabelNode({
@@ -407,6 +424,8 @@ function LabelNode({
 
   // Drag to nest: rows are both sources and targets. Drop payloads aren't
   // readable during dragover, so self/descendant checks happen on drop.
+  // Conversations dragged from the list drop here too: moved to the label,
+  // or only labelled with ⌥ held (Finder's copy modifier).
   const dragProps: RowDragProps | undefined = label
     ? {
         draggable: true,
@@ -418,6 +437,12 @@ function LabelNode({
           e.dataTransfer.effectAllowed = "move";
         },
         onDragOver: (e) => {
+          if (isThreadDrag(e.dataTransfer)) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = e.altKey ? "copy" : "move";
+            setDropActive(true);
+            return;
+          }
           if (!e.dataTransfer.types.includes(LABEL_DRAG_MIME)) return;
           e.preventDefault();
           e.dataTransfer.dropEffect = "move";
@@ -426,6 +451,12 @@ function LabelNode({
         onDragLeave: () => setDropActive(false),
         onDrop: (e) => {
           setDropActive(false);
+          const threads = readThreadDrag(e.dataTransfer);
+          if (threads) {
+            e.preventDefault();
+            actions.onDropThreads(threads, label, e.altKey);
+            return;
+          }
           const raw = e.dataTransfer.getData(LABEL_DRAG_MIME);
           if (!raw) return;
           e.preventDefault();
@@ -484,6 +515,13 @@ function LabelNode({
             </ContextMenuItem>
             <ContextMenuItem icon="paintpalette" onSelect={() => actions.onRecolor(label)}>
               Change color…
+            </ContextMenuItem>
+            <ContextMenuItem
+              icon="keyboard"
+              accelerator={actions.shortcutFor(label)}
+              onSelect={() => actions.onEditShortcut(label)}
+            >
+              Keyboard shortcut…
             </ContextMenuItem>
             <ContextMenuSeparator />
             <ContextMenuItem icon="trash" color="red" onSelect={() => actions.onDelete(label)}>
@@ -569,6 +607,9 @@ export function AccountsSidebar({
   const [colorTarget, setColorTarget] = useState<GmailLabel | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<GmailLabel | null>(null);
   const [rootDropActive, setRootDropActive] = useState(false);
+  const [shortcutTarget, setShortcutTarget] = useState<string | null>(null);
+  const modifyThread = useModifyThread();
+  const { rules: keybindingRules } = useKeybindingsState();
 
   const accounts = accountsQuery.data ?? [];
   const labels: GmailLabel[] = labelsQuery.data ?? [];
@@ -633,6 +674,7 @@ export function AccountsSidebar({
     console.log("[AccountsSidebar:moveLabel]", { from: source.name, to: newName });
     updateLabel
       .mutateAsync({ accountId: selectedAccountId, labelId: source.id, name: newName })
+      .then(() => renameLabelKeybindings(source.name, newName))
       .catch(() => toast.error("Could not move the label"));
   };
 
@@ -644,6 +686,7 @@ export function AccountsSidebar({
     console.log("[AccountsSidebar:renameLabel]", { from: target.name, to: name });
     updateLabel
       .mutateAsync({ accountId: selectedAccountId, labelId: target.id, name })
+      .then(() => renameLabelKeybindings(target.name, name))
       .catch(() => toast.error("Could not rename the label"));
   };
 
@@ -671,6 +714,37 @@ export function AccountsSidebar({
       .catch(() => toast.error("Could not delete the label"));
   };
 
+  // Labels here belong to the open account, so only its conversations can
+  // take them (a search may list other accounts' mail too).
+  const handleDropThreads = (payload: ThreadDragPayload, label: GmailLabel, keep: boolean) => {
+    const threads = payload.threads.filter((t) => t.accountId === selectedAccountId);
+    if (threads.length === 0) {
+      toast.error("Those conversations belong to another account");
+      return;
+    }
+    const removeId =
+      !keep && payload.fromLabelId && isMoveSourceLabel(payload.fromLabelId, label.id)
+        ? payload.fromLabelId
+        : null;
+    console.log("[AccountsSidebar:dropThreads]", {
+      label: label.name,
+      count: threads.length,
+      from: removeId,
+    });
+    beginUndoGroup(threads.length);
+    for (const t of threads) {
+      void modifyThread.mutateAsync({
+        accountId: t.accountId,
+        threadId: t.threadId,
+        addLabelIds: [label.id],
+        removeLabelIds: removeId ? [removeId] : undefined,
+      });
+    }
+    const what = threads.length === 1 ? "1 conversation" : `${threads.length} conversations`;
+    const name = label.name.split("/").pop() ?? label.name;
+    toast.success(removeId ? `Moved ${what} to “${name}”` : `Labeled ${what} “${name}”`);
+  };
+
   const labelActions: LabelActions = {
     onRename: (label) => {
       setRenameValue(label.name);
@@ -679,6 +753,13 @@ export function AccountsSidebar({
     onRecolor: (label) => setColorTarget(label),
     onDelete: (label) => setDeleteTarget(label),
     onMove: handleMoveLabel,
+    onDropThreads: handleDropThreads,
+    onEditShortcut: (label) => setShortcutTarget(label.name),
+    shortcutFor: (label) => {
+      const rule = keybindingRules.find((r) => r.command === labelToggleCommand(label.name));
+      const shortcut = rule ? parseShortcut(rule.key) : null;
+      return shortcut ? formatShortcut(shortcut) : undefined;
+    },
   };
 
   // Settings live in this window: open the view editor directly rather than
@@ -957,6 +1038,8 @@ export function AccountsSidebar({
             and any nested labels are kept.
           </Text>
         </Dialog>
+
+        <LabelShortcutDialog labelName={shortcutTarget} onClose={() => setShortcutTarget(null)} />
       </div>
     </SearchRowsContext.Provider>
   );
