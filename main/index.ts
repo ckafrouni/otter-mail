@@ -262,6 +262,17 @@ async function setupApplicationMenu() {
     {
       label: "Mailbox",
       submenu: [
+        // ⌘R refreshes mail like the sidebar's Sync button (with its spinner)
+        // instead of reloading the page; see the View menu below.
+        {
+          label: "Sync Now",
+          icon: "arrow.clockwise",
+          accelerator: "Command+R",
+          click: () => {
+            logger.info("main", "Menu: Sync Now");
+            ipcMain.broadcast("mail:syncNow");
+          },
+        },
         {
           label: "Synchronize All Mailboxes",
           icon: "arrow.triangle.2.circlepath",
@@ -275,6 +286,15 @@ async function setupApplicationMenu() {
     },
     { role: "windowMenu" },
   ]);
+  // The stock View menu binds ⌘R to Reload: drop that item so ⌘R reaches Sync
+  // Now. Force Reload (⇧⌘R) stays for when the page really needs reloading.
+  const reload = menu.items
+    .find((item) => item.role === "viewMenu")
+    ?.submenu?.items.find((item) => item.role === "reload");
+  if (reload) {
+    reload.accelerator = undefined;
+    reload.visible = false;
+  }
   Menu.setApplicationMenu(menu);
   logger.info("main", "Application menu configured with Settings");
 }
