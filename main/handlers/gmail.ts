@@ -23,6 +23,7 @@ import {
   untrashThread,
   untrashMessage,
   batchDeleteMessages,
+  listMessageIdsPage,
   saveDraft,
   deleteDraft,
   sendMessage,
@@ -768,6 +769,41 @@ export function registerGmailHandlers(): void {
       return { ok: true as const };
     } catch (err) {
       console.log("[gmail:deleteThreadsForever] error", { error: String(err) });
+      throw err;
+    }
+  });
+
+  // gmail:emptyFolder — Empty Junk / Empty Trash: permanently deletes every
+  // message in SPAM or TRASH, from Gmail's own listing (the cache may not have
+  // them all) plus anything only cached. Big folders outlast the IPC timeout,
+  // so it reports back as a task.
+  ipcMain.handle("gmail:emptyFolder", async (_event, params: unknown) => {
+    const p = params as Record<string, unknown>;
+    console.log("[gmail:emptyFolder]", { accountId: p?.accountId, labelId: p?.labelId });
+    try {
+      const accountId = assertString(p?.accountId, "accountId");
+      const labelId = assertString(p?.labelId, "labelId");
+      if (labelId !== "SPAM" && labelId !== "TRASH") {
+        throw new Error("Only Junk and Trash can be emptied.");
+      }
+      return await runAsTask(asString(p?.taskId), async () => {
+        const ids = new Set(mailStore.getMessageIdsForLabel(accountId, labelId));
+        let pageToken: string | undefined;
+        do {
+          const page = await listMessageIdsPage(accountId, { labelIds: [labelId], pageToken });
+          for (const id of page.ids) ids.add(id);
+          pageToken = page.nextPageToken;
+        } while (pageToken);
+        const messageIds = [...ids];
+        if (messageIds.length > 0) await batchDeleteMessages(accountId, messageIds);
+        for (const id of messageIds) mailStore.deleteMessage(accountId, id);
+        mailStore.recountLabels(accountId, [labelId]);
+        updateDockBadge();
+        console.log("[gmail:emptyFolder] done", { labelId, deleted: messageIds.length });
+        return { deleted: messageIds.length };
+      });
+    } catch (err) {
+      console.log("[gmail:emptyFolder] error", { error: String(err) });
       throw err;
     }
   });

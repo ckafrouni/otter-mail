@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { toast } from "@glaze/core/components";
+import { toast } from "./toast";
 import { CopyIcon, SearchIcon, SparklesIcon, SquarePenIcon } from "lucide-react";
 import { SenderAvatar } from "./sender-avatar";
 

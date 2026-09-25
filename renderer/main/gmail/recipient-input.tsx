@@ -10,7 +10,7 @@ import { useDebouncedValue, useSuggestContacts } from "./hooks";
 import { splitAddressList, parseAddressEntry, formatAddressEntry } from "./address";
 import { SenderAvatar } from "./sender-avatar";
 import { cn } from "./ui";
-import { toast } from "@glaze/core/components";
+import { toast } from "./toast";
 import {
   ContextMenu,
   ContextMenuContent,

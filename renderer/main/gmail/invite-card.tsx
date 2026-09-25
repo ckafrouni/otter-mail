@@ -7,7 +7,7 @@
 
 import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "@glaze/core/components";
+import { toast } from "./toast";
 import { CalendarIcon, CheckIcon, ExternalLinkIcon, MapPinIcon } from "lucide-react";
 import { gmailApi, type CalendarInvite, type RsvpResponse } from "./api";
 import { HintTooltip, IconBtn, cn } from "./ui";

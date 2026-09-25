@@ -8,7 +8,9 @@ import {
   type PointerEvent,
   type ReactNode,
 } from "react";
-import { Dialog, Text, toast } from "@glaze/core/components";
+import { Dialog, Text } from "@glaze/core/components";
+import { sendWithUndo } from "./undo-send";
+import { toast } from "./toast";
 import {
   ArchiveIcon,
   ArchiveRestoreIcon,
@@ -1736,25 +1738,26 @@ function InlineComposer({
     const body = `${plain}${quoted}`;
     const bodyHtml = `<div dir="auto">${html}${textToHtml(quoted)}</div>`;
     console.log("[MessageReader:inlineSend]", { mode, threadId });
+    const payload = {
+      accountId,
+      to: normalizeAddressList(to),
+      cc: normalizeAddressList(cc) || undefined,
+      bcc: normalizeAddressList(bcc) || undefined,
+      subject,
+      body,
+      bodyHtml,
+      attachments: attachments && attachments.length > 0 ? attachments : undefined,
+      ...(mode === "forward" ? {} : { threadId, replyToMessageId: lastMessage.id }),
+    };
     // Optimistic: close now — the unmount flush keeps a draft backup, so a
-    // failed send degrades to "still in Drafts" instead of lost work.
+    // failed (or undone) send degrades to "still in Drafts" instead of lost work.
     onClose();
-    sendMessage
-      .mutateAsync({
-        accountId,
-        to: normalizeAddressList(to),
-        cc: normalizeAddressList(cc) || undefined,
-        bcc: normalizeAddressList(bcc) || undefined,
-        subject,
-        body,
-        bodyHtml,
-        attachments: attachments && attachments.length > 0 ? attachments : undefined,
-        ...(mode === "forward" ? {} : { threadId, replyToMessageId: lastMessage.id }),
-      })
-      .then(
-        () => void draft.finalize({ deleteDraft: true }),
-        () => toast.error("Couldn't send — kept in Drafts"),
-      );
+    sendWithUndo({
+      subject,
+      send: () => sendMessage.mutateAsync(payload),
+      onSent: () => draft.finalize({ deleteDraft: true }),
+      savedDraft: draft.savedDraft,
+    });
   };
 
   const { isDragging, dropProps } = useComposeFileDrop((files) => {

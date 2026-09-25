@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { toast } from "@glaze/core/components";
+import { sendWithUndo } from "./undo-send";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "./menu";
 import { ChevronDownIcon, XIcon } from "lucide-react";
 import { useSendMessage } from "./hooks";
@@ -191,27 +191,25 @@ export function NewMessageView({
   const handleSend = () => {
     if (!canSend || !fromAccount) return;
     console.log("[NewMessageView:send]", { from: fromAccount.id, to });
+    const payload = {
+      accountId: fromAccount.id,
+      to: normalizeAddressList(to),
+      cc: normalizeAddressList(cc) || undefined,
+      bcc: normalizeAddressList(bcc) || undefined,
+      subject: subject.trim() || "(no subject)",
+      body: editorRef.current?.getText() ?? text,
+      bodyHtml: `<div dir="auto">${editorRef.current?.getHTML() ?? textToHtml(text)}</div>`,
+      attachments: attachments.length > 0 ? attachments : undefined,
+    };
     // Optimistic: close now; the unmount flush keeps a draft backup, so a
-    // failed send degrades to "still in Drafts" instead of lost work.
+    // failed (or undone) send degrades to "still in Drafts" instead of lost work.
     onClose();
-    sendMessage
-      .mutateAsync({
-        accountId: fromAccount.id,
-        to: normalizeAddressList(to),
-        cc: normalizeAddressList(cc) || undefined,
-        bcc: normalizeAddressList(bcc) || undefined,
-        subject: subject.trim() || "(no subject)",
-        body: editorRef.current?.getText() ?? text,
-        bodyHtml: `<div dir="auto">${editorRef.current?.getHTML() ?? textToHtml(text)}</div>`,
-        attachments: attachments.length > 0 ? attachments : undefined,
-      })
-      .then(
-        async () => {
-          await draft.finalize({ deleteDraft: true });
-          toast.success("Sent");
-        },
-        () => toast.error("Couldn't send — kept in Drafts"),
-      );
+    sendWithUndo({
+      subject: payload.subject,
+      send: () => sendMessage.mutateAsync(payload),
+      onSent: () => draft.finalize({ deleteDraft: true }),
+      savedDraft: draft.savedDraft,
+    });
   };
 
   const discard = () => {

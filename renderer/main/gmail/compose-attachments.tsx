@@ -1,5 +1,5 @@
 import { useRef, useState, type DragEvent } from "react";
-import { toast } from "@glaze/core/components";
+import { toast } from "./toast";
 import { PaperclipIcon, XIcon } from "lucide-react";
 import { gmailApi } from "./api";
 import type { ComposeAttachment } from "./types";

@@ -4,7 +4,8 @@ import { RouterProvider } from "@tanstack/react-router";
 import { router, queryClient } from "./router";
 import "../styles.css";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { TooltipProvider, Toaster } from "@glaze/core/components";
+import { TooltipProvider } from "@glaze/core/components";
+import { ToastProvider } from "./gmail/toast";
 import { initLogging } from "@glaze/core/utils";
 
 declare const __APP_DISPLAY_NAME__: string | undefined;
@@ -25,9 +26,10 @@ root.render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <RouterProvider router={router} />
+        <ToastProvider>
+          <RouterProvider router={router} />
+        </ToastProvider>
       </TooltipProvider>
-      <Toaster />
     </QueryClientProvider>
   </React.StrictMode>,
 );

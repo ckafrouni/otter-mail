@@ -1,7 +1,8 @@
 import type React from "react";
 import type { ReactNode } from "react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { Dialog, Text, toast } from "@glaze/core/components";
+import { Dialog, Text } from "@glaze/core/components";
+import { toast } from "./toast";
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -1386,12 +1387,8 @@ export function MessageList({
           removeLabelIds: remove.length > 0 ? remove : undefined,
         });
       }
+      // The action toast ("Moved to “X”", with Undo) comes from the undo registry.
       if (multi) clearChecked();
-      toast.success(
-        moves.length === 1
-          ? `Moved to “${labelName}”`
-          : `Moved ${moves.length} conversations to “${labelName}”`,
-      );
     },
   });
 

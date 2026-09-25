@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { toast } from "@glaze/core/components";
+import { sendWithUndo } from "./undo-send";
+import { toast } from "./toast";
 import { useQuery } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { useGetAttachment, usePruneThreadRows, useSendMessage } from "./hooks";
@@ -229,25 +230,23 @@ export function DraftEditor({
     // failed send restores the row (the draft still exists server-side).
     pruneThreadRows(accountId, detail.threadId || detail.id);
     onDone();
-    sendMessage
-      .mutateAsync({
-        accountId,
-        to: normalizeAddressList(to),
-        cc: normalizeAddressList(cc) || undefined,
-        bcc: normalizeAddressList(bcc) || undefined,
-        subject: subject.trim() || "(no subject)",
-        body: plain,
-        bodyHtml: html,
-        attachments: attachments && attachments.length > 0 ? attachments : undefined,
-        ...(last ? { threadId: detail.threadId, replyToMessageId: last.id } : {}),
-      })
-      .then(
-        async () => {
-          await draft.finalize({ deleteDraft: true });
-          toast.success("Sent");
-        },
-        () => toast.error("Couldn't send — kept in Drafts"),
-      );
+    const payload = {
+      accountId,
+      to: normalizeAddressList(to),
+      cc: normalizeAddressList(cc) || undefined,
+      bcc: normalizeAddressList(bcc) || undefined,
+      subject: subject.trim() || "(no subject)",
+      body: plain,
+      bodyHtml: html,
+      attachments: attachments && attachments.length > 0 ? attachments : undefined,
+      ...(last ? { threadId: detail.threadId, replyToMessageId: last.id } : {}),
+    };
+    sendWithUndo({
+      subject: payload.subject,
+      send: () => sendMessage.mutateAsync(payload),
+      onSent: () => draft.finalize({ deleteDraft: true }),
+      savedDraft: draft.savedDraft,
+    });
   };
 
   const handleDiscard = () => {

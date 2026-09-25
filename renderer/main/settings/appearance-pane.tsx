@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { toast } from "@glaze/core/components";
+import { toast } from "../gmail/toast";
 import type { NativeThemeInfo } from "@glaze/core/ipc";
 import { MoonIcon, SunIcon } from "lucide-react";
 import { cn, HintTooltip } from "../gmail/ui";

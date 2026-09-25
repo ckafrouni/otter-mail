@@ -7,7 +7,8 @@ import {
   type DragEvent as ReactDragEvent,
   type ReactNode,
 } from "react";
-import { Dialog, Field, Input, Text, toast } from "@glaze/core/components";
+import { Dialog, Field, Input, Text } from "@glaze/core/components";
+import { toast } from "./toast";
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -42,6 +43,7 @@ import {
   useUpdateLabel,
   useDeleteLabel,
   useModifyThread,
+  useEmptyFolder,
   useViewUnreadCounts,
 } from "./hooks";
 import type { GmailLabel, MailView } from "./types";
@@ -608,6 +610,12 @@ export function AccountsSidebar({
   const [deleteTarget, setDeleteTarget] = useState<GmailLabel | null>(null);
   const [rootDropActive, setRootDropActive] = useState(false);
   const [shortcutTarget, setShortcutTarget] = useState<string | null>(null);
+  // Empty Junk / Empty Trash, waiting for its confirmation.
+  const [emptyTarget, setEmptyTarget] = useState<{
+    labelId: "SPAM" | "TRASH";
+    accountIds: string[];
+  } | null>(null);
+  const emptyFolder = useEmptyFolder();
   const modifyThread = useModifyThread();
   const { rules: keybindingRules } = useKeybindingsState();
 
@@ -740,9 +748,8 @@ export function AccountsSidebar({
         removeLabelIds: removeId ? [removeId] : undefined,
       });
     }
-    const what = threads.length === 1 ? "1 conversation" : `${threads.length} conversations`;
-    const name = label.name.split("/").pop() ?? label.name;
-    toast.success(removeId ? `Moved ${what} to “${name}”` : `Labeled ${what} “${name}”`);
+    // The action toast ("Moved 3 conversations to “X”", with Undo) comes from
+    // the undo registry.
   };
 
   const labelActions: LabelActions = {
@@ -767,6 +774,32 @@ export function AccountsSidebar({
   const openViewEditor = (viewId: string) => {
     onEditView(viewId, isCombined ? COMBINED_ACCOUNT_ID : selectedAccountId);
   };
+
+  /** Right-click on Junk/Trash (a mailbox's own, or Combined's) → Empty…. */
+  const withEmptyMenu = (row: ReactNode, labelId: string, accountIds: string[]) => {
+    if ((labelId !== "SPAM" && labelId !== "TRASH") || accountIds.length === 0) return row;
+    return (
+      <ContextMenu>
+        <ContextMenuTrigger>{row}</ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem
+            icon="trash"
+            color="red"
+            onSelect={() => setEmptyTarget({ labelId, accountIds })}
+          >
+            {labelId === "SPAM" ? "Empty Junk…" : "Empty Trash…"}
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+    );
+  };
+  /** The folder a built-in Combined view shows, and the accounts in it. */
+  const viewFolder = (view: MailView): { labelId: string; accountIds: string[] } => ({
+    labelId: view.kind === "junk" ? "SPAM" : view.kind === "trash" ? "TRASH" : "",
+    accountIds: view.rules
+      ? [...new Set(view.rules.map((r) => r.accountId))]
+      : accounts.map((a) => a.id),
+  });
 
   const viewRow = (view: MailView) => (
     <Fragment key={view.id}>
@@ -836,16 +869,20 @@ export function AccountsSidebar({
                 .filter((v) => v.kind !== "custom")
                 .map((view) => (
                   <Fragment key={view.id}>
-                    <SkRow
-                      icon={viewIcon(view)}
-                      title={view.name}
-                      selected={selectedLabelId === view.id}
-                      badge={viewUnreadCounts[view.id] ?? 0}
-                      onClick={() => {
-                        console.log("[AccountsSidebar:selectView]", { viewId: view.id });
-                        onSelectLabel(view.id);
-                      }}
-                    />
+                    {withEmptyMenu(
+                      <SkRow
+                        icon={viewIcon(view)}
+                        title={view.name}
+                        selected={selectedLabelId === view.id}
+                        badge={viewUnreadCounts[view.id] ?? 0}
+                        onClick={() => {
+                          console.log("[AccountsSidebar:selectView]", { viewId: view.id });
+                          onSelectLabel(view.id);
+                        }}
+                      />,
+                      viewFolder(view).labelId,
+                      viewFolder(view).accountIds,
+                    )}
                     <SearchRows parent={view.id} />
                   </Fragment>
                 ))}
@@ -873,16 +910,20 @@ export function AccountsSidebar({
                 const isDrafts = id === "DRAFT";
                 return (
                   <Fragment key={id}>
-                    <SkRow
-                      icon={meta.icon}
-                      title={meta.name}
-                      selected={selectedLabelId === id}
-                      badge={isDrafts ? total : unread}
-                      onClick={() => {
-                        console.log("[AccountsSidebar:selectLabel]", { labelId: id });
-                        onSelectLabel(id);
-                      }}
-                    />
+                    {withEmptyMenu(
+                      <SkRow
+                        icon={meta.icon}
+                        title={meta.name}
+                        selected={selectedLabelId === id}
+                        badge={isDrafts ? total : unread}
+                        onClick={() => {
+                          console.log("[AccountsSidebar:selectLabel]", { labelId: id });
+                          onSelectLabel(id);
+                        }}
+                      />,
+                      id,
+                      selectedAccountId ? [selectedAccountId] : [],
+                    )}
                     <SearchRows parent={id} />
                   </Fragment>
                 );
@@ -1040,6 +1081,30 @@ export function AccountsSidebar({
         </Dialog>
 
         <LabelShortcutDialog labelName={shortcutTarget} onClose={() => setShortcutTarget(null)} />
+
+        <Dialog
+          open={emptyTarget != null}
+          onOpenChange={(o) => {
+            if (!o) setEmptyTarget(null);
+          }}
+          title={emptyTarget?.labelId === "TRASH" ? "Empty Trash" : "Empty Junk"}
+          confirmLabel={emptyTarget?.labelId === "TRASH" ? "Empty Trash" : "Empty Junk"}
+          confirmVariant="destructive"
+          onConfirm={() => {
+            const target = emptyTarget;
+            setEmptyTarget(null);
+            if (target) emptyFolder.mutate(target);
+          }}
+        >
+          <Text variant="small">
+            Permanently delete every message in{" "}
+            {emptyTarget?.labelId === "TRASH" ? "Trash" : "Junk"}
+            {emptyTarget && emptyTarget.accountIds.length > 1
+              ? ` for all ${emptyTarget.accountIds.length} accounts`
+              : ""}
+            ? This can't be undone.
+          </Text>
+        </Dialog>
       </div>
     </SearchRowsContext.Provider>
   );
