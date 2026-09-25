@@ -11,6 +11,7 @@
 import { logger } from "@glaze/core/backend";
 import { getHermesKey } from "./settings.js";
 import type {
+  ApprovalDecision,
   ChatProvider,
   ChatSession,
   ChatSessionMessage,
@@ -73,12 +74,22 @@ type RawModelOptions = {
     is_current?: boolean;
     authenticated?: boolean;
     models?: (string | { id?: string; slug?: string; name?: string })[];
-    capabilities?: Record<string, { fast?: boolean; reasoning?: boolean; can_disable_reasoning?: boolean }>;
+    capabilities?: Record<
+      string,
+      { fast?: boolean; reasoning?: boolean; can_disable_reasoning?: boolean }
+    >;
   }[];
-  capabilities?: Record<string, { fast?: boolean; reasoning?: boolean; can_disable_reasoning?: boolean }>;
+  capabilities?: Record<
+    string,
+    { fast?: boolean; reasoning?: boolean; can_disable_reasoning?: boolean }
+  >;
 };
 
-type Capabilities = { fast?: boolean; reasoning?: boolean; can_disable_reasoning?: boolean };
+type Capabilities = {
+  fast?: boolean;
+  reasoning?: boolean;
+  can_disable_reasoning?: boolean;
+};
 
 /** Reasoning / Service Tier for one model, from the gateway's capability flags. */
 function hermesModelOptions(caps: Capabilities | undefined): ProviderModelOption[] {
@@ -100,7 +111,11 @@ function hermesModelOptions(caps: Capabilities | undefined): ProviderModelOption
       label: "Service Tier",
       choices: [
         { id: "default", label: "Standard", isDefault: true },
-        { id: "priority", label: "Fast", description: "Priority processing, increased usage" },
+        {
+          id: "priority",
+          label: "Fast",
+          description: "Priority processing, increased usage",
+        },
       ],
     });
   }
@@ -144,7 +159,9 @@ async function fetchHermesCatalog(baseUrl: string, key: string): Promise<Provide
     }
     return models;
   } catch (error) {
-    logger.info("assistant", "hermes model options failed", { error: String(error) });
+    logger.info("assistant", "hermes model options failed", {
+      error: String(error),
+    });
     return [];
   }
 }
@@ -262,7 +279,10 @@ async function createSession(ready: Ready, title: string | undefined): Promise<s
     fetch(`${ready.root}/api/sessions`, {
       method: "POST",
       headers: authHeaders(ready.key, true),
-      body: JSON.stringify({ source: "api_server", ...(t ? { title: t } : {}) }),
+      body: JSON.stringify({
+        source: "api_server",
+        ...(t ? { title: t } : {}),
+      }),
     });
   let response = await attempt(title);
   // Titles are unique server-side; a clash must not block a new chat.
@@ -357,7 +377,11 @@ async function streamSessionTurn(ctx: TurnContext & { sessionId: string }): Prom
       status: response.status,
       message: await readError(response),
     });
-    return emit({ requestId, type: "error", message: `http_${response.status}` });
+    return emit({
+      requestId,
+      type: "error",
+      message: `http_${response.status}`,
+    });
   }
 
   let terminal: "completed" | "failed" | "cancelled" | null = null;
@@ -369,6 +393,8 @@ async function streamSessionTurn(ctx: TurnContext & { sessionId: string }): Prom
       const payload = parseJson(json);
       if (!payload) return;
       const event = name ?? String(payload.type ?? payload.event ?? "");
+      // Every event names its run: steer / stop / approvals address it.
+      if (payload.run_id) runs.set(requestId, { runId: String(payload.run_id), ready });
       switch (event) {
         case "assistant.delta": {
           const text = String(payload.delta ?? payload.text ?? "");
@@ -383,7 +409,11 @@ async function streamSessionTurn(ctx: TurnContext & { sessionId: string }): Prom
           if (payload.already_streamed) break;
           const text = String(payload.text ?? "").trim();
           if (text)
-            emit({ requestId, type: "delta", text: `${streamedText ? "\n\n" : ""}${text}\n\n` });
+            emit({
+              requestId,
+              type: "delta",
+              text: `${streamedText ? "\n\n" : ""}${text}\n\n`,
+            });
           streamedText = true;
           break;
         }
@@ -397,7 +427,11 @@ async function streamSessionTurn(ctx: TurnContext & { sessionId: string }): Prom
           break;
         }
         case "tool.started":
-          emit({ requestId, type: "tool", name: String(payload.tool_name ?? payload.tool ?? "tool") });
+          emit({
+            requestId,
+            type: "tool",
+            name: String(payload.tool_name ?? payload.tool ?? "tool"),
+          });
           break;
         case "tool.completed":
         case "tool.failed": {
@@ -409,13 +443,51 @@ async function streamSessionTurn(ctx: TurnContext & { sessionId: string }): Prom
           });
           break;
         }
+        case "approval.request": {
+          // A dangerous command waits for the user (the gateway's approvals.mode);
+          // answered via POST /v1/runs/{run_id}/approval.
+          const approvalId = String(payload.request_id ?? "");
+          const runId = String(payload.run_id ?? "");
+          if (!approvalId || !runId) break;
+          const allowed: ApprovalDecision[] = ["once", "session", "always", "deny"];
+          const choices = Array.isArray(payload.choices)
+            ? (payload.choices as string[]).filter((c): c is ApprovalDecision =>
+                allowed.includes(c as ApprovalDecision),
+              )
+            : allowed;
+          pendingApprovals.set(approvalId, { requestId, runId, ready, emit });
+          emit({
+            requestId,
+            type: "approval",
+            approval: {
+              id: approvalId,
+              kind: "command",
+              title: "Command approval",
+              detail: payload.command ? String(payload.command) : undefined,
+              reason: payload.description ? String(payload.description) : undefined,
+              choices,
+            },
+          });
+          break;
+        }
         case "run.completed":
           terminal = "completed";
+          // A steer that arrived after the final answer comes back unapplied.
+          if (typeof payload.pending_steer === "string" && payload.pending_steer.trim())
+            emit({
+              requestId,
+              type: "steerReturned",
+              text: payload.pending_steer,
+            });
           break;
         case "run.failed": {
           terminal = "failed";
           const reason = payload.turn_exit_reason ? String(payload.turn_exit_reason) : "";
-          emit({ requestId, type: "error", message: reason ? `agent_error: ${reason}` : "agent_error" });
+          emit({
+            requestId,
+            type: "error",
+            message: reason ? `agent_error: ${reason}` : "agent_error",
+          });
           break;
         }
         case "run.cancelled":
@@ -465,7 +537,11 @@ async function streamResponsesTurn(
   });
   if (response.status === 401) return emit({ requestId, type: "error", message: "unauthorized" });
   if (!response.ok || !response.body)
-    return emit({ requestId, type: "error", message: `http_${response.status}` });
+    return emit({
+      requestId,
+      type: "error",
+      message: `http_${response.status}`,
+    });
 
   let responseId: string | null = null;
   await readSse(
@@ -484,7 +560,11 @@ async function streamResponsesTurn(
         emit({ requestId, type: "delta", text: String(event.delta ?? "") });
       } else if (type === "response.output_item.added") {
         const item = event.item as
-          | { type?: string; name?: string; output?: { text?: string }[] | string }
+          | {
+              type?: string;
+              name?: string;
+              output?: { text?: string }[] | string;
+            }
           | undefined;
         if (item?.type === "function_call") {
           emit({ requestId, type: "tool", name: item.name ?? "tool" });
@@ -516,6 +596,24 @@ async function streamResponsesTurn(
 
 let skillsCache: { at: number; baseUrl: string; data: Skill[] } | null = null;
 const active = new Map<string, AbortController>();
+
+/** The gateway run behind each streaming turn, for steer / stop. */
+const runs = new Map<string, { runId: string; ready: Ready }>();
+
+/** Approvals the user hasn't answered, by approval (request) id. */
+const pendingApprovals = new Map<
+  string,
+  { requestId: string; runId: string; ready: Ready; emit: Emit }
+>();
+
+/** Clears a finished turn's unanswered approvals (the gateway denies them itself). */
+function dropApprovals(requestId: string): void {
+  for (const [approvalId, pending] of pendingApprovals) {
+    if (pending.requestId !== requestId) continue;
+    pendingApprovals.delete(approvalId);
+    pending.emit({ requestId, type: "approvalResolved", approvalId });
+  }
+}
 
 export const hermesProvider: ChatProvider = {
   kind: "hermes",
@@ -550,7 +648,11 @@ export const hermesProvider: ChatProvider = {
       const models: ProviderModel[] =
         catalog.length > 0
           ? catalog
-          : agentModels.map((slug) => ({ slug: "", name: slug, isDefault: true }));
+          : agentModels.map((slug) => ({
+              slug: "",
+              name: slug,
+              isDefault: true,
+            }));
       return {
         ...base,
         installed: true,
@@ -625,7 +727,11 @@ export const hermesProvider: ChatProvider = {
         }
       }
       if (sessionId) await streamSessionTurn({ ...ctx, sessionId });
-      else await streamResponsesTurn({ ...ctx, previousResponseId: turn.previousResponseId });
+      else
+        await streamResponsesTurn({
+          ...ctx,
+          previousResponseId: turn.previousResponseId,
+        });
     } catch (err) {
       const reason = controller.signal.reason;
       const message = controller.signal.aborted
@@ -633,16 +739,70 @@ export const hermesProvider: ChatProvider = {
           ? "timeout"
           : "cancelled"
         : "unreachable";
-      logger.info("assistant", "hermes turn failed", { requestId, message, error: String(err) });
+      logger.info("assistant", "hermes turn failed", {
+        requestId,
+        message,
+        error: String(err),
+      });
       emit({ requestId, type: "error", message });
     } finally {
       if (idleTimer) clearTimeout(idleTimer);
       active.delete(requestId);
+      runs.delete(requestId);
+      dropApprovals(requestId);
     }
   },
 
+  async respondApproval(requestId, approvalId, decision) {
+    const pending = pendingApprovals.get(approvalId);
+    if (!pending || pending.requestId !== requestId) return;
+    const { ready, runId, emit } = pending;
+    const response = await fetch(`${ready.root}/v1/runs/${encodeURIComponent(runId)}/approval`, {
+      method: "POST",
+      headers: authHeaders(ready.key, true),
+      body: JSON.stringify({ choice: decision, request_id: approvalId }),
+    });
+    // 409: already answered / timed out server-side — either way it's settled.
+    if (!response.ok && response.status !== 409) throw new Error(await readError(response));
+    pendingApprovals.delete(approvalId);
+    emit({ requestId, type: "approvalResolved", approvalId });
+  },
+
+  /** POST /v1/runs/{id}/stop (hard interrupt), then drop the stream. */
   cancel(requestId) {
+    const run = runs.get(requestId);
+    if (run) {
+      void fetch(`${run.ready.root}/v1/runs/${encodeURIComponent(run.runId)}/stop`, {
+        method: "POST",
+        headers: authHeaders(run.ready.key),
+      }).catch(() => {});
+    }
     active.get(requestId)?.abort();
+  },
+
+  /**
+   * POST /v1/runs/{id}/steer — lands after the current batch of tool calls.
+   * Right after run.started the agent may not accept steers yet: retry briefly.
+   */
+  async steer(requestId, input) {
+    const run = runs.get(requestId);
+    if (!run) return false;
+    // Three tries fit the renderer's 5s IPC budget.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const response = await fetch(
+        `${run.ready.root}/v1/runs/${encodeURIComponent(run.runId)}/steer`,
+        {
+          method: "POST",
+          headers: authHeaders(run.ready.key, true),
+          body: JSON.stringify({ message: input }),
+          signal: AbortSignal.timeout(1_200),
+        },
+      ).catch(() => null);
+      if (response?.ok) return true;
+      if (response?.status !== 409 || !runs.has(requestId)) return false;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+    return false;
   },
 
   /** The agent's installed skills for the "/" picker (5-min cache). */
@@ -656,7 +816,9 @@ export const hermesProvider: ChatProvider = {
     )
       return skillsCache.data;
     try {
-      const response = await fetch(`${ready.baseUrl}/skills`, { headers: authHeaders(ready.key) });
+      const response = await fetch(`${ready.baseUrl}/skills`, {
+        headers: authHeaders(ready.key),
+      });
       if (!response.ok) return skillsCache?.data ?? [];
       const body = (await response.json()) as { data?: Skill[] } | Skill[];
       const raw = Array.isArray(body) ? body : (body.data ?? []);

@@ -5,9 +5,9 @@
  * turns, and every provider streams the same canonical {@link ChatEvent}s.
  */
 
-export type ProviderKind = "hermes" | "codex";
+export type ProviderKind = "hermes" | "codex" | "claude";
 
-export const PROVIDER_KINDS: readonly ProviderKind[] = ["hermes", "codex"];
+export const PROVIDER_KINDS: readonly ProviderKind[] = ["hermes", "codex", "claude"];
 
 export type ProviderState = "ready" | "warning" | "error" | "disabled";
 
@@ -70,7 +70,28 @@ export type ProvidersState = {
   settings: ProviderSettingsView;
 };
 
-export type RuntimeMode = "full-access" | "read-only";
+/** T3 Code's runtime modes: how much an agent may do without asking. */
+export type RuntimeMode = "approval-required" | "auto-accept-edits" | "full-access";
+
+export const RUNTIME_MODES: readonly RuntimeMode[] = [
+  "approval-required",
+  "auto-accept-edits",
+  "full-access",
+];
+
+/** How the user answers an approval: once, for the rest of the chat, always, or no. */
+export type ApprovalDecision = "once" | "session" | "always" | "deny";
+
+/** An agent asking permission mid-turn (run a command, edit files, …). */
+export type ApprovalRequest = {
+  id: string;
+  kind: "command" | "fileChange" | "permission" | "tool";
+  title: string;
+  /** The command / paths / tool input, shown verbatim. */
+  detail?: string;
+  reason?: string;
+  choices: ApprovalDecision[];
+};
 
 export type HermesSettings = {
   enabled: boolean;
@@ -104,10 +125,26 @@ export type CodexSettings = {
   runtimeMode: RuntimeMode;
 };
 
+export type ClaudeSettings = {
+  enabled: boolean;
+  /** Empty → `claude` on the login shell's PATH. */
+  binaryPath: string;
+  /** Empty → Claude's default config dir (CLAUDE_CONFIG_DIR). */
+  homePath: string;
+  /** Empty → Claude Code's default model. */
+  model: string;
+  /** Empty → the model's default effort. */
+  reasoningEffort: string;
+  /** "fast" → fast mode; empty / "default" → standard. */
+  serviceTier: string;
+  runtimeMode: RuntimeMode;
+};
+
 export type ProviderSettings = {
   selected: ProviderKind;
   hermes: HermesSettings;
   codex: CodexSettings;
+  claude: ClaudeSettings;
 };
 
 /** Settings as the renderer sees them: Hermes' API key never leaves the backend. */
@@ -119,6 +156,10 @@ export type ChatEvent =
   | { requestId: string; type: "delta"; text: string }
   | { requestId: string; type: "tool"; name: string }
   | { requestId: string; type: "toolResult"; output: string }
+  | { requestId: string; type: "approval"; approval: ApprovalRequest }
+  | { requestId: string; type: "approvalResolved"; approvalId: string }
+  /** A steer the agent didn't get to before finishing: send it as the next message. */
+  | { requestId: string; type: "steerReturned"; text: string }
   | { requestId: string; type: "done"; responseId: string | null }
   | { requestId: string; type: "error"; message: string };
 
@@ -174,6 +215,10 @@ export interface ChatProvider {
   /** Runs one turn to completion, reporting progress through `emit`. */
   sendTurn(input: SendTurnInput, settings: ProviderSettings, emit: Emit): Promise<void>;
   cancel(requestId: string): void;
+  /** Adds a message to the running turn; false when it can't (then queue it). */
+  steer(requestId: string, input: string): Promise<boolean>;
+  /** Answers an approval the turn is waiting on. */
+  respondApproval(requestId: string, approvalId: string, decision: ApprovalDecision): Promise<void>;
   listSkills(settings: ProviderSettings): Promise<Skill[]>;
   listSessions(settings: ProviderSettings, limit: number): Promise<ChatSession[]>;
   readSession(settings: ProviderSettings, sessionId: string): Promise<ChatSessionMessage[]>;

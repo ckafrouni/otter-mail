@@ -83,7 +83,7 @@ export type MailAppsResult = { apps: MailApp[]; defaultBundleId: string | null }
  * Assistant providers (mirrors main/services/assistant/types.ts). A snapshot
  * is one provider's health; every provider streams the same ChatEvents.
  */
-export type ProviderKind = "hermes" | "codex";
+export type ProviderKind = "hermes" | "codex" | "claude";
 export type ProviderState = "ready" | "warning" | "error" | "disabled";
 export type ProviderOptionChoice = {
   id: string;
@@ -125,7 +125,20 @@ export type ProviderSnapshot = {
   /** Chats persist on the provider and can be listed/resumed. */
   sessions: boolean;
 };
-export type RuntimeMode = "full-access" | "read-only";
+/** T3 Code's runtime modes: how much an agent may do without asking. */
+export type RuntimeMode = "approval-required" | "auto-accept-edits" | "full-access";
+
+export type ApprovalDecision = "once" | "session" | "always" | "deny";
+
+/** An agent asking permission mid-turn (run a command, edit files, …). */
+export type ApprovalRequest = {
+  id: string;
+  kind: "command" | "fileChange" | "permission" | "tool";
+  title: string;
+  detail?: string;
+  reason?: string;
+  choices: ApprovalDecision[];
+};
 export type ProviderSettingsView = {
   selected: ProviderKind;
   hermes: {
@@ -137,6 +150,15 @@ export type ProviderSettingsView = {
     reasoningEffort: string;
     serviceTier: string;
     sessions?: boolean;
+  };
+  claude: {
+    enabled: boolean;
+    binaryPath: string;
+    homePath: string;
+    model: string;
+    reasoningEffort: string;
+    serviceTier: string;
+    runtimeMode: RuntimeMode;
   };
   codex: {
     enabled: boolean;
@@ -159,6 +181,7 @@ export type AssistantSettingsPatch = {
   selected?: ProviderKind;
   hermes?: { enabled?: boolean; model?: string; reasoningEffort?: string; serviceTier?: string };
   codex?: Partial<ProviderSettingsView["codex"]>;
+  claude?: Partial<ProviderSettingsView["claude"]>;
 };
 
 export type ChatEvent =
@@ -166,6 +189,9 @@ export type ChatEvent =
   | { requestId: string; type: "delta"; text: string }
   | { requestId: string; type: "tool"; name: string }
   | { requestId: string; type: "toolResult"; output: string }
+  | { requestId: string; type: "approval"; approval: ApprovalRequest }
+  | { requestId: string; type: "approvalResolved"; approvalId: string }
+  | { requestId: string; type: "steerReturned"; text: string }
   | { requestId: string; type: "done"; responseId: string | null }
   | { requestId: string; type: "error"; message: string };
 
@@ -291,12 +317,7 @@ export type SyncSettings = {
 export type SaveViewParams = { id?: string; name: string; rules: ViewRule[]; mailbox?: string };
 
 export type SettingsPane =
-  | "general"
-  | "appearance"
-  | "keybindings"
-  | "accounts"
-  | "views"
-  | "assistant";
+  "general" | "appearance" | "keybindings" | "accounts" | "views" | "assistant";
 export type SettingsTarget = {
   pane: SettingsPane;
   viewId?: string | null;
@@ -494,6 +515,20 @@ export const gmailApi = {
     skill?: { name: string; path?: string };
     previousResponseId?: string;
   }): Promise<{ ok: boolean }> => ipc("assistant:send", params),
+
+  assistantRespondApproval: (params: {
+    provider: ProviderKind;
+    requestId: string;
+    approvalId: string;
+    decision: ApprovalDecision;
+  }): Promise<{ ok: boolean }> => ipc("assistant:respondApproval", params),
+
+  /** Adds a message to the running turn; `accepted: false` → queue it instead. */
+  assistantSteer: (
+    provider: ProviderKind,
+    requestId: string,
+    input: string,
+  ): Promise<{ accepted: boolean }> => ipc("assistant:steer", { provider, requestId, input }),
 
   assistantCancel: (provider: ProviderKind, requestId: string): Promise<{ ok: boolean }> =>
     ipc("assistant:cancel", { provider, requestId }),

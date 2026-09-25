@@ -9,6 +9,9 @@ import path from "path";
 import { app, safeStorage } from "@glaze/core/backend";
 import {
   PROVIDER_KINDS,
+  RUNTIME_MODES,
+  type ClaudeSettings,
+  type RuntimeMode,
   type CodexSettings,
   type HermesSettings,
   type ProviderKind,
@@ -42,6 +45,23 @@ const DEFAULT_CODEX: CodexSettings = {
   runtimeMode: "full-access",
 };
 
+const DEFAULT_CLAUDE: ClaudeSettings = {
+  enabled: true,
+  binaryPath: "",
+  homePath: "",
+  model: "",
+  reasoningEffort: "",
+  serviceTier: "",
+  runtimeMode: "full-access",
+};
+
+/** Runtime modes from before T3's set ("read-only") fall back to supervised. */
+function migrateRuntimeMode<T extends { runtimeMode: RuntimeMode }>(settings: T): T {
+  return RUNTIME_MODES.includes(settings.runtimeMode)
+    ? settings
+    : { ...settings, runtimeMode: "approval-required" };
+}
+
 async function userDataFile(name: string): Promise<string> {
   const dir = app.getPath("userData");
   await fs.mkdir(dir, { recursive: true });
@@ -68,8 +88,12 @@ export async function getProviderSettings(): Promise<ProviderSettings> {
     : "hermes";
   cache = {
     selected,
-    hermes: { ...DEFAULT_HERMES, ...migrateHermes({ ...legacyHermes, ...stored?.hermes }) },
-    codex: { ...DEFAULT_CODEX, ...stored?.codex },
+    hermes: {
+      ...DEFAULT_HERMES,
+      ...migrateHermes({ ...legacyHermes, ...stored?.hermes }),
+    },
+    codex: migrateRuntimeMode({ ...DEFAULT_CODEX, ...stored?.codex }),
+    claude: migrateRuntimeMode({ ...DEFAULT_CLAUDE, ...stored?.claude }),
   };
   return cache;
 }

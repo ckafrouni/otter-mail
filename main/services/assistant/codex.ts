@@ -10,7 +10,13 @@
  */
 
 import { logger } from "@glaze/core/backend";
-import { CodexAppServer, CodexSpawnError, type Notification, type ServerRequest } from "./codex-app-server.js";
+import {
+  CodexAppServer,
+  CodexSpawnError,
+  type Notification,
+  type ServerRequest,
+} from "./codex-app-server.js";
+import { ASSISTANT_INSTRUCTIONS } from "./instructions.js";
 import { assistantWorkspace } from "./settings.js";
 import type {
   ChatProvider,
@@ -18,6 +24,8 @@ import type {
   ChatSessionMessage,
   CodexSettings,
   Emit,
+  ApprovalDecision,
+  ApprovalRequest,
   ProviderModel,
   ProviderModelOption,
   ProviderSettings,
@@ -33,17 +41,34 @@ const SESSION_IDLE_MS = 15 * 60_000;
 const UTILITY_IDLE_MS = 60_000;
 const TOOL_OUTPUT_PREVIEW_CHARS = 400;
 
-const DEVELOPER_INSTRUCTIONS = [
-  "You are the assistant built into Otter Mail, a Gmail client.",
-  "Messages may end with a '— context from Otter Mail —' block that points at Gmail conversations by account and threadId; fetch their content with the `gog` CLI when you need it.",
-  "Never send an email, or take any other irreversible action on the user's mailboxes, unless the user explicitly asks for it in this conversation.",
-].join("\n");
-
 /** T3's runtime modes → Codex thread config. */
 function threadConfig(settings: CodexSettings) {
-  return settings.runtimeMode === "read-only"
-    ? { approvalPolicy: "never", sandbox: "read-only" }
-    : { approvalPolicy: "never", sandbox: "danger-full-access" };
+  switch (settings.runtimeMode) {
+    case "approval-required":
+      return { approvalPolicy: "untrusted", sandbox: "read-only" };
+    case "auto-accept-edits":
+      return { approvalPolicy: "on-request", sandbox: "workspace-write" };
+    default:
+      return { approvalPolicy: "never", sandbox: "danger-full-access" };
+  }
+}
+
+/** The same mode as a turn override, so switching modes applies to the next turn. */
+function turnPolicy(settings: CodexSettings) {
+  const { approvalPolicy, sandbox } = threadConfig(settings);
+  const sandboxPolicy =
+    sandbox === "read-only"
+      ? { type: "readOnly", networkAccess: false }
+      : sandbox === "workspace-write"
+        ? {
+            type: "workspaceWrite",
+            writableRoots: [],
+            networkAccess: true,
+            excludeTmpdirEnvVar: false,
+            excludeSlashTmp: false,
+          }
+        : { type: "dangerFullAccess" };
+  return { approvalPolicy, sandboxPolicy };
 }
 
 function planLabel(plan: string | null | undefined): string {
@@ -121,6 +146,8 @@ type ActiveTurn = {
   streamedText: boolean;
   /** Last non-retried error, reported if the turn then fails. */
   error: string | null;
+  /** Approval requests waiting on the user, by approval id. */
+  approvals: Map<string, ServerRequest>;
   finish: () => void;
 };
 
@@ -146,18 +173,131 @@ function armIdle(session: Session): void {
   }, SESSION_IDLE_MS);
 }
 
-/** Everything but approvals is answered empty; approvals are declined (full access never asks). */
-function answerServerRequest(server: CodexAppServer, request: ServerRequest): void {
-  logger.info("assistant", "codex server request declined", { method: request.method });
-  if (request.method.endsWith("/requestApproval") || request.method.endsWith("Approval")) {
-    server.respond(request.id, { decision: "decline" });
-  } else if (request.method === "item/tool/requestUserInput") {
-    server.respond(request.id, { answers: {} });
-  } else if (request.method === "mcpServer/elicitation/request") {
-    server.respond(request.id, { action: "decline" });
-  } else {
-    server.respond(request.id, {});
+/** Codex's answer for an approval request, per T3's decision mapping. */
+function approvalResponse(request: ServerRequest, decision: ApprovalDecision | "cancel"): unknown {
+  if (request.method === "item/permissions/requestApproval") {
+    const granted = decision === "once" || decision === "session" || decision === "always";
+    return {
+      permissions: granted ? request.params.permissions : {},
+      scope: decision === "once" ? "turn" : "session",
+    };
   }
+  // Legacy v1 approvals speak ReviewDecision.
+  if (request.method === "execCommandApproval" || request.method === "applyPatchApproval") {
+    return {
+      decision:
+        decision === "once"
+          ? "approved"
+          : decision === "session" || decision === "always"
+            ? "approved_for_session"
+            : decision === "cancel"
+              ? "abort"
+              : { denied: { rejection: "The user declined." } },
+    };
+  }
+  return {
+    decision:
+      decision === "once"
+        ? "accept"
+        : decision === "session" || decision === "always"
+          ? "acceptForSession"
+          : decision === "cancel"
+            ? "cancel"
+            : "decline",
+  };
+}
+
+/** A server request as the user sees it, or null when it isn't an approval. */
+function toApproval(request: ServerRequest): ApprovalRequest | null {
+  const p = request.params;
+  const id = String(request.id);
+  const reason = typeof p.reason === "string" && p.reason ? p.reason : undefined;
+  const choices: ApprovalDecision[] = ["once", "session", "deny"];
+  switch (request.method) {
+    case "item/commandExecution/requestApproval":
+      return {
+        id,
+        kind: "command",
+        title: "Command approval",
+        detail: String(p.command ?? ""),
+        reason,
+        choices,
+      };
+    case "execCommandApproval":
+      return {
+        id,
+        kind: "command",
+        title: "Command approval",
+        detail: Array.isArray(p.command) ? p.command.join(" ") : String(p.command ?? ""),
+        reason,
+        choices,
+      };
+    case "item/fileChange/requestApproval":
+    case "applyPatchApproval": {
+      const files =
+        p.fileChanges && typeof p.fileChanges === "object" ? Object.keys(p.fileChanges) : [];
+      const detail = files.length > 0 ? files.join("\n") : String(p.grantRoot ?? "");
+      return {
+        id,
+        kind: "fileChange",
+        title: "File change approval",
+        detail: detail || undefined,
+        reason,
+        choices,
+      };
+    }
+    case "item/permissions/requestApproval":
+      return {
+        id,
+        kind: "permission",
+        title: "Permission approval",
+        detail: JSON.stringify(p.permissions ?? {}, null, 2),
+        reason,
+        choices,
+      };
+    default:
+      return null;
+  }
+}
+
+/**
+ * Approvals go to the user as `approval` events and wait for their answer;
+ * other requests (user input, MCP elicitation) are answered empty.
+ */
+function handleServerRequest(session: Session, request: ServerRequest): void {
+  const approval = toApproval(request);
+  const turn = session.turn;
+  if (approval && turn) {
+    turn.approvals.set(approval.id, request);
+    turn.emit({ requestId: turn.requestId, type: "approval", approval });
+    return;
+  }
+  logger.info("assistant", "codex server request answered empty", {
+    method: request.method,
+  });
+  if (approval) session.server.respond(request.id, approvalResponse(request, "deny"));
+  else if (request.method === "item/tool/requestUserInput")
+    session.server.respond(request.id, { answers: {} });
+  else if (request.method === "mcpServer/elicitation/request")
+    session.server.respond(request.id, { action: "decline" });
+  else session.server.respond(request.id, {});
+}
+
+/** Settles every open approval (before an interrupt, or when the turn ends). */
+function settleApprovals(
+  session: Session,
+  turn: ActiveTurn,
+  decision: ApprovalDecision | "cancel",
+): void {
+  for (const [id, request] of turn.approvals) {
+    session.server.respond(request.id, approvalResponse(request, decision));
+    turn.emit({
+      requestId: turn.requestId,
+      type: "approvalResolved",
+      approvalId: id,
+    });
+  }
+  turn.approvals.clear();
 }
 
 function handleNotification(session: Session, { method, params }: Notification): void {
@@ -201,13 +341,22 @@ function handleNotification(session: Session, { method, params }: Notification):
       break;
     }
     case "turn/completed": {
-      const done = params.turn as { id?: string; status?: string; error?: { message?: string } };
+      const done = params.turn as {
+        id?: string;
+        status?: string;
+        error?: { message?: string };
+      };
       if (turn.turnId && done.id && done.id !== turn.turnId) break;
       if (done.status === "completed") emit({ requestId, type: "done", responseId: null });
-      else if (done.status === "interrupted") emit({ requestId, type: "error", message: "cancelled" });
+      else if (done.status === "interrupted")
+        emit({ requestId, type: "error", message: "cancelled" });
       else {
         const message = done.error?.message ?? turn.error;
-        emit({ requestId, type: "error", message: message ? `agent_error: ${message}` : "agent_error" });
+        emit({
+          requestId,
+          type: "error",
+          message: message ? `agent_error: ${message}` : "agent_error",
+        });
       }
       turn.finish();
       break;
@@ -222,9 +371,14 @@ function isMissingThread(error: unknown): boolean {
   const message = String(error instanceof Error ? error.message : error).toLowerCase();
   return (
     message.includes("thread") &&
-    ["not found", "missing thread", "no such thread", "unknown thread", "does not exist", "no rollout found"].some(
-      (needle) => message.includes(needle),
-    )
+    [
+      "not found",
+      "missing thread",
+      "no such thread",
+      "unknown thread",
+      "does not exist",
+      "no rollout found",
+    ].some((needle) => message.includes(needle))
   );
 }
 
@@ -241,7 +395,7 @@ async function openSession(
     cwd,
     ...threadConfig(settings),
     ...(settings.model ? { model: settings.model } : {}),
-    developerInstructions: DEVELOPER_INSTRUCTIONS,
+    developerInstructions: ASSISTANT_INSTRUCTIONS,
   };
   let threadId: string;
   try {
@@ -254,10 +408,20 @@ async function openSession(
           )
           .catch((error: unknown) => {
             if (!isMissingThread(error)) throw error;
-            logger.info("assistant", "codex thread gone, starting fresh", { sessionId });
-            return server.request<{ thread: { id: string } }>("thread/start", params, REQUEST_TIMEOUT_MS);
+            logger.info("assistant", "codex thread gone, starting fresh", {
+              sessionId,
+            });
+            return server.request<{ thread: { id: string } }>(
+              "thread/start",
+              params,
+              REQUEST_TIMEOUT_MS,
+            );
           })
-      : await server.request<{ thread: { id: string } }>("thread/start", params, REQUEST_TIMEOUT_MS);
+      : await server.request<{ thread: { id: string } }>(
+          "thread/start",
+          params,
+          REQUEST_TIMEOUT_MS,
+        );
     threadId = opened.thread.id;
   } catch (error) {
     server.kill();
@@ -266,13 +430,17 @@ async function openSession(
 
   const session: Session = { server, threadId, turn: null, idleTimer: null };
   server.onNotification = (message) => handleNotification(session, message);
-  server.onServerRequest = (request) => answerServerRequest(server, request);
+  server.onServerRequest = (request) => handleServerRequest(session, request);
   server.onExit = (code) => {
     sessions.delete(threadId);
     const turn = session.turn;
     if (turn) {
       logger.info("assistant", "codex exited mid-turn", { code });
-      turn.emit({ requestId: turn.requestId, type: "error", message: "unreachable" });
+      turn.emit({
+        requestId: turn.requestId,
+        type: "error",
+        message: "unreachable",
+      });
       turn.finish();
     }
   };
@@ -284,10 +452,15 @@ async function openSession(
 // Utility server (probe, history, skills)
 // ---------------------------------------------------------------------------
 
-let utility: { server: Promise<CodexAppServer>; timer: ReturnType<typeof setTimeout> | null } | null =
-  null;
+let utility: {
+  server: Promise<CodexAppServer>;
+  timer: ReturnType<typeof setTimeout> | null;
+} | null = null;
 
-async function withUtility<T>(settings: CodexSettings, fn: (server: CodexAppServer) => Promise<T>): Promise<T> {
+async function withUtility<T>(
+  settings: CodexSettings,
+  fn: (server: CodexAppServer) => Promise<T>,
+): Promise<T> {
   if (!utility) {
     const server = assistantWorkspace().then((cwd) => CodexAppServer.start(settings, cwd));
     utility = { server, timer: null };
@@ -331,7 +504,10 @@ type RawModel = {
   displayName?: string;
   isDefault?: boolean;
   hidden?: boolean;
-  supportedReasoningEfforts?: { reasoningEffort: string; description?: string }[];
+  supportedReasoningEfforts?: {
+    reasoningEffort: string;
+    description?: string;
+  }[];
   defaultReasoningEffort?: string;
   serviceTiers?: { id: string; name: string; description?: string }[];
   additionalSpeedTiers?: string[];
@@ -473,7 +649,11 @@ export const codexProvider: ChatProvider = {
         (async () => {
           server = await CodexAppServer.start(settings.codex, await assistantWorkspace());
           const account = await server.request<{
-            account: { type: string; email?: string | null; planType?: string } | null;
+            account: {
+              type: string;
+              email?: string | null;
+              planType?: string;
+            } | null;
             requiresOpenaiAuth: boolean;
           }>("account/read", {}, PROBE_TIMEOUT_MS);
           const version = server.version;
@@ -500,7 +680,12 @@ export const codexProvider: ChatProvider = {
             auth: acct
               ? {
                   status: "authenticated" as const,
-                  label: acct.type === "chatgpt" ? planLabel(acct.planType) : acct.type === "apiKey" ? "API key" : acct.type,
+                  label:
+                    acct.type === "chatgpt"
+                      ? planLabel(acct.planType)
+                      : acct.type === "apiKey"
+                        ? "API key"
+                        : acct.type,
                   ...(acct.email ? { email: acct.email } : {}),
                 }
               : { status: "unknown" as const },
@@ -533,11 +718,17 @@ export const codexProvider: ChatProvider = {
     try {
       session = await openSession(settings.codex, turn.sessionId);
     } catch (error) {
-      logger.info("assistant", "codex session failed", { error: String(error) });
-      const message = error instanceof CodexSpawnError ? "not_installed" : `agent_error: ${String(error instanceof Error ? error.message : error)}`;
+      logger.info("assistant", "codex session failed", {
+        error: String(error),
+      });
+      const message =
+        error instanceof CodexSpawnError
+          ? "not_installed"
+          : `agent_error: ${String(error instanceof Error ? error.message : error)}`;
       return emit({ requestId, type: "error", message });
     }
-    if (session.threadId !== turn.sessionId) emit({ requestId, type: "session", sessionId: session.threadId });
+    if (session.threadId !== turn.sessionId)
+      emit({ requestId, type: "session", sessionId: session.threadId });
     if (session.idleTimer) clearTimeout(session.idleTimer);
 
     const finished = new Promise<void>((resolve) => {
@@ -548,13 +739,23 @@ export const codexProvider: ChatProvider = {
         cancelRequested: false,
         streamedText: false,
         error: null,
+        approvals: new Map(),
         finish: resolve,
       };
     });
     turnsByRequest.set(requestId, session);
     const input: unknown[] = [];
-    if (turn.skill?.path) input.push({ type: "skill", name: turn.skill.name, path: turn.skill.path });
-    input.push({ type: "text", text: turn.input || `Use the ${turn.skill?.name ?? ""} skill.`, text_elements: [] });
+    if (turn.skill?.path)
+      input.push({
+        type: "skill",
+        name: turn.skill.name,
+        path: turn.skill.path,
+      });
+    input.push({
+      type: "text",
+      text: turn.input || `Use the ${turn.skill?.name ?? ""} skill.`,
+      text_elements: [],
+    });
     try {
       const started = await session.server.request<{ turn: { id: string } }>(
         "turn/start",
@@ -563,6 +764,7 @@ export const codexProvider: ChatProvider = {
           input,
           ...(settings.codex.model ? { model: settings.codex.model } : {}),
           ...turnOptions(settings.codex, knownModels),
+          ...turnPolicy(settings.codex),
         },
         REQUEST_TIMEOUT_MS,
       );
@@ -573,11 +775,37 @@ export const codexProvider: ChatProvider = {
       }
       await finished;
     } catch (error) {
-      emit({ requestId, type: "error", message: `agent_error: ${String(error instanceof Error ? error.message : error)}` });
+      emit({
+        requestId,
+        type: "error",
+        message: `agent_error: ${String(error instanceof Error ? error.message : error)}`,
+      });
     } finally {
       turnsByRequest.delete(requestId);
       if (session.turn?.requestId === requestId) session.turn = null;
       armIdle(session);
+    }
+  },
+
+  /** turn/steer: adds input to the active turn (expectedTurnId guards races). */
+  async steer(requestId, input) {
+    const session = turnsByRequest.get(requestId);
+    const turn = session?.turn;
+    if (!session || !turn?.turnId || turn.requestId !== requestId) return false;
+    try {
+      await session.server.request(
+        "turn/steer",
+        {
+          threadId: session.threadId,
+          expectedTurnId: turn.turnId,
+          input: [{ type: "text", text: input, text_elements: [] }],
+        },
+        REQUEST_TIMEOUT_MS,
+      );
+      return true;
+    } catch (error) {
+      logger.info("assistant", "codex steer failed", { error: String(error) });
+      return false;
     }
   },
 
@@ -589,12 +817,30 @@ export const codexProvider: ChatProvider = {
       turn.cancelRequested = true;
       return;
     }
+    // An open approval blocks Codex's loop: settle it before interrupting.
+    settleApprovals(session, turn, "cancel");
     void session.server
-      .request("turn/interrupt", { threadId: session.threadId, turnId: turn.turnId }, REQUEST_TIMEOUT_MS)
+      .request(
+        "turn/interrupt",
+        { threadId: session.threadId, turnId: turn.turnId },
+        REQUEST_TIMEOUT_MS,
+      )
       .catch((error: unknown) => {
-        logger.info("assistant", "codex interrupt failed", { error: String(error) });
+        logger.info("assistant", "codex interrupt failed", {
+          error: String(error),
+        });
         session.server.kill();
       });
+  },
+
+  async respondApproval(requestId, approvalId, decision) {
+    const session = turnsByRequest.get(requestId);
+    const turn = session?.turn;
+    const request = turn?.approvals.get(approvalId);
+    if (!session || !turn || !request) return;
+    turn.approvals.delete(approvalId);
+    session.server.respond(request.id, approvalResponse(request, decision));
+    turn.emit({ requestId, type: "approvalResolved", approvalId });
   },
 
   async listSkills(settings): Promise<Skill[]> {
@@ -602,14 +848,27 @@ export const codexProvider: ChatProvider = {
       const cwd = await assistantWorkspace();
       const response = await withUtility(settings.codex, (server) =>
         server.request<{
-          data: { skills: { name: string; description: string; shortDescription?: string; path: string; enabled: boolean }[] }[];
+          data: {
+            skills: {
+              name: string;
+              description: string;
+              shortDescription?: string;
+              path: string;
+              enabled: boolean;
+            }[];
+          }[];
         }>("skills/list", { cwds: [cwd] }, PROBE_TIMEOUT_MS),
       );
       const seen = new Set<string>();
       return response.data
         .flatMap((entry) => entry.skills)
         .filter((s) => s.enabled && !seen.has(s.name) && seen.add(s.name))
-        .map((s) => ({ name: s.name, description: s.shortDescription || s.description, category: null, path: s.path }));
+        .map((s) => ({
+          name: s.name,
+          description: s.shortDescription || s.description,
+          category: null,
+          path: s.path,
+        }));
     } catch (error) {
       logger.info("assistant", "codex skills failed", { error: String(error) });
       return [];
@@ -620,8 +879,18 @@ export const codexProvider: ChatProvider = {
     const cwd = await assistantWorkspace();
     const response = await withUtility(settings.codex, (server) =>
       server.request<{
-        data: { id: string; name?: string | null; preview?: string; updatedAt?: number; source?: string }[];
-      }>("thread/list", { cwd, limit, sortKey: "updated_at", useStateDbOnly: true }, PROBE_TIMEOUT_MS),
+        data: {
+          id: string;
+          name?: string | null;
+          preview?: string;
+          updatedAt?: number;
+          source?: string;
+        }[];
+      }>(
+        "thread/list",
+        { cwd, limit, sortKey: "updated_at", useStateDbOnly: true },
+        PROBE_TIMEOUT_MS,
+      ),
     );
     return response.data.map((t) => ({
       id: t.id,
@@ -637,7 +906,12 @@ export const codexProvider: ChatProvider = {
     const response = await withUtility(settings.codex, (server) =>
       server.request<{ data: { items: Item[] }[] }>(
         "thread/turns/list",
-        { threadId: sessionId, itemsView: "full", sortDirection: "asc", limit: 100 },
+        {
+          threadId: sessionId,
+          itemsView: "full",
+          sortDirection: "asc",
+          limit: 100,
+        },
         PROBE_TIMEOUT_MS,
       ),
     );
@@ -646,7 +920,8 @@ export const codexProvider: ChatProvider = {
       for (const item of turn.items) {
         const name = toolName(item);
         if (item.type === "userMessage") messages.push({ role: "user", text: userText(item) });
-        else if (item.type === "agentMessage") messages.push({ role: "assistant", text: String(item.text ?? "") });
+        else if (item.type === "agentMessage")
+          messages.push({ role: "assistant", text: String(item.text ?? "") });
         else if (name) {
           messages.push({ role: "assistant", text: "", toolCalls: [name] });
           messages.push({ role: "tool", text: toolOutput(item) });
@@ -671,7 +946,10 @@ export const codexProvider: ChatProvider = {
     utility = null;
     if (current) {
       if (current.timer) clearTimeout(current.timer);
-      void current.server.then((server) => server.kill(), () => {});
+      void current.server.then(
+        (server) => server.kill(),
+        () => {},
+      );
     }
   },
 };

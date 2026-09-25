@@ -9,15 +9,31 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Popover } from "radix-ui";
-import { ChevronDownIcon, SearchIcon, StarIcon, ZapIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  LockIcon,
+  LockOpenIcon,
+  PenLineIcon,
+  SearchIcon,
+  StarIcon,
+  ZapIcon,
+} from "lucide-react";
 import type {
   ProviderKind,
   ProviderModel,
   ProviderModelOption,
   ProviderSnapshot,
+  RuntimeMode,
 } from "./api";
 import { ProviderIcon, isProviderUsable } from "./assistant-providers";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./menu";
+import { modelKey, toggleFavorite, useModelPrefs } from "./model-prefs";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "./menu";
 import { HintTooltip, Kbd, cn, restoreFocusForKeyboardOnly } from "./ui";
 import { MODEL_PICKER_JUMP_COMMANDS } from "../keybindings/commands";
 import { matchesCommand, useCommandHandlers, useKeybindingContext } from "../keybindings/dispatch";
@@ -41,36 +57,15 @@ export function ComposerControlChevron() {
   );
 }
 
+/** Composer menus hand focus back to the composer, so typing just continues. */
+function closeFocus(event: Event, returnFocus?: () => void): void {
+  if (!returnFocus) return restoreFocusForKeyboardOnly(event);
+  event.preventDefault();
+  returnFocus();
+}
+
 export function ComposerControlSeparator() {
   return <span className="mx-0.5 h-4 w-px shrink-0 bg-border" aria-hidden />;
-}
-
-// ---------------------------------------------------------------------------
-// Favorites (client-side, like T3's client settings)
-// ---------------------------------------------------------------------------
-
-const FAVORITES_KEY = "assistant:favorite-models";
-
-const modelKey = (kind: ProviderKind, slug: string) => `${kind}:${slug}`;
-
-function loadFavorites(): string[] {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(FAVORITES_KEY) ?? "[]") as unknown;
-    return Array.isArray(parsed) ? parsed.filter((k): k is string => typeof k === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-function useFavorites() {
-  const [favorites, setFavorites] = useState<string[]>(loadFavorites);
-  const toggle = (key: string) =>
-    setFavorites((current) => {
-      const next = current.includes(key) ? current.filter((k) => k !== key) : [...current, key];
-      localStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
-      return next;
-    });
-  return { favorites, toggle };
 }
 
 // ---------------------------------------------------------------------------
@@ -95,7 +90,9 @@ function searchScore(item: PickerItem, query: string, favorite: boolean): number
     fields.forEach((field, i) => {
       const at = field.indexOf(token);
       if (at === -1) return;
-      const s = i * 10 + (field === token ? 0 : at === 0 ? 2 : /[\s\-_.]/.test(field[at - 1] ?? "") ? 4 : 6);
+      const s =
+        i * 10 +
+        (field === token ? 0 : at === 0 ? 2 : /[\s\-_.]/.test(field[at - 1] ?? "") ? 4 : 6);
       best = best === null ? s : Math.min(best, s);
     });
     if (best === null) return null;
@@ -109,11 +106,12 @@ function searchScore(item: PickerItem, query: string, favorite: boolean): number
 // ---------------------------------------------------------------------------
 
 const RAIL_BUTTON =
-  "relative isolate flex aspect-square w-full cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none";
+  "relative isolate flex aspect-square w-full cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-[color-mix(in_srgb,var(--popover)_90%,var(--contrast-foreground))] focus-visible:bg-foreground/10 focus-visible:outline-none";
 
 function describeProvider(p: ProviderSnapshot): string {
   if (isProviderUsable(p)) return p.displayName;
-  const kind = p.status === "error" ? "Unavailable" : p.status === "warning" ? "Limited" : "Not ready";
+  const kind =
+    p.status === "error" ? "Unavailable" : p.status === "warning" ? "Limited" : "Not ready";
   return p.message ? `${p.displayName} — ${kind}. ${p.message}` : `${p.displayName} — ${kind}.`;
 }
 
@@ -138,7 +136,11 @@ function ModelPickerRail({
   }, [providers, selected]);
 
   return (
-    <div className="w-11 shrink-0 overflow-hidden bg-muted/30" data-model-picker-sidebar aria-label="Providers">
+    <div
+      className="w-11 shrink-0 overflow-hidden bg-muted/30"
+      data-model-picker-sidebar
+      aria-label="Providers"
+    >
       <div className="h-full overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div ref={contentRef} className="relative flex min-h-full flex-col gap-1 p-1">
           {indicatorTop !== null ? (
@@ -172,7 +174,10 @@ function ModelPickerRail({
                 <HintTooltip label={tooltip}>
                   <button
                     type="button"
-                    className={cn(RAIL_BUTTON, disabled && "cursor-not-allowed opacity-50 hover:bg-transparent")}
+                    className={cn(
+                      RAIL_BUTTON,
+                      disabled && "cursor-not-allowed opacity-50 hover:bg-transparent",
+                    )}
                     onClick={() => !disabled && onSelect(p.kind)}
                     aria-disabled={disabled}
                     aria-pressed={selected === p.kind}
@@ -247,7 +252,7 @@ function ModelListRow({
           aria-label={favorite ? "Remove from favorites" : "Add to favorites"}
           title={favorite ? "Remove from favorites" : "Add to favorites"}
         >
-          <StarIcon className={cn("size-3", favorite && "fill-current text-warning")} />
+          <StarIcon className={cn("size-3", favorite && "fill-current text-yellow-500")} />
         </button>
       </div>
     </div>
@@ -273,7 +278,8 @@ function ModelPickerContent({
 }) {
   useKeybindingContext("modelPickerOpen", true);
   const { resolved } = useKeybindingsState();
-  const { favorites, toggle } = useFavorites();
+  const { favorites, hidden } = useModelPrefs();
+  const hiddenSet = useMemo(() => new Set(hidden), [hidden]);
   const favoriteSet = useMemo(() => new Set(favorites), [favorites]);
   const [query, setQuery] = useState("");
   const [rail, setRail] = useState<ProviderKind | "favorites">(() =>
@@ -292,22 +298,32 @@ function ModelPickerContent({
       railProviders
         .filter((p) => isProviderUsable(p))
         .flatMap((p) =>
-          p.models.map((m: ProviderModel) => ({
-            key: modelKey(p.kind, m.slug),
-            kind: p.kind,
-            slug: m.slug,
-            name: m.name,
-            providerName: m.subProvider ? `${p.displayName} · ${m.subProvider}` : p.displayName,
-          })),
+          p.models
+            // Hidden in Settings → Models, unless it's the model in use.
+            .filter(
+              (m) =>
+                !hiddenSet.has(modelKey(p.kind, m.slug)) ||
+                (p.kind === activeKind && m.slug === p.model),
+            )
+            .map((m: ProviderModel) => ({
+              key: modelKey(p.kind, m.slug),
+              kind: p.kind,
+              slug: m.slug,
+              name: m.name,
+              providerName: m.subProvider ? `${p.displayName} · ${m.subProvider}` : p.displayName,
+            })),
         ),
-    [railProviders],
+    [railProviders, hiddenSet, activeKind],
   );
 
   const items = useMemo(() => {
     const allowed = allItems.filter((i) => lockedKind === null || i.kind === lockedKind);
     if (query.trim()) {
       return allowed
-        .map((item) => ({ item, score: searchScore(item, query, favoriteSet.has(item.key)) }))
+        .map((item) => ({
+          item,
+          score: searchScore(item, query, favoriteSet.has(item.key)),
+        }))
         .filter((r): r is { item: PickerItem; score: number } => r.score !== null)
         .sort((a, b) => a.score - b.score || a.item.name.localeCompare(b.item.name))
         .map((r) => r.item);
@@ -319,7 +335,10 @@ function ModelPickerContent({
     // Favorites float to the top of a provider's list.
     return rail === "favorites"
       ? inRail
-      : [...inRail.filter((i) => favoriteSet.has(i.key)), ...inRail.filter((i) => !favoriteSet.has(i.key))];
+      : [
+          ...inRail.filter((i) => favoriteSet.has(i.key)),
+          ...inRail.filter((i) => !favoriteSet.has(i.key)),
+        ];
   }, [allItems, favoriteSet, lockedKind, query, rail]);
 
   // Highlight the active model when it's in view, else the first row.
@@ -368,10 +387,18 @@ function ModelPickerContent({
           }}
         />
       ) : null}
-      <div className={cn("flex min-h-0 flex-1 flex-col overflow-hidden bg-muted/40", showRail && "border-l border-border/70")}>
+      <div
+        className={cn(
+          "flex min-h-0 flex-1 flex-col overflow-hidden bg-muted/40",
+          showRail && "border-l border-border/70",
+        )}
+      >
         <div className="min-w-0 shrink-0 px-3 pt-2.5">
           <div className="relative -translate-y-px border-b border-border/70 pb-1.5 transition-colors focus-within:border-focus-ring">
-            <SearchIcon aria-hidden className="pointer-events-none absolute left-0 top-1.5 size-4 shrink-0 text-muted-foreground/55" />
+            <SearchIcon
+              aria-hidden
+              className="pointer-events-none absolute left-0 top-1.5 size-4 shrink-0 text-muted-foreground/55"
+            />
             <input
               ref={searchRef}
               value={query}
@@ -388,7 +415,10 @@ function ModelPickerContent({
                   pick(items[jump]);
                   return;
                 }
-                if (matchesCommand(native, "modelPicker.nextProvider") || matchesCommand(native, "modelPicker.previousProvider")) {
+                if (
+                  matchesCommand(native, "modelPicker.nextProvider") ||
+                  matchesCommand(native, "modelPicker.previousProvider")
+                ) {
                   e.preventDefault();
                   e.stopPropagation();
                   switchRail(matchesCommand(native, "modelPicker.nextProvider") ? 1 : -1);
@@ -397,7 +427,9 @@ function ModelPickerContent({
                 if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                   e.preventDefault();
                   const delta = e.key === "ArrowDown" ? 1 : -1;
-                  setHighlight((h) => (items.length ? (h + delta + items.length) % items.length : 0));
+                  setHighlight((h) =>
+                    items.length ? (h + delta + items.length) % items.length : 0,
+                  );
                   return;
                 }
                 if (e.key === "Enter") {
@@ -416,7 +448,11 @@ function ModelPickerContent({
             />
           </div>
         </div>
-        <div ref={listRef} role="listbox" className="relative min-h-0 flex-1 overflow-y-auto overscroll-y-contain py-1.5 pl-2 pr-px">
+        <div
+          ref={listRef}
+          role="listbox"
+          className="relative min-h-0 flex-1 overflow-y-auto overscroll-y-contain py-1.5 pl-2 pr-px"
+        >
           <div className="flex flex-col gap-0.5">
             {items.map((item, index) => (
               <ModelListRow
@@ -432,7 +468,7 @@ function ModelPickerContent({
                 }
                 onHover={() => setHighlight(index)}
                 onPick={() => pick(item)}
-                onToggleFavorite={() => toggle(item.key)}
+                onToggleFavorite={() => toggleFavorite(item.key)}
               />
             ))}
           </div>
@@ -456,12 +492,15 @@ export function ProviderModelPicker({
   activeKind,
   lockedKind,
   onPick,
+  returnFocus,
 }: {
   providers: ProviderSnapshot[];
   activeKind: ProviderKind;
   /** A chat with turns stays on its provider. */
   lockedKind: ProviderKind | null;
   onPick: (kind: ProviderKind, slug: string) => void;
+  /** Where focus goes when the popover closes (the composer). */
+  returnFocus?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   useCommandHandlers({ "modelPicker.toggle": () => setOpen((o) => !o) });
@@ -495,7 +534,7 @@ export function ProviderModelPicker({
           align="start"
           sideOffset={4}
           collisionPadding={8}
-          onCloseAutoFocus={restoreFocusForKeyboardOnly}
+          onCloseAutoFocus={(event) => closeFocus(event, returnFocus)}
           className="dropdown-glass z-[130] overflow-hidden rounded-lg text-foreground shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] outline-none dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]"
         >
           <ModelPickerContent
@@ -537,10 +576,12 @@ export function TraitsPicker({
   options,
   values,
   onChange,
+  returnFocus,
 }: {
   options: ProviderModelOption[];
   values: Partial<Record<ProviderModelOption["id"], string>>;
   onChange: (id: ProviderModelOption["id"], value: string) => void;
+  returnFocus?: () => void;
 }) {
   if (options.length === 0) return null;
   // Like T3: the Fast service tier is a bolt, not text; efforts are the label.
@@ -565,11 +606,18 @@ export function TraitsPicker({
           <button
             type="button"
             aria-label={accessible}
-            className={cn(COMPOSER_CONTROL, "min-w-0 max-w-40 shrink justify-start overflow-hidden sm:max-w-48")}
+            className={cn(
+              COMPOSER_CONTROL,
+              "min-w-0 max-w-40 shrink justify-start overflow-hidden sm:max-w-48",
+            )}
           >
             <span className="flex w-full min-w-0 items-center gap-1.5">
               {fast ? (
-                <ZapIcon aria-hidden data-composer-control-icon className="size-4 shrink-0 fill-current text-foreground opacity-80" />
+                <ZapIcon
+                  aria-hidden
+                  data-composer-control-icon
+                  className="size-4 shrink-0 fill-current text-foreground opacity-80"
+                />
               ) : null}
               <span className="min-w-0 truncate">{label}</span>
               <ComposerControlChevron />
@@ -577,13 +625,20 @@ export function TraitsPicker({
           </button>
         </DropdownMenuTrigger>
       </HintTooltip>
-      <DropdownMenuContent align="start" side="bottom" className="min-w-44">
+      <DropdownMenuContent
+        align="start"
+        side="bottom"
+        className="min-w-44"
+        onCloseAutoFocus={(event) => closeFocus(event, returnFocus)}
+      >
         {options.map((option, index) => {
           const selected = currentChoice(option, values[option.id] ?? "");
           return (
             <div key={option.id}>
               {index > 0 ? <DropdownMenuSeparator /> : null}
-              <div className="px-2 pb-1 pt-1.5 text-xs font-medium text-muted-foreground">{option.label}</div>
+              <div className="px-2 pb-1 pt-1.5 text-xs font-medium text-muted-foreground">
+                {option.label}
+              </div>
               {option.choices.map((choice) => (
                 <DropdownMenuItem
                   key={choice.id}
@@ -611,3 +666,93 @@ export function TraitsPicker({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Runtime mode (T3's runtimeModeConfig + ComposerFooterModeControls)
+// ---------------------------------------------------------------------------
+
+export const RUNTIME_MODE_OPTIONS: {
+  value: RuntimeMode;
+  label: string;
+  description: string;
+  icon: typeof LockIcon;
+}[] = [
+  {
+    value: "approval-required",
+    label: "Supervised",
+    description: "Ask before commands and file changes.",
+    icon: LockIcon,
+  },
+  {
+    value: "auto-accept-edits",
+    label: "Auto-accept edits",
+    description: "Auto-approve edits, ask before other actions.",
+    icon: PenLineIcon,
+  },
+  {
+    value: "full-access",
+    label: "Full access",
+    description: "Allow commands and edits without prompts.",
+    icon: LockOpenIcon,
+  },
+];
+
+export function RuntimeModePicker({
+  value,
+  onChange,
+  returnFocus,
+}: {
+  value: RuntimeMode;
+  onChange: (mode: RuntimeMode) => void;
+  returnFocus?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  useCommandHandlers({ "composer.mode": () => setOpen((o) => !o) });
+  const current = RUNTIME_MODE_OPTIONS.find((o) => o.value === value) ?? RUNTIME_MODE_OPTIONS[2];
+  const Icon = current.icon;
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <HintTooltip label={current.description} shortcut="composer.mode">
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label="Runtime mode"
+            className={cn(COMPOSER_CONTROL, "shrink-0")}
+          >
+            <Icon aria-hidden data-composer-control-icon className="size-4 shrink-0" />
+            <span>{current.label}</span>
+            <ComposerControlChevron />
+          </button>
+        </DropdownMenuTrigger>
+      </HintTooltip>
+      <DropdownMenuContent
+        align="start"
+        side="bottom"
+        onCloseAutoFocus={(event) => closeFocus(event, returnFocus)}
+      >
+        {RUNTIME_MODE_OPTIONS.map((option) => {
+          const OptionIcon = option.icon;
+          return (
+            <DropdownMenuItem
+              key={option.value}
+              onSelect={() => onChange(option.value)}
+              className={cn(
+                "min-w-64",
+                option.value === value && "bg-foreground/[0.08] text-foreground",
+              )}
+            >
+              <div className="grid min-w-0 flex-1 gap-0.5">
+                <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
+                  <OptionIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                  {option.label}
+                </span>
+                <span className="text-xs leading-4 text-muted-foreground">
+                  {option.description}
+                </span>
+              </div>
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}

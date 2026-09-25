@@ -7,11 +7,23 @@
  */
 
 import { ipcMain, logger } from "@glaze/core/backend";
+import { claudeProvider } from "./claude.js";
 import { codexProvider } from "./codex.js";
-import { fetchHermesModels, hermesProvider, normalizeHermesBaseUrl, probeHermesSessions } from "./hermes.js";
-import { getHermesKey, getProviderSettings, saveProviderSettings, setHermesKey } from "./settings.js";
+import {
+  fetchHermesModels,
+  hermesProvider,
+  normalizeHermesBaseUrl,
+  probeHermesSessions,
+} from "./hermes.js";
+import {
+  getHermesKey,
+  getProviderSettings,
+  saveProviderSettings,
+  setHermesKey,
+} from "./settings.js";
 import {
   PROVIDER_KINDS,
+  type ApprovalDecision,
   type ChatEvent,
   type ChatProvider,
   type ChatSession,
@@ -27,6 +39,7 @@ import {
 const PROVIDERS: Record<ProviderKind, ChatProvider> = {
   hermes: hermesProvider,
   codex: codexProvider,
+  claude: claudeProvider,
 };
 
 /** Re-check health when a snapshot is older than this (T3's default interval). */
@@ -56,7 +69,7 @@ async function getState(): Promise<ProvidersState> {
   const providers = PROVIDER_KINDS.map((kind) => {
     const snapshot = snapshots.get(kind) ?? pendingSnapshot(kind, settings);
     const enabled = settings[kind].enabled;
-    const chosen = kind === "codex" ? settings.codex.model : settings.hermes.model;
+    const chosen = settings[kind].model;
     const fallback = snapshot.models.find((m) => m.isDefault)?.slug ?? snapshot.models[0]?.slug;
     return {
       ...snapshot,
@@ -65,11 +78,17 @@ async function getState(): Promise<ProvidersState> {
       model: chosen || fallback || null,
     } as ProviderSnapshot;
   });
-  const { hermes, codex, selected } = settings;
+  const { hermes, codex, claude, selected } = settings;
   return {
     providers,
     selected,
-    settings: { hermes, codex, selected, hermesHasKey: (await getHermesKey()).length > 0 },
+    settings: {
+      hermes,
+      codex,
+      claude,
+      selected,
+      hermesHasKey: (await getHermesKey()).length > 0,
+    },
   };
 }
 
@@ -86,9 +105,18 @@ function check(kind: ProviderKind): Promise<void> {
     if (!settings[kind].enabled) return;
     const result = await PROVIDERS[kind].checkStatus(settings);
     snapshots.set(kind, { ...result, enabled: true, checkedAt: Date.now() });
-    logger.info("assistant", "provider checked", { kind, status: result.status, version: result.version });
+    logger.info("assistant", "provider checked", {
+      kind,
+      status: result.status,
+      version: result.version,
+    });
   })()
-    .catch((error: unknown) => logger.info("assistant", "provider check failed", { kind, error: String(error) }))
+    .catch((error: unknown) =>
+      logger.info("assistant", "provider check failed", {
+        kind,
+        error: String(error),
+      }),
+    )
     .finally(() => {
       checking.delete(kind);
       void broadcastState();
@@ -101,7 +129,8 @@ function check(kind: ProviderKind): Promise<void> {
 export async function providersState(): Promise<ProvidersState> {
   const state = await getState();
   for (const p of state.providers) {
-    if (p.enabled && (!p.checkedAt || Date.now() - p.checkedAt > STALE_AFTER_MS)) void check(p.kind);
+    if (p.enabled && (!p.checkedAt || Date.now() - p.checkedAt > STALE_AFTER_MS))
+      void check(p.kind);
   }
   return state;
 }
@@ -116,26 +145,32 @@ export type SettingsPatch = {
     Pick<ProviderSettings["hermes"], "enabled" | "model" | "reasoningEffort" | "serviceTier">
   >;
   codex?: Partial<ProviderSettings["codex"]>;
+  claude?: Partial<ProviderSettings["claude"]>;
 };
+
+/** Settings that change how a provider's process is launched. */
+const LAUNCH_KEYS = ["binaryPath", "homePath", "launchArgs"];
 
 export async function updateProviderSettings(patch: SettingsPatch): Promise<ProvidersState> {
   const current = await getProviderSettings();
   const next: ProviderSettings = {
-    selected: patch.selected && PROVIDER_KINDS.includes(patch.selected) ? patch.selected : current.selected,
+    selected:
+      patch.selected && PROVIDER_KINDS.includes(patch.selected) ? patch.selected : current.selected,
     hermes: { ...current.hermes, ...patch.hermes },
     codex: { ...current.codex, ...patch.codex },
+    claude: { ...current.claude, ...patch.claude },
   };
   await saveProviderSettings(next);
-  // Launch settings change the process: drop running app-servers and re-probe.
-  const c = patch.codex;
-  if (c && ("binaryPath" in c || "homePath" in c || "launchArgs" in c || "runtimeMode" in c)) {
-    codexProvider.shutdown();
-    snapshots.delete("codex");
-  }
   for (const kind of PROVIDER_KINDS) {
-    if (patch[kind] && "enabled" in patch[kind]! && next[kind].enabled) void check(kind);
+    const changed = patch[kind];
+    if (!changed) continue;
+    // A new binary / home: drop running processes and re-probe.
+    if (LAUNCH_KEYS.some((key) => key in changed)) {
+      PROVIDERS[kind].shutdown();
+      snapshots.delete(kind);
+      void check(kind);
+    } else if ("enabled" in changed && next[kind].enabled) void check(kind);
   }
-  if (c && ("binaryPath" in c || "homePath" in c || "launchArgs" in c)) void check("codex");
   const state = await getState();
   ipcMain.broadcast("assistant:providersChanged", state);
   return state;
@@ -152,7 +187,12 @@ export async function connectHermes(baseUrl: string, apiKey: string): Promise<Pr
   const current = await getProviderSettings();
   await saveProviderSettings({
     ...current,
-    hermes: { ...current.hermes, baseUrl: base, agentModel: models[0] || "hermes-agent", sessions },
+    hermes: {
+      ...current.hermes,
+      baseUrl: base,
+      agentModel: models[0] || "hermes-agent",
+      sessions,
+    },
   });
   logger.info("assistant", "hermes connected", { baseUrl: base, sessions });
   snapshots.delete("hermes");
@@ -175,13 +215,45 @@ export async function sendTurn(kind: ProviderKind, turn: SendTurnInput): Promise
     skill: turn.skill?.name,
   });
   if (!settings[kind].enabled) {
-    emit({ requestId: turn.requestId, type: "error", message: "provider_disabled" });
+    emit({
+      requestId: turn.requestId,
+      type: "error",
+      message: "provider_disabled",
+    });
     return;
   }
   void PROVIDERS[kind].sendTurn(turn, settings, emit).catch((error: unknown) => {
-    logger.info("assistant", "turn crashed", { provider: kind, error: String(error) });
-    emit({ requestId: turn.requestId, type: "error", message: "unreachable" });
+    logger.info("assistant", "turn crashed", {
+      provider: kind,
+      error: String(error),
+    });
+    emit({
+      requestId: turn.requestId,
+      type: "error",
+      message: "unreachable",
+    });
   });
+}
+
+export async function respondApproval(
+  kind: ProviderKind,
+  requestId: string,
+  approvalId: string,
+  decision: ApprovalDecision,
+): Promise<void> {
+  logger.info("assistant", "approval", { provider: kind, requestId, decision });
+  await PROVIDERS[kind].respondApproval(requestId, approvalId, decision);
+}
+
+/** Adds a message to a running turn; false → the caller queues it instead. */
+export async function steerTurn(
+  kind: ProviderKind,
+  requestId: string,
+  input: string,
+): Promise<boolean> {
+  const accepted = await PROVIDERS[kind].steer(requestId, input);
+  logger.info("assistant", "steer", { provider: kind, requestId, accepted });
+  return accepted;
 }
 
 export function cancelTurn(kind: ProviderKind, requestId: string): void {
@@ -193,10 +265,16 @@ export async function listSkills(kind: ProviderKind): Promise<Skill[]> {
 }
 
 export async function listSessions(kind: ProviderKind, limit: number): Promise<ChatSession[]> {
-  return PROVIDERS[kind].listSessions(await getProviderSettings(), Math.min(Math.max(limit, 1), 200));
+  return PROVIDERS[kind].listSessions(
+    await getProviderSettings(),
+    Math.min(Math.max(limit, 1), 200),
+  );
 }
 
-export async function readSession(kind: ProviderKind, sessionId: string): Promise<ChatSessionMessage[]> {
+export async function readSession(
+  kind: ProviderKind,
+  sessionId: string,
+): Promise<ChatSessionMessage[]> {
   return PROVIDERS[kind].readSession(await getProviderSettings(), sessionId);
 }
 

@@ -7,11 +7,12 @@
 
 import { useEffect, useState, type ComponentProps, type ReactNode } from "react";
 import { toast, Switch } from "@glaze/core/components";
-import { CheckIcon, RotateCwIcon } from "lucide-react";
+import { CheckIcon, RotateCwIcon, StarIcon } from "lucide-react";
 import {
   gmailApi,
   type AssistantSettingsPatch,
   type ProviderKind,
+  type ProviderModel,
   type ProviderSnapshot,
   type ProvidersState,
   type RuntimeMode,
@@ -27,6 +28,19 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../gmail/select";
 import { Btn, cn } from "../gmail/ui";
 import { SettingsGroup, SettingsRow, SettingsSection, TextInput } from "./settings-ui";
+import { RUNTIME_MODE_OPTIONS } from "../gmail/model-picker";
+import {
+  modelKey,
+  setHidden,
+  toggleAllHidden,
+  toggleFavorite,
+  useModelPrefs,
+} from "../gmail/model-prefs";
+import {
+  setFollowUpBehavior,
+  useFollowUpBehavior,
+  type FollowUpBehavior,
+} from "../gmail/chat-queue";
 
 const CARD_HEIGHT =
   "@min-[48rem]/providers:h-[min(44rem,calc(100dvh-9rem))] @min-[48rem]/providers:min-h-[32rem]";
@@ -49,7 +63,12 @@ function formatAgo(ms: number): string {
 }
 
 function StatusDot({ status }: { status: ProviderSnapshot["status"] }) {
-  return <span className={cn("size-1.5 shrink-0 rounded-full", PROVIDER_STATUS_DOT[status])} aria-hidden />;
+  return (
+    <span
+      className={cn("size-1.5 shrink-0 rounded-full", PROVIDER_STATUS_DOT[status])}
+      aria-hidden
+    />
+  );
 }
 
 /** Text input that commits on blur / Enter (settings write once, not per keystroke). */
@@ -126,9 +145,13 @@ function ProviderListRow({
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-sm font-medium text-foreground">{provider.displayName}</span>
+            <span className="truncate text-sm font-medium text-foreground">
+              {provider.displayName}
+            </span>
             {version ? (
-              <code className="max-w-24 shrink-0 truncate text-xs text-muted-foreground">{version}</code>
+              <code className="max-w-24 shrink-0 truncate text-xs text-muted-foreground">
+                {version}
+              </code>
             ) : null}
             {isDefault ? (
               <span className="shrink-0 rounded bg-muted/60 px-1 py-0.5 text-3xs text-muted-foreground">
@@ -176,11 +199,23 @@ function StatusLine({ provider }: { provider: ProviderSnapshot }) {
     <div className="flex min-w-0 flex-wrap items-center gap-x-1.5">
       <StatusDot status={provider.status} />
       <span>{summary.headline}</span>
-      {summary.detail ? <span className="min-w-0 [overflow-wrap:anywhere]">· {summary.detail}</span> : null}
+      {summary.detail ? (
+        <span className="min-w-0 [overflow-wrap:anywhere]">· {summary.detail}</span>
+      ) : null}
     </div>
   );
 }
 
+/** T3's capability summary for a row: "Reasoning · Fast". */
+function capabilityLabels(model: ProviderModel): string[] {
+  return (model.options ?? []).map((o) => (o.id === "serviceTier" ? "Fast" : o.label));
+}
+
+/**
+ * Models, as T3 Code's ProviderModelsSection: favorites and picker visibility
+ * (stored on this Mac), a filter for long catalogs, and Enable / Disable all.
+ * Clicking a name makes it the provider's default model.
+ */
 function ModelsSection({
   provider,
   onPick,
@@ -188,46 +223,162 @@ function ModelsSection({
   provider: ProviderSnapshot;
   onPick?: (slug: string) => void;
 }) {
+  const { favorites, hidden } = useModelPrefs();
+  const [filter, setFilter] = useState("");
+  const key = (slug: string) => modelKey(provider.kind, slug);
+  const favoriteSet = new Set(favorites);
+  const hiddenSet = new Set(hidden);
+  const groupOf = (m: ProviderModel) =>
+    favoriteSet.has(key(m.slug)) ? "favorite" : hiddenSet.has(key(m.slug)) ? "hidden" : "visible";
+  const rank = { favorite: 0, visible: 1, hidden: 2 } as const;
+  const models = provider.models;
+  const query = filter.trim().toLowerCase();
+  const visible = models
+    .filter(
+      (m) =>
+        !query ||
+        m.name.toLowerCase().includes(query) ||
+        m.slug.toLowerCase().includes(query) ||
+        (m.subProvider ?? "").toLowerCase().includes(query),
+    )
+    .sort((a, b) => rank[groupOf(a)] - rank[groupOf(b)]);
+  const favoriteCount = models.filter((m) => favoriteSet.has(key(m.slug))).length;
+  const hiddenCount = models.filter((m) => hiddenSet.has(key(m.slug))).length;
+  const allKeys = models.map((m) => key(m.slug));
+  const allHidden = allKeys.length > 0 && allKeys.every((k) => hiddenSet.has(k));
+
+  const groupLabel = (label: string, isFirst: boolean) => (
+    <div className={cn("px-2 pb-1.5 text-2xs text-muted-foreground", isFirst ? "pt-1" : "pt-5")}>
+      {label}
+    </div>
+  );
+
   return (
     <SettingsSection title="Models">
       <div className="px-3 py-3 sm:px-4">
         <p className="mb-3 text-xs text-muted-foreground">
-          {onPick
-            ? "New chats use the checked model. Reported live by the provider; also pickable from the composer (⇧⌘M)."
-            : "Reported by the agent's API server."}
+          Favorites and visibility are saved on this Mac.
+          {onPick ? " Click a model to make it the default for new chats." : ""}
         </p>
-        {provider.models.length === 0 ? (
-          <p className="px-2 text-xs text-muted-foreground">No models reported for this provider yet.</p>
-        ) : (
-          <div className="flex flex-col">
-            {provider.models.map((m) => {
-              const active = m.slug === provider.model;
-              return (
-                <button
-                  key={m.slug}
-                  type="button"
-                  disabled={!onPick}
-                  onClick={() => onPick?.(m.slug)}
-                  className="grid h-7 grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 text-left enabled:cursor-pointer enabled:hover:bg-muted/30"
-                >
-                  <span className="flex items-center justify-center">
-                    {active ? <CheckIcon className="size-3.5 text-foreground" /> : null}
-                  </span>
-                  <span className="flex min-w-0 items-baseline gap-2">
-                    <span className="truncate text-xs text-foreground/90">{m.name}</span>
-                    {m.subProvider ? (
-                      <span className="truncate text-2xs text-muted-foreground/70">{m.subProvider}</span>
-                    ) : null}
-                    {m.name !== m.slug && !m.subProvider ? (
-                      <code className="truncate font-mono text-2xs text-muted-foreground/70">{m.slug}</code>
-                    ) : null}
-                  </span>
-                  <span className="text-2xs text-muted-foreground">{m.isDefault ? "default" : ""}</span>
-                </button>
-              );
-            })}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {models.length > 8 ? (
+            <TextInput
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Filter models"
+              spellCheck={false}
+              aria-label="Filter models"
+              className="w-56 max-w-full"
+            />
+          ) : null}
+          <div className="flex items-center gap-2">
+            {models.length > 0 ? (
+              <Btn size="xs" variant="ghost-muted" onClick={() => toggleAllHidden(allKeys)}>
+                {allHidden ? "Enable all" : "Disable all"}
+              </Btn>
+            ) : null}
+            <span className="text-xs text-muted-foreground">
+              {models.length} model{models.length === 1 ? "" : "s"}
+              {favoriteCount > 0
+                ? ` · ${favoriteCount} favorite${favoriteCount === 1 ? "" : "s"}`
+                : ""}
+              {hiddenCount > 0 ? ` · ${hiddenCount} hidden` : ""}
+            </span>
           </div>
-        )}
+        </div>
+        <div className="-mx-2 mt-2 max-h-72 overflow-y-auto">
+          {visible.length === 0 ? (
+            <p className="px-2 py-2 text-xs text-muted-foreground">
+              {query ? "No models match." : "No models reported for this provider yet."}
+            </p>
+          ) : null}
+          {visible.map((m, index) => {
+            const group = groupOf(m);
+            const previous = visible[index - 1];
+            const startsGroup = !previous || groupOf(previous) !== group;
+            const isHidden = hiddenSet.has(key(m.slug));
+            const isFavorite = group === "favorite";
+            const isDefault = m.slug === provider.model;
+            const caps = capabilityLabels(m);
+            return (
+              <div key={m.slug}>
+                {startsGroup && favoriteCount > 0 && group === "favorite"
+                  ? groupLabel("Favorites", index === 0)
+                  : null}
+                {startsGroup && favoriteCount > 0 && group === "visible"
+                  ? groupLabel("All", index === 0)
+                  : null}
+                {startsGroup && group === "hidden"
+                  ? groupLabel("Hidden from picker", index === 0)
+                  : null}
+                <div
+                  data-model-slug={m.slug}
+                  className={cn(
+                    "grid h-7 grid-cols-[1.5rem_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-md px-2 transition-colors hover:bg-muted/30",
+                    isHidden && "opacity-50",
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleFavorite(key(m.slug))}
+                    aria-label={`${isFavorite ? "Remove" : "Add"} ${m.name} ${isFavorite ? "from" : "to"} favorites`}
+                    title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+                    className="inline-flex size-5 cursor-pointer items-center justify-center rounded-sm text-muted-foreground hover:bg-accent-surface hover:text-foreground"
+                  >
+                    <StarIcon
+                      className={cn("size-3", isFavorite && "fill-current text-yellow-500")}
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!onPick}
+                    onClick={() => onPick?.(m.slug)}
+                    className="flex min-w-0 items-baseline gap-2 text-left enabled:cursor-pointer"
+                  >
+                    <span
+                      className={cn(
+                        "truncate text-xs",
+                        isHidden ? "text-muted-foreground" : "text-foreground/90",
+                      )}
+                    >
+                      {m.name}
+                    </span>
+                    {m.subProvider ? (
+                      <span className="truncate text-2xs text-muted-foreground/70">
+                        {m.subProvider}
+                      </span>
+                    ) : m.name !== m.slug && m.slug ? (
+                      <code className="truncate font-mono text-2xs text-muted-foreground/70">
+                        {m.slug}
+                      </code>
+                    ) : null}
+                    {isDefault ? (
+                      <span className="inline-flex shrink-0 items-center gap-0.5 text-2xs text-foreground/80">
+                        <CheckIcon className="size-3" />
+                        default
+                      </span>
+                    ) : null}
+                  </button>
+                  <span className="text-2xs text-muted-foreground/70">
+                    {caps.length > 0 ? (
+                      <span className="hidden sm:inline">{caps.join(" · ")}</span>
+                    ) : null}
+                  </span>
+                  <span
+                    className="flex shrink-0 items-center"
+                    title={isHidden ? "Hidden from the model picker" : "Shown in the model picker"}
+                  >
+                    <Switch
+                      checked={!isHidden}
+                      onCheckedChange={(checked: boolean) => setHidden(key(m.slug), !checked)}
+                      aria-label={`Show ${m.name} in the model picker`}
+                    />
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </SettingsSection>
   );
@@ -249,7 +400,9 @@ function EditorHeader({
     <SettingsSection
       title={provider.displayName}
       icon={<ProviderIcon kind={provider.kind} className="size-4" />}
-      headerAction={version ? <code className="text-xs text-muted-foreground">{version}</code> : null}
+      headerAction={
+        version ? <code className="text-xs text-muted-foreground">{version}</code> : null
+      }
     >
       <SettingsRow
         title="Status"
@@ -352,77 +505,105 @@ function HermesEditor({
   );
 }
 
-const RUNTIME_MODES: { value: RuntimeMode; label: string }[] = [
-  { value: "full-access", label: "Full access" },
-  { value: "read-only", label: "Read-only" },
-];
+/** Runtime fields of the CLI-backed agents, per T3's provider settings. */
+const AGENT_RUNTIME = {
+  codex: {
+    name: "Codex",
+    binary: "codex",
+    home: {
+      title: "CODEX_HOME path",
+      description: "Custom Codex home and config directory.",
+      placeholder: "~/.codex",
+    },
+    launchArgs: "Additional CLI arguments passed to codex app-server on session start.",
+  },
+  claude: {
+    name: "Claude",
+    binary: "claude",
+    home: {
+      title: "CLAUDE_CONFIG_DIR path",
+      description: "Custom Claude config directory.",
+      placeholder: "~/.claude",
+    },
+    launchArgs: null,
+  },
+} as const;
 
-function CodexEditor({
+function AgentEditor({
+  kind,
   state,
   provider,
   update,
 }: {
+  kind: "codex" | "claude";
   state: ProvidersState;
   provider: ProviderSnapshot;
   update: (patch: AssistantSettingsPatch) => void;
 }) {
-  const codex = state.settings.codex;
-  const setCodex = (patch: NonNullable<AssistantSettingsPatch["codex"]>) => update({ codex: patch });
+  const meta = AGENT_RUNTIME[kind];
+  const settings = state.settings[kind];
+  const set = (patch: Record<string, string>) => update({ [kind]: patch });
   return (
     <>
       <SettingsSection title="Runtime">
         <SettingsRow
           title="Binary path"
-          description="Path to the Codex binary. Empty uses `codex` from your shell's PATH."
+          description={`Path to the ${meta.name} binary. Empty uses \`${meta.binary}\` from your shell's PATH.`}
           control={
             <DraftInput
-              value={codex.binaryPath}
-              onCommit={(binaryPath) => setCodex({ binaryPath })}
-              placeholder="codex"
-              aria-label="Codex binary path"
+              value={settings.binaryPath}
+              onCommit={(binaryPath) => set({ binaryPath })}
+              placeholder={meta.binary}
+              aria-label={`${meta.name} binary path`}
               className="font-mono @min-[32rem]/settings-row:w-56"
             />
           }
         />
         <SettingsRow
-          title="CODEX_HOME path"
-          description="Custom Codex home and config directory."
+          title={meta.home.title}
+          description={meta.home.description}
           control={
             <DraftInput
-              value={codex.homePath}
-              onCommit={(homePath) => setCodex({ homePath })}
-              placeholder="~/.codex"
-              aria-label="CODEX_HOME path"
+              value={settings.homePath}
+              onCommit={(homePath) => set({ homePath })}
+              placeholder={meta.home.placeholder}
+              aria-label={meta.home.title}
               className="font-mono @min-[32rem]/settings-row:w-56"
             />
           }
         />
-        <SettingsRow
-          title="Launch arguments"
-          description="Additional CLI arguments passed to codex app-server on session start."
-          control={
-            <DraftInput
-              value={codex.launchArgs}
-              onCommit={(launchArgs) => setCodex({ launchArgs })}
-              placeholder="e.g. -c key=value"
-              aria-label="Codex launch arguments"
-              className="font-mono @min-[32rem]/settings-row:w-56"
-            />
-          }
-        />
+        {meta.launchArgs && kind === "codex" ? (
+          <SettingsRow
+            title="Launch arguments"
+            description={meta.launchArgs}
+            control={
+              <DraftInput
+                value={state.settings.codex.launchArgs}
+                onCommit={(launchArgs) => set({ launchArgs })}
+                placeholder="e.g. -c key=value"
+                aria-label={`${meta.name} launch arguments`}
+                className="font-mono @min-[32rem]/settings-row:w-56"
+              />
+            }
+          />
+        ) : null}
         <SettingsRow
           title="Access"
-          description="Full access lets Codex run tools like gog against your mail; read-only keeps its sandbox from writing anything."
+          description="Default for new turns; also switchable from the composer (⇧⌘A)."
           control={
             <Select
-              value={codex.runtimeMode}
-              onValueChange={(value) => setCodex({ runtimeMode: value as RuntimeMode })}
+              value={settings.runtimeMode}
+              onValueChange={(value) => set({ runtimeMode: value as RuntimeMode })}
             >
-              <SelectTrigger size="small" aria-label="Codex access" className="w-full sm:w-44">
+              <SelectTrigger
+                size="small"
+                aria-label={`${meta.name} access`}
+                className="w-full sm:w-44"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {RUNTIME_MODES.map((mode) => (
+                {RUNTIME_MODE_OPTIONS.map((mode) => (
                   <SelectItem key={mode.value} value={mode.value}>
                     {mode.label}
                   </SelectItem>
@@ -432,7 +613,7 @@ function CodexEditor({
           }
         />
       </SettingsSection>
-      <ModelsSection provider={provider} onPick={(model) => setCodex({ model })} />
+      <ModelsSection provider={provider} onPick={(model) => set({ model })} />
     </>
   );
 }
@@ -451,9 +632,11 @@ export function ProvidersPane() {
 
   const update = (patch: AssistantSettingsPatch) => {
     console.log("[Settings:updateAssistant]", patch);
-    gmailApi.updateAssistantSettings(patch).then(setState, (error: unknown) =>
-      toast.error(`Could not save: ${error instanceof Error ? error.message : String(error)}`),
-    );
+    gmailApi
+      .updateAssistantSettings(patch)
+      .then(setState, (error: unknown) =>
+        toast.error(`Could not save: ${error instanceof Error ? error.message : String(error)}`),
+      );
   };
 
   const refresh = () => {
@@ -475,7 +658,8 @@ export function ProvidersPane() {
   }
 
   const providers = state.providers;
-  const current = providers.find((p) => p.kind === (selectedKind ?? state.selected)) ?? providers[0];
+  const current =
+    providers.find((p) => p.kind === (selectedKind ?? state.selected)) ?? providers[0];
   const lastChecked = Math.max(0, ...providers.map((p) => p.checkedAt ?? 0));
 
   return (
@@ -499,7 +683,8 @@ export function ProvidersPane() {
                   "Refreshing providers"
                 ) : lastChecked ? (
                   <>
-                    Checked <span className="font-mono tabular-nums">{formatAgo(now - lastChecked)}</span>
+                    Checked{" "}
+                    <span className="font-mono tabular-nums">{formatAgo(now - lastChecked)}</span>
                   </>
                 ) : (
                   "Checking…"
@@ -540,12 +725,43 @@ export function ProvidersPane() {
               {current.kind === "hermes" ? (
                 <HermesEditor state={state} provider={current} update={update} />
               ) : (
-                <CodexEditor state={state} provider={current} update={update} />
+                <AgentEditor kind={current.kind} state={state} provider={current} update={update} />
               )}
             </div>
           </div>
         </SettingsGroup>
+
+        <div className="pt-6">
+          <FollowUpSection />
+        </div>
       </div>
     </div>
+  );
+}
+
+/** T3's "Follow-up behavior": what Enter does while the agent is working. */
+function FollowUpSection() {
+  const behavior = useFollowUpBehavior();
+  return (
+    <SettingsSection title="Chat">
+      <SettingsRow
+        title="Follow-up behavior"
+        description="Queue follow-ups while the agent runs or steer the current run. Press ⌘ + Enter to do the opposite for one message."
+        control={
+          <Select
+            value={behavior}
+            onValueChange={(value) => setFollowUpBehavior(value as FollowUpBehavior)}
+          >
+            <SelectTrigger size="small" aria-label="Follow-up behavior" className="w-full sm:w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="queue">Queue</SelectItem>
+              <SelectItem value="steer">Steer</SelectItem>
+            </SelectContent>
+          </Select>
+        }
+      />
+    </SettingsSection>
   );
 }

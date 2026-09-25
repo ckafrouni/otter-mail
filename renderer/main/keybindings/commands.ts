@@ -43,6 +43,9 @@ export const KEYBINDING_COMMANDS = [
   "assistant.toggle",
   "assistant.newChat",
   "modelPicker.toggle",
+  "composer.mode",
+  "assistant.sendQueuedNow",
+  "assistant.editQueued",
   "modelPicker.previousProvider",
   "modelPicker.nextProvider",
   ...MODEL_PICKER_JUMP_COMMANDS,
@@ -78,7 +81,11 @@ export function isKeybindingCommand(value: string): value is KeybindingCommand {
   return (KEYBINDING_COMMANDS as readonly string[]).includes(value);
 }
 
-export type KeybindingRule = { key: string; command: KeybindingCommand; when?: string };
+export type KeybindingRule = {
+  key: string;
+  command: KeybindingCommand;
+  when?: string;
+};
 
 /** Context keys offered in the When editor (plus the literals). */
 export const WHEN_VARIABLES = [
@@ -103,11 +110,32 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+i", command: "assistant.toggle", when: OUTSIDE_FIELDS },
   { key: "mod+shift+o", command: "assistant.newChat", when: "!dialogOpen" },
   { key: "mod+shift+m", command: "modelPicker.toggle", when: "assistantOpen" },
-  { key: "mod+shift+arrowup", command: "modelPicker.previousProvider", when: "modelPickerOpen" },
-  { key: "mod+shift+arrowdown", command: "modelPicker.nextProvider", when: "modelPickerOpen" },
-  ...MODEL_PICKER_JUMP_COMMANDS.map(
-    (command, i): KeybindingRule => ({ key: `mod+${i + 1}`, command, when: "modelPickerOpen" }),
-  ),
+  { key: "mod+shift+a", command: "composer.mode", when: "assistantOpen" },
+  {
+    key: "mod+shift+enter",
+    command: "assistant.sendQueuedNow",
+    when: "assistantOpen",
+  },
+  {
+    key: "alt+arrowup",
+    command: "assistant.editQueued",
+    when: "assistantOpen && editableFocus",
+  },
+  {
+    key: "mod+shift+arrowup",
+    command: "modelPicker.previousProvider",
+    when: "modelPickerOpen",
+  },
+  {
+    key: "mod+shift+arrowdown",
+    command: "modelPicker.nextProvider",
+    when: "modelPickerOpen",
+  },
+  ...MODEL_PICKER_JUMP_COMMANDS.map((command, i): KeybindingRule => ({
+    key: `mod+${i + 1}`,
+    command,
+    when: "modelPickerOpen",
+  })),
   { key: "/", command: "search.focus", when: OUTSIDE_FIELDS },
   { key: "mod+f", command: "search.focus", when: "!dialogOpen" },
   { key: "c", command: "compose.new", when: OUTSIDE_FIELDS },
@@ -118,9 +146,11 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "g t", command: "go.sent", when: IN_MAIL },
   { key: "g s", command: "go.starred", when: IN_MAIL },
   { key: "g d", command: "go.drafts", when: IN_MAIL },
-  ...MAILBOX_JUMP_COMMANDS.map(
-    (command, i): KeybindingRule => ({ key: `mod+${i + 1}`, command, when: "!dialogOpen" }),
-  ),
+  ...MAILBOX_JUMP_COMMANDS.map((command, i): KeybindingRule => ({
+    key: `mod+${i + 1}`,
+    command,
+    when: "!dialogOpen",
+  })),
   { key: "j", command: "list.next", when: IN_MAIL },
   { key: "arrowdown", command: "list.next", when: IN_MAIL },
   { key: "k", command: "list.previous", when: IN_MAIL },

@@ -39,6 +39,8 @@
   --sidebar-row-content-inset: 0.625rem;
   --workspace-topbar-height: 52px;
   --app-scrollbar-width: 6px;
+  /* Height of the fade under borderless top bars (Otter Code). */
+  --workspace-titlebar-scroll-fade-height: 1.5rem;
   --app-scrollbar-thumb: rgb(217 217 217);
   --app-scrollbar-thumb-hover: rgb(191 191 191);
   --glass-blur: 12px;
@@ -416,4 +418,47 @@
   label[for] {
     cursor: pointer;
   }
+}
+
+/*
+ * Otter Code's borderless top bar: scrolled content fades out beneath it
+ * instead of meeting a hairline. The scrollbar lane stays opaque.
+ */
+@utility topbar-scroll-fade {
+  -webkit-mask-image:
+    linear-gradient(
+      to bottom,
+      transparent 0%,
+      rgb(0 0 0 / 10%) 10%,
+      rgb(0 0 0 / 30%) 24%,
+      rgb(0 0 0 / 58%) 42%,
+      rgb(0 0 0 / 82%) 62%,
+      rgb(0 0 0 / 96%) 82%,
+      black 100%
+    ),
+    linear-gradient(black, black), linear-gradient(black, black);
+  -webkit-mask-position: top, bottom, right;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size:
+    100% calc(var(--workspace-titlebar-scroll-fade-height) + 1px),
+    100% calc(100% - var(--workspace-titlebar-scroll-fade-height)),
+    var(--app-scrollbar-width) 100%;
+  mask-image:
+    linear-gradient(
+      to bottom,
+      transparent 0%,
+      rgb(0 0 0 / 10%) 10%,
+      rgb(0 0 0 / 30%) 24%,
+      rgb(0 0 0 / 58%) 42%,
+      rgb(0 0 0 / 82%) 62%,
+      rgb(0 0 0 / 96%) 82%,
+      black 100%
+    ),
+    linear-gradient(black, black), linear-gradient(black, black);
+  mask-position: top, bottom, right;
+  mask-repeat: no-repeat;
+  mask-size:
+    100% calc(var(--workspace-titlebar-scroll-fade-height) + 1px),
+    100% calc(100% - var(--workspace-titlebar-scroll-fade-height)),
+    var(--app-scrollbar-width) 100%;
 }

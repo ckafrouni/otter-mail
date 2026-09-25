@@ -12,7 +12,10 @@ import { logger } from "@glaze/core/backend";
 import { ensureShellPath } from "./shell-path.js";
 import type { CodexSettings } from "./types.js";
 
-type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void };
+type Pending = {
+  resolve: (value: unknown) => void;
+  reject: (error: Error) => void;
+};
 
 export type Notification = { method: string; params: Record<string, unknown> };
 export type ServerRequest = Notification & { id: number | string };
@@ -54,7 +57,10 @@ export class CodexAppServer {
     child.stderr.on("data", (chunk: string) => {
       // Only errors are interesting; Codex logs a lot at info level.
       for (const line of chunk.split("\n")) {
-        if (/\bERROR\b/.test(line)) logger.info("assistant", "codex stderr", { line: line.slice(0, 300) });
+        if (/\bERROR\b/.test(line))
+          logger.info("assistant", "codex stderr", {
+            line: line.slice(0, 300),
+          });
       }
     });
     child.on("exit", (code) => {
@@ -162,14 +168,22 @@ export class CodexAppServer {
       return;
     }
     if (message.method && message.id != null) {
-      this.onServerRequest({ id: message.id, method: message.method, params: message.params ?? {} });
+      this.onServerRequest({
+        id: message.id,
+        method: message.method,
+        params: message.params ?? {},
+      });
     } else if (message.method) {
-      this.onNotification({ method: message.method, params: message.params ?? {} });
+      this.onNotification({
+        method: message.method,
+        params: message.params ?? {},
+      });
     } else if (typeof message.id === "number") {
       const pending = this.pending.get(message.id);
       if (!pending) return;
       this.pending.delete(message.id);
-      if (message.error) pending.reject(new Error(message.error.message ?? "Codex request failed."));
+      if (message.error)
+        pending.reject(new Error(message.error.message ?? "Codex request failed."));
       else pending.resolve(message.result);
     }
   }

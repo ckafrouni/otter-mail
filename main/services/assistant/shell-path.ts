@@ -20,7 +20,10 @@ function loginShellPath(): Promise<string | null> {
       { timeout: 5_000, maxBuffer: 1024 * 1024 },
       (error, stdout) => {
         const match = String(stdout ?? "").match(new RegExp(`${MARKER}(.*?)${MARKER}`));
-        if (error && !match) logger.info("assistant", "login shell PATH failed", { error: String(error) });
+        if (error && !match)
+          logger.info("assistant", "login shell PATH failed", {
+            error: String(error),
+          });
         resolve(match?.[1] ?? null);
       },
     );

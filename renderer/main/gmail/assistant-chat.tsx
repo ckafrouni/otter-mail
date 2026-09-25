@@ -18,6 +18,9 @@ import {
   Trash2Icon,
   WrenchIcon,
   XIcon,
+  CheckIcon,
+  CornerUpRightIcon,
+  ListPlusIcon,
 } from "lucide-react";
 import { IconBtn, HintTooltip, buttonClass, cn } from "./ui";
 import {
@@ -25,6 +28,8 @@ import {
   type ChatEvent,
   type ChatSession,
   type ChatSessionMessage,
+  type ApprovalDecision,
+  type ApprovalRequest,
   type AssistantSettingsPatch,
   type ProviderKind,
   type Skill,
@@ -32,8 +37,10 @@ import {
 import {
   ComposerControlSeparator,
   ProviderModelPicker,
+  RuntimeModePicker,
   TraitsPicker,
 } from "./model-picker";
+import { ApprovalBanner } from "./approval-banner";
 import {
   ProviderIcon,
   isProviderUsable,
@@ -49,10 +56,9 @@ import {
   type QuoteContext,
 } from "./chat-context";
 import { ChatMarkdown } from "./chat-markdown";
-import {
-  useCommandHandlers,
-  useKeybindingContext,
-} from "../keybindings/dispatch";
+import { IntentMarker, QueuedRunsControl, useFollowUpBehavior } from "./chat-queue";
+import { toast } from "@glaze/core/components";
+import { useCommandHandlers, useKeybindingContext } from "../keybindings/dispatch";
 import { useAccounts, useMessage } from "./hooks";
 import type { GmailMessageSummary } from "./types";
 
@@ -74,13 +80,7 @@ function contextKind(labelSets: string[][]): ContextKind {
   return kinds.size === 1 ? [...kinds][0] : "mixed";
 }
 
-function ContextKindIcon({
-  kind,
-  className,
-}: {
-  kind: ContextKind;
-  className?: string;
-}) {
+function ContextKindIcon({ kind, className }: { kind: ContextKind; className?: string }) {
   const Icon =
     kind === "quote"
       ? TextQuoteIcon
@@ -104,6 +104,8 @@ type ChatTurn = {
   context?: ContextMeta;
   /** Invoked skill, rendered as a badge on the user's message. */
   skill?: string;
+  /** How a user message was delivered (Otter Code's inputIntent marker). */
+  intent?: "queued" | "steer" | "promoted";
   error?: string;
   /** Assistant turns: when the run started / settled, for the "Worked for" fold. */
   startedAt?: number;
@@ -124,9 +126,7 @@ function SkillBadge({
     <span
       className={[
         "inline-flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs font-semibold",
-        onAccent
-          ? "bg-foreground/8 text-foreground"
-          : "bg-primary/10 text-primary",
+        onAccent ? "bg-foreground/8 text-foreground" : "bg-primary/10 text-primary",
       ].join(" ")}
     >
       <span className="opacity-50">/</span>
@@ -179,6 +179,25 @@ type Conversation = {
 };
 
 type Store = { conversations: Conversation[]; activeId: string };
+
+/** A composed message, before it becomes a turn (or a steer). */
+type Outgoing = {
+  id: string;
+  convoId: string;
+  question: string;
+  /** What the agent receives (question + attached context block). */
+  input: string;
+  skill?: Skill;
+  title: string;
+  context?: ContextMeta;
+};
+
+/**
+ * A follow-up waiting for the running turn (Otter Code's queued run). It has
+ * no transcript row until it starts; it lives in the queue banner. In memory
+ * only: a queued message is a live intent, not a draft worth persisting.
+ */
+type QueuedMessage = Outgoing;
 
 const STORE_KEY = "gmail:hermes-chat:v2";
 const LEGACY_KEY = "gmail:hermes-chat:v1";
@@ -262,9 +281,7 @@ function loadStore(): Store {
   let conversations: Conversation[] = [];
   let activeId: string | null = null;
   try {
-    const v2 = JSON.parse(
-      localStorage.getItem(STORE_KEY) ?? "",
-    ) as Partial<Store>;
+    const v2 = JSON.parse(localStorage.getItem(STORE_KEY) ?? "") as Partial<Store>;
     if (Array.isArray(v2.conversations)) {
       // Older chats carry no session / provider fields (they were all Hermes).
       conversations = v2.conversations.map((c) => ({
@@ -316,10 +333,7 @@ function saveStore(store: Store): void {
   const conversations = store.conversations
     .slice(0, MAX_CONVERSATIONS)
     .map((c) => ({ ...c, turns: c.turns.slice(-MAX_STORED_TURNS) }));
-  localStorage.setItem(
-    STORE_KEY,
-    JSON.stringify({ conversations, activeId: store.activeId }),
-  );
+  localStorage.setItem(STORE_KEY, JSON.stringify({ conversations, activeId: store.activeId }));
 }
 
 function formatAgo(ts: number): string {
@@ -333,7 +347,7 @@ function formatAgo(ts: number): string {
 
 /** Canonical error codes from the backend → what the transcript says. */
 function friendlyError(code: string, provider: ProviderKind): string {
-  const name = provider === "codex" ? "Codex" : "Hermes";
+  const name = provider === "codex" ? "Codex" : provider === "claude" ? "Claude" : "Hermes";
   switch (code) {
     case "not_configured":
       return `${name} isn't set up — connect it in Settings → Assistant.`;
@@ -434,9 +448,7 @@ function ToolRow({ name, output }: { name: string; output?: string }) {
   const [open, setOpen] = useState(false);
   const canExpand = Boolean(output);
   const pending = output === undefined;
-  const Icon = /term|shell|bash|command|exec/i.test(name)
-    ? TerminalIcon
-    : WrenchIcon;
+  const Icon = /term|shell|bash|command|exec/i.test(name) ? TerminalIcon : WrenchIcon;
   const toggle = () => setOpen((o) => !o);
   return (
     <div
@@ -501,13 +513,7 @@ function ToolRow({ name, output }: { name: string; output?: string }) {
 }
 
 /** Failed turn: red heading row plus the explanation underneath. */
-function ErrorRow({
-  message,
-  providerName,
-}: {
-  message: string;
-  providerName: string;
-}) {
+function ErrorRow({ message, providerName }: { message: string; providerName: string }) {
   return (
     <div className="flex flex-col px-0.5 py-1">
       <div className="flex items-center gap-1.5">
@@ -518,9 +524,7 @@ function ErrorRow({
           {providerName} error
         </span>
       </div>
-      <p className="ms-7 text-sm leading-relaxed text-foreground/80">
-        {message}
-      </p>
+      <p className="ms-7 text-sm leading-relaxed text-foreground/80">{message}</p>
     </div>
   );
 }
@@ -575,9 +579,7 @@ function HistoryList({
       />
       <div className="dropdown-glass absolute left-2 top-[calc(var(--workspace-topbar-height)+2px)] z-20 max-h-[70%] w-[calc(100%-1rem)] overflow-y-auto rounded-lg p-1 shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]">
         {showServer ? (
-          <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
-            Recent
-          </div>
+          <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Recent</div>
         ) : null}
         {items.length === 0 ? (
           <div className="px-2 py-3 text-center text-xs text-muted-foreground">
@@ -589,9 +591,7 @@ function HistoryList({
               key={c.id}
               className={[
                 "group flex items-center gap-1 rounded-md px-1",
-                c.id === activeId
-                  ? "bg-accent-surface"
-                  : "hover:bg-accent-surface",
+                c.id === activeId ? "bg-accent-surface" : "hover:bg-accent-surface",
               ].join(" ")}
             >
               <button
@@ -599,12 +599,8 @@ function HistoryList({
                 onClick={() => onPick(c.id)}
                 className="flex min-w-0 flex-1 flex-col items-start py-1.5 pl-1.5 text-left"
               >
-                <span className="w-full truncate text-sm text-foreground/90">
-                  {c.title}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {formatAgo(c.updatedAt)}
-                </span>
+                <span className="w-full truncate text-sm text-foreground/90">{c.title}</span>
+                <span className="text-xs text-muted-foreground">{formatAgo(c.updatedAt)}</span>
               </button>
               <button
                 type="button"
@@ -680,8 +676,7 @@ export function AssistantChatPanel({
 }) {
   const [store, setStore] = useState<Store>(() => loadStore());
   const { conversations, activeId } = store;
-  const active =
-    conversations.find((c) => c.id === activeId) ?? conversations[0];
+  const active = conversations.find((c) => c.id === activeId) ?? conversations[0];
   const turns = active?.turns ?? [];
 
   const [draft, setDraft] = useState("");
@@ -693,6 +688,27 @@ export function AssistantChatPanel({
     provider: ProviderKind;
   } | null>(null);
   const [attach, setAttach] = useState(true);
+  const [queue, setQueue] = useState<QueuedMessage[]>([]);
+  // ⌘ held: the send button previews the alternate action (queue ⇄ steer).
+  const [modHeld, setModHeld] = useState(false);
+  useEffect(() => {
+    const sync = (e: KeyboardEvent) => setModHeld(e.metaKey || e.ctrlKey);
+    const clear = () => setModHeld(false);
+    window.addEventListener("keydown", sync);
+    window.addEventListener("keyup", sync);
+    window.addEventListener("blur", clear);
+    return () => {
+      window.removeEventListener("keydown", sync);
+      window.removeEventListener("keyup", sync);
+      window.removeEventListener("blur", clear);
+    };
+  }, []);
+  const followUp = useFollowUpBehavior();
+  // Approvals the running turn is waiting on (oldest first).
+  const [approvals, setApprovals] = useState<{ requestId: string; approval: ApprovalRequest }[]>(
+    [],
+  );
+  const [respondingApproval, setRespondingApproval] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
 
   // Provider: a conversation keeps the one it started with; an empty one
@@ -703,17 +719,12 @@ export function AssistantChatPanel({
   const selectedKind = providersState?.selected ?? "hermes";
   const providerKind: ProviderKind =
     active && active.turns.length > 0 ? active.provider : selectedKind;
-  const provider = providersState?.providers.find(
-    (p) => p.kind === providerKind,
-  );
-  const providerName =
-    provider?.displayName ?? (providerKind === "codex" ? "Codex" : "Hermes");
+  const provider = providersState?.providers.find((p) => p.kind === providerKind);
+  const providerName = provider?.displayName ?? (providerKind === "codex" ? "Codex" : "Hermes");
   const usable = isProviderUsable(provider);
   const sessionsAvailable = Boolean(provider?.sessions && usable);
   // Finished runs fold their tool rows behind a "Worked for …" summary.
-  const [expandedFolds, setExpandedFolds] = useState<Set<string>>(
-    () => new Set(),
-  );
+  const [expandedFolds, setExpandedFolds] = useState<Set<string>>(() => new Set());
   const toggleFold = (id: string) =>
     setExpandedFolds((prev) => {
       const next = new Set(prev);
@@ -757,8 +768,7 @@ export function AssistantChatPanel({
     // Typing a space after a complete "/known-skill" promotes it to the badge.
     if (!activeSkill) {
       const m = value.match(/^\/([a-z0-9:_-]+)\s([\s\S]*)$/i);
-      const sk =
-        m && skills.find((s) => s.name.toLowerCase() === m[1].toLowerCase());
+      const sk = m && skills.find((s) => s.name.toLowerCase() === m[1].toLowerCase());
       if (sk) {
         setActiveSkill(sk);
         setDraft(m![2]);
@@ -772,12 +782,9 @@ export function AssistantChatPanel({
   const slashQuery = slashMatch ? slashMatch[1].toLowerCase() : null;
   const slashSkills =
     slashQuery !== null
-      ? skills
-          .filter((s) => s.name.toLowerCase().includes(slashQuery))
-          .slice(0, 8)
+      ? skills.filter((s) => s.name.toLowerCase().includes(slashQuery)).slice(0, 8)
       : [];
-  const slashOpen =
-    slashQuery !== null && !slashDismissed && slashSkills.length > 0;
+  const slashOpen = slashQuery !== null && !slashDismissed && slashSkills.length > 0;
   useEffect(() => {
     setSlashIndex(0);
   }, [slashQuery]);
@@ -824,9 +831,7 @@ export function AssistantChatPanel({
     : openMessage.data
       ? [openMessage.data.labelIds]
       : [];
-  const attachKind: ContextKind = quote
-    ? "quote"
-    : contextKind(contextLabelSets);
+  const attachKind: ContextKind = quote ? "quote" : contextKind(contextLabelSets);
 
   // A fresh quote re-arms the attach toggle so it isn't silently dropped.
   useEffect(() => {
@@ -835,6 +840,8 @@ export function AssistantChatPanel({
 
   // Stream events land in their originating conversation (not necessarily the
   // active one); the listener mounts once and reads the stream via a ref.
+  const storeRef = useRef(store);
+  storeRef.current = store;
   const streamingRef = useRef(streaming);
   streamingRef.current = streaming;
   useEffect(() => {
@@ -844,6 +851,20 @@ export function AssistantChatPanel({
         const event = raw as ChatEvent;
         const s = streamingRef.current;
         if (!event || !s || event.requestId !== s.requestId) return;
+        // Approvals live beside the transcript, not in it.
+        if (event.type === "approval") {
+          setApprovals((list) => [
+            ...list,
+            { requestId: event.requestId, approval: event.approval },
+          ]);
+          return;
+        }
+        if (event.type === "approvalResolved") {
+          setApprovals((list) => list.filter((a) => a.approval.id !== event.approvalId));
+          return;
+        }
+        if (event.type === "done" || event.type === "error")
+          setApprovals((list) => list.filter((a) => a.requestId !== event.requestId));
         setStore((prev) => ({
           ...prev,
           conversations: prev.conversations.map((c) => {
@@ -856,28 +877,20 @@ export function AssistantChatPanel({
             if (!turn || turn.role !== "assistant") return c;
             const updated = { ...turn, tools: [...turn.tools] };
             if (event.type === "delta") updated.text += event.text;
-            else if (event.type === "tool")
-              updated.tools.push({ name: event.name });
+            else if (event.type === "tool") updated.tools.push({ name: event.name });
             else if (event.type === "toolResult") {
-              const open = [...updated.tools]
-                .reverse()
-                .find((t) => t.output === undefined);
+              const open = [...updated.tools].reverse().find((t) => t.output === undefined);
               if (open) open.output = event.output;
             } else if (event.type === "error") {
               updated.error = friendlyError(event.message, s.provider);
             }
-            if (event.type === "done" || event.type === "error")
-              updated.finishedAt = Date.now();
+            if (event.type === "done" || event.type === "error") updated.finishedAt = Date.now();
             nextTurns[nextTurns.length - 1] = updated;
             const lastResponseId =
-              event.type === "done" && event.responseId
-                ? event.responseId
-                : c.lastResponseId;
+              event.type === "done" && event.responseId ? event.responseId : c.lastResponseId;
             // A session deleted elsewhere: unbind so the next send starts a fresh one.
             const sessionId =
-              event.type === "error" && event.message === "session_not_found"
-                ? null
-                : c.sessionId;
+              event.type === "error" && event.message === "session_not_found" ? null : c.sessionId;
             return {
               ...c,
               turns: nextTurns,
@@ -888,67 +901,85 @@ export function AssistantChatPanel({
           }),
         }));
         if (event.type === "done" || event.type === "error") setStreaming(null);
+        // A steer the agent never got to: it goes first in line.
+        if (event.type === "steerReturned")
+          setQueue((q) => [
+            {
+              id: crypto.randomUUID(),
+              convoId: s.convoId,
+              question: event.text,
+              input: event.text,
+              title: clampTitle(event.text),
+            },
+            ...q,
+          ]);
       },
     );
     return unsub;
   }, []);
 
-  const patchConversation = (
-    id: string,
-    fn: (c: Conversation) => Conversation,
-  ) => {
+  const patchConversation = (id: string, fn: (c: Conversation) => Conversation) => {
     setStore((s) => ({
       ...s,
       conversations: s.conversations.map((c) => (c.id === id ? fn(c) : c)),
     }));
   };
 
-  const send = () => {
+  /** Consumes the composer (text, skill, attached context) into a message. */
+  const compose = (): Outgoing | null => {
     const question = draft.trim();
-    if ((!question && !activeSkill) || streaming || !usable || !active) return;
-    const requestId = crypto.randomUUID();
-    const convoId = active.id;
-    const kind = providerKind;
+    if ((!question && !activeSkill) || !usable || !active) return null;
     const attached = attach && context ? context : null;
-    const skill = activeSkill;
-    const input = attached ? buildHandoffText(question, attached) : question;
-    const prevResponseId = active.lastResponseId ?? undefined;
-    const title = clampTitle(skill ? `/${skill.name} ${question}` : question);
-    console.log("[AssistantChat:send]", {
-      requestId,
-      provider: kind,
-      attached: Boolean(attached),
-      skill: skill?.name,
-      session: active.sessionId ?? "new",
-    });
+    const skill = activeSkill ?? undefined;
     setDraft("");
     setActiveSkill(null);
+    // A quote is one-shot — release it once it's been sent.
+    if (attached && quote) onClearQuote?.();
+    return {
+      id: crypto.randomUUID(),
+      convoId: active.id,
+      question,
+      input: attached ? buildHandoffText(question, attached) : question,
+      skill,
+      title: clampTitle(skill ? `/${skill.name} ${question}` : question),
+      context: attached
+        ? {
+            count: attached.conversations.length,
+            subjects: quote ? [quote.text] : attached.conversations.map((x) => x.subject),
+            kind: attachKind,
+          }
+        : undefined,
+    };
+  };
+
+  /** The user bubble + an empty assistant turn that the stream fills in. */
+  const appendExchange = (
+    convoId: string,
+    msg: Outgoing,
+    requestKey: string,
+    intent?: ChatTurn["intent"],
+  ) =>
     patchConversation(convoId, (c) => ({
       ...c,
-      // The first turn pins the chat to the provider it was sent with.
-      provider: c.turns.length === 0 ? kind : c.provider,
-      title: c.turns.length === 0 ? title : c.title,
       updatedAt: Date.now(),
       turns: [
-        ...c.turns,
+        // A steer closes the running turn's fold; the stream continues below.
+        ...c.turns.map((t, i) =>
+          i === c.turns.length - 1 && t.role === "assistant" && !t.finishedAt
+            ? { ...t, finishedAt: Date.now() }
+            : t,
+        ),
         {
-          id: `u-${requestId}`,
+          id: `u-${requestKey}`,
           role: "user",
-          text: question,
+          text: msg.question,
           tools: [],
-          skill: skill?.name,
-          context: attached
-            ? {
-                count: attached.conversations.length,
-                subjects: quote
-                  ? [quote.text]
-                  : attached.conversations.map((x) => x.subject),
-                kind: attachKind,
-              }
-            : undefined,
+          skill: msg.skill?.name,
+          context: msg.context,
+          intent,
         },
         {
-          id: `a-${requestId}`,
+          id: `a-${requestKey}`,
           role: "assistant",
           text: "",
           tools: [],
@@ -956,23 +987,43 @@ export function AssistantChatPanel({
         },
       ],
     }));
-    setStreaming({ requestId, convoId, provider: kind });
-    // A quote is one-shot — release it once it's been sent.
-    if (attached && quote) onClearQuote?.();
+
+  /** Starts a new turn in the message's conversation. */
+  const startTurn = (msg: Outgoing, intent?: ChatTurn["intent"]) => {
+    const convo = storeRef.current.conversations.find((c) => c.id === msg.convoId);
+    if (!convo) return;
+    const requestId = crypto.randomUUID();
+    const kind = convo.turns.length > 0 ? convo.provider : providerKind;
+    const firstTurn = convo.turns.length === 0;
+    console.log("[AssistantChat:send]", {
+      requestId,
+      provider: kind,
+      attached: Boolean(msg.context),
+      skill: msg.skill?.name,
+      session: convo.sessionId ?? "new",
+    });
+    patchConversation(msg.convoId, (c) => ({
+      ...c,
+      // The first turn pins the chat to the provider it was sent with.
+      provider: firstTurn ? kind : c.provider,
+      title: firstTurn ? msg.title : c.title,
+    }));
+    appendExchange(msg.convoId, msg, requestId, intent);
+    setStreaming({ requestId, convoId: msg.convoId, provider: kind });
     // Returns at once; the turn streams as chat events (incl. the new session id).
     gmailApi
       .assistantSend({
         provider: kind,
         requestId,
-        input,
-        sessionId: active.sessionId ?? undefined,
-        title: active.turns.length === 0 ? title : undefined,
-        skill: skill ? { name: skill.name, path: skill.path } : undefined,
-        previousResponseId: active.sessionId ? undefined : prevResponseId,
+        input: msg.input,
+        sessionId: convo.sessionId ?? undefined,
+        title: firstTurn ? msg.title : undefined,
+        skill: msg.skill ? { name: msg.skill.name, path: msg.skill.path } : undefined,
+        previousResponseId: convo.sessionId ? undefined : (convo.lastResponseId ?? undefined),
       })
       .catch((error: unknown) => {
         console.log("[AssistantChat:send] failed", { error: String(error) });
-        patchConversation(convoId, (c) => ({
+        patchConversation(msg.convoId, (c) => ({
           ...c,
           turns: c.turns.map((t) =>
             t.id === `a-${requestId}`
@@ -987,6 +1038,127 @@ export function AssistantChatPanel({
         setStreaming((cur) => (cur?.requestId === requestId ? null : cur));
       });
   };
+
+  /**
+   * Steers the message into the running turn (Codex turn/steer, Claude's live
+   * prompt, Hermes' run steer). Refused → it goes (back) to the queue.
+   */
+  const steer = (msg: Outgoing, intent: "steer" | "promoted" = "steer") => {
+    const run = streamingRef.current;
+    if (!run || run.convoId !== msg.convoId) return startTurn(msg);
+    console.log("[AssistantChat:steer]", { provider: run.provider, intent });
+    const key = `${run.requestId}-${msg.id}`;
+    appendExchange(msg.convoId, msg, key, intent);
+    const refused = () => {
+      undoExchange(msg.convoId, key);
+      setQueue((q) => [msg, ...q]);
+    };
+    gmailApi
+      .assistantSteer(run.provider, run.requestId, msg.input)
+      .then(({ accepted }) => !accepted && refused(), refused);
+  };
+
+  /** Removes an optimistic steer exchange that the agent refused. */
+  const undoExchange = (convoId: string, requestKey: string) =>
+    patchConversation(convoId, (c) => ({
+      ...c,
+      turns: c.turns.filter((t) => t.id !== `u-${requestKey}` && t.id !== `a-${requestKey}`),
+    }));
+
+  /**
+   * Otter Code's dispatch modes: idle → start; running → queue or steer per
+   * the follow-up setting, ⌘↩ / ⌘-click does the opposite for one message.
+   * Editing a queued message, send updates it in place instead.
+   */
+  const send = (alternate = false) => {
+    if (editing) {
+      saveQueuedEdit();
+      return;
+    }
+    const msg = compose();
+    if (!msg) return;
+    const run = streamingRef.current;
+    if (!run) return startTurn(msg);
+    if (run.convoId !== msg.convoId) return setQueue((q) => [...q, msg]);
+    if ((followUp === "queue") !== alternate) setQueue((q) => [...q, msg]);
+    else steer(msg);
+  };
+
+  /** Promote a queued message to steer the active run (Otter Code's "Steer"). */
+  const steerQueued = (id: string) => {
+    const msg = queue.find((m) => m.id === id);
+    const run = streamingRef.current;
+    if (!msg || !run || run.convoId !== msg.convoId) return;
+    setQueue((q) => q.filter((m) => m.id !== id));
+    steer(msg, "promoted");
+  };
+
+  /** Drag / arrow-key reorder: move `id` before `beforeId` (null = to the end). */
+  const moveQueued = (id: string, beforeId: string | null) =>
+    setQueue((q) => {
+      const moving = q.find((m) => m.id === id);
+      if (!moving || id === beforeId) return q;
+      const rest = q.filter((m) => m.id !== id);
+      const at = beforeId === null ? rest.length : rest.findIndex((m) => m.id === beforeId);
+      return at < 0 ? q : [...rest.slice(0, at), moving, ...rest.slice(at)];
+    });
+
+  const removeQueued = (id: string) => {
+    if (editing?.id === id) cancelQueuedEdit();
+    setQueue((q) => q.filter((m) => m.id !== id));
+  };
+
+  // Editing a queued message borrows the composer; the user's own draft is
+  // set aside and comes back when the edit ends (Otter Code's queued-edit draft).
+  const [editing, setEditing] = useState<{
+    id: string;
+    savedDraft: string;
+  } | null>(null);
+  const editQueued = (id: string) => {
+    const msg = queue.find((m) => m.id === id);
+    if (!msg) return;
+    setEditing({ id, savedDraft: editing ? editing.savedDraft : draft });
+    setDraft(msg.question);
+    inputRef.current?.focus();
+  };
+  const cancelQueuedEdit = () => {
+    if (!editing) return;
+    setDraft(editing.savedDraft);
+    setEditing(null);
+  };
+  const saveQueuedEdit = () => {
+    if (!editing) return;
+    const text = draft.trim();
+    if (!text) return;
+    setQueue((q) =>
+      q.map((m) =>
+        m.id === editing.id
+          ? {
+              ...m,
+              question: text,
+              // Keep the attached context block, swap the question above it.
+              input: m.input === m.question ? text : m.input.replace(m.question, text),
+              title: clampTitle(text),
+            }
+          : m,
+      ),
+    );
+    cancelQueuedEdit();
+  };
+  // The edited message left the queue (it started, or was removed): keep a
+  // dirty edit in the composer, otherwise restore the user's draft.
+  useEffect(() => {
+    if (!editing || queue.some((m) => m.id === editing.id)) return;
+    const original = draft.trim();
+    if (original && !editing.savedDraft.trim()) {
+      setEditing(null);
+      toast.info("Queued message is no longer queued", {
+        description: "Your unsaved edit was kept in the composer.",
+      });
+    } else {
+      cancelQueuedEdit();
+    }
+  }, [queue]);
 
   /** Resumes a session persisted on the provider (e.g. started in Hermes' WebUI) in the panel. */
   const openServerSession = (session: ChatSession) => {
@@ -1005,9 +1177,7 @@ export function AssistantChatPanel({
     });
     const convo: Conversation = {
       id: crypto.randomUUID(),
-      title: clampTitle(
-        session.title || session.preview || `${providerName} session`,
-      ),
+      title: clampTitle(session.title || session.preview || `${providerName} session`),
       turns: [],
       provider: providerKind,
       sessionId: session.id,
@@ -1016,10 +1186,7 @@ export function AssistantChatPanel({
       updatedAt: session.lastActive || Date.now(),
     };
     setStore((s) => ({
-      conversations: [
-        convo,
-        ...s.conversations.filter((c) => c.turns.length > 0),
-      ],
+      conversations: [convo, ...s.conversations.filter((c) => c.turns.length > 0)],
       activeId: convo.id,
     }));
     setHydrating(convo.id);
@@ -1029,9 +1196,7 @@ export function AssistantChatPanel({
         (messages) => {
           const hydrated = turnsFromMessages(messages);
           patchConversation(convo.id, (c) =>
-            c.turns.length > 0
-              ? c
-              : { ...c, turns: hydrated, updatedAt: Date.now() },
+            c.turns.length > 0 ? c : { ...c, turns: hydrated, updatedAt: Date.now() },
           );
         },
         (error) =>
@@ -1043,10 +1208,58 @@ export function AssistantChatPanel({
     inputRef.current?.focus();
   };
 
-  const stop = () => {
-    if (streaming)
-      void gmailApi.assistantCancel(streaming.provider, streaming.requestId);
+  const respondApproval = (approvalId: string, decision: ApprovalDecision) => {
+    if (!streaming) return;
+    const { provider: kind, requestId } = streaming;
+    console.log("[AssistantChat:approval]", { kind, decision });
+    setRespondingApproval(approvalId);
+    gmailApi
+      .assistantRespondApproval({
+        provider: kind,
+        requestId,
+        approvalId,
+        decision,
+      })
+      .then(
+        () => setApprovals((list) => list.filter((a) => a.approval.id !== approvalId)),
+        (error: unknown) =>
+          console.log("[AssistantChat:approval] failed", {
+            error: String(error),
+          }),
+      )
+      .finally(() => setRespondingApproval(null));
   };
+
+  /** Interrupts the active run; the queue stays and its next message starts (Otter Code). */
+  const stop = () => {
+    if (streaming) void gmailApi.assistantCancel(streaming.provider, streaming.requestId);
+  };
+
+  const activeQueue = queue.filter((m) => m.convoId === activeId);
+  // Steer needs a running turn in this chat that isn't waiting on an approval.
+  const canSteer = streaming?.convoId === activeId && approvals.length === 0;
+  useCommandHandlers({
+    "assistant.sendQueuedNow": () => {
+      const next = activeQueue[0];
+      if (!next || !canSteer) return false;
+      steerQueued(next.id);
+    },
+    "assistant.editQueued": () => {
+      const latest = activeQueue[activeQueue.length - 1];
+      const caretAtStart = (inputRef.current?.selectionStart ?? 0) === 0;
+      if (!latest || editing || !caretAtStart) return false;
+      editQueued(latest.id);
+    },
+  });
+
+  // A queued message starts once no turn is running (after completion, an
+  // error, or Stop) — never at a tool boundary; that's what Steer is for.
+  const nextQueued = queue[0];
+  useEffect(() => {
+    if (!nextQueued || streaming || editing?.id === nextQueued.id) return;
+    setQueue((q) => q.slice(1));
+    startTurn(nextQueued, "queued");
+  }, [nextQueued, streaming, editing]);
 
   const newChat = () => {
     setHistoryOpen(false);
@@ -1058,10 +1271,7 @@ export function AssistantChatPanel({
     console.log("[AssistantChat:newChat]");
     const fresh = newConversation(selectedKind);
     setStore((s) => ({
-      conversations: [
-        fresh,
-        ...s.conversations.filter((c) => c.turns.length > 0),
-      ],
+      conversations: [fresh, ...s.conversations.filter((c) => c.turns.length > 0)],
       activeId: fresh.id,
     }));
     inputRef.current?.focus();
@@ -1071,9 +1281,7 @@ export function AssistantChatPanel({
     setHistoryOpen(false);
     setStore((s) => ({
       // Drop the current active session if it was still empty (avoids litter).
-      conversations: s.conversations.filter(
-        (c) => c.id === id || c.turns.length > 0,
-      ),
+      conversations: s.conversations.filter((c) => c.id === id || c.turns.length > 0),
       activeId: id,
     }));
   };
@@ -1086,16 +1294,13 @@ export function AssistantChatPanel({
     // Sessions this app created go with the chat; ones opened from the provider only unlink.
     const target = conversations.find((c) => c.id === id);
     if (target?.sessionId && target.sessionOwned) {
-      void gmailApi
-        .assistantDeleteSession(target.provider, target.sessionId)
-        .catch(() => {});
+      void gmailApi.assistantDeleteSession(target.provider, target.sessionId).catch(() => {});
     }
     setStore((s) => {
       const remaining = s.conversations.filter((c) => c.id !== id);
       if (s.activeId !== id) return { ...s, conversations: remaining };
       const nonEmpty = remaining.filter((c) => c.turns.length > 0);
-      if (nonEmpty.length > 0)
-        return { conversations: remaining, activeId: nonEmpty[0].id };
+      if (nonEmpty.length > 0) return { conversations: remaining, activeId: nonEmpty[0].id };
       const fresh = newConversation(selectedKind);
       return { conversations: [fresh, ...remaining], activeId: fresh.id };
     });
@@ -1110,15 +1315,21 @@ export function AssistantChatPanel({
     gmailApi.updateAssistantSettings(patch).then(setProvidersState, () => {});
   };
 
+  /** Where composer menus return focus when they close. */
+  const focusComposer = () => inputRef.current?.focus();
+
   /** A model from the picker becomes the default for its provider (and new chats). */
   const pickModel = (kind: ProviderKind, slug: string) => {
     updateSettings({ selected: kind, [kind]: { model: slug } });
-    inputRef.current?.focus();
   };
 
   /** Setup fallback: switch new chats to another provider. */
-  const pickProvider = (kind: ProviderKind) =>
-    updateSettings({ selected: kind });
+  const pickProvider = (kind: ProviderKind) => updateSettings({ selected: kind });
+
+  // Hermes' approval mode is server-side config; Codex / Claude pick it per turn.
+  const runtimeMode =
+    providerKind === "hermes" ? null : (providersState?.settings[providerKind].runtimeMode ?? null);
+  const pendingApproval = approvals[0];
 
   // Reasoning / Service Tier of the model in use, with the saved choices.
   const currentModel = provider?.models.find((m) => m.slug === provider.model);
@@ -1133,8 +1344,7 @@ export function AssistantChatPanel({
   const needsSetup = Boolean(providersState) && !usable && turns.length === 0;
   const setupSummary = providerSummary(provider);
   const fallback = providersState?.providers.find(
-    (p) =>
-      p.kind !== providerKind && isProviderUsable(p) && p.checkedAt !== null,
+    (p) => p.kind !== providerKind && isProviderUsable(p) && p.checkedAt !== null,
   );
 
   // An empty chat is a centered draft: headline + composer (T3's draft hero).
@@ -1147,6 +1357,24 @@ export function AssistantChatPanel({
         ? `What should we do with “${clampTitle(openMessage.data.subject || "this conversation")}”?`
         : "What should we do in your inbox?";
 
+  // Send button (Otter Code's ComposerPrimaryActions): queue vs steer while a
+  // turn runs; holding ⌘ flips it for one message.
+  const hasDraft = Boolean(draft.trim() || activeSkill);
+  const alternateAction = followUp === "queue" ? "steer" : "queue";
+  const submitMode: "send" | "queue" | "steer" =
+    streaming?.convoId === activeId ? (modHeld ? alternateAction : followUp) : "send";
+  const submitLabel = editing
+    ? "Update queued message"
+    : submitMode === "queue"
+      ? "Queue message"
+      : submitMode === "steer"
+        ? "Steer message"
+        : "Send message";
+  const submitTooltip =
+    submitMode === "send" || editing
+      ? submitLabel
+      : `Click to ${followUp}, ⌘-click or ⌘↩ to ${alternateAction}`;
+
   // Only the active conversation drives the "working…" / stop UI.
   const streamingActive = streaming != null && streaming.convoId === activeId;
   const busy = streaming != null;
@@ -1155,7 +1383,7 @@ export function AssistantChatPanel({
     <div className="relative flex h-full min-w-0 flex-col">
       {/* Header: chat actions on the left; the panel toggle stays at the
           window's top-right, exactly where it sits while the panel is closed. */}
-      <div className="drag-region flex h-(--workspace-topbar-height) shrink-0 items-center gap-1 border-b border-border px-4">
+      <div className="drag-region flex h-(--workspace-topbar-height) shrink-0 items-center gap-1 px-4">
         <HintTooltip label="Chat history" side="bottom">
           <IconBtn
             label="Chat history"
@@ -1165,21 +1393,13 @@ export function AssistantChatPanel({
             <HistoryIcon className="size-4" />
           </IconBtn>
         </HintTooltip>
-        <HintTooltip
-          label="New chat"
-          shortcut="assistant.newChat"
-          side="bottom"
-        >
+        <HintTooltip label="New chat" shortcut="assistant.newChat" side="bottom">
           <IconBtn label="New chat" onClick={newChat}>
             <SquarePlusIcon className="size-4" />
           </IconBtn>
         </HintTooltip>
         <span className="min-w-0 flex-1" />
-        <HintTooltip
-          label="Hide assistant panel"
-          shortcut="assistant.toggle"
-          side="bottom"
-        >
+        <HintTooltip label="Hide assistant panel" shortcut="assistant.toggle" side="bottom">
           <IconBtn label="Toggle assistant panel" active onClick={onClose}>
             <PanelRightIcon className="size-4" />
           </IconBtn>
@@ -1196,9 +1416,7 @@ export function AssistantChatPanel({
           serverSessions={
             sessionsAvailable && serverSessionsQuery.data
               ? serverSessionsQuery.data.filter(
-                  (s) =>
-                    s.messageCount > 0 &&
-                    !conversations.some((c) => c.sessionId === s.id),
+                  (s) => s.messageCount > 0 && !conversations.some((c) => c.sessionId === s.id),
                 )
               : undefined
           }
@@ -1215,9 +1433,7 @@ export function AssistantChatPanel({
             {providerName}: {setupSummary.headline}
           </span>
           {setupSummary.detail ? (
-            <span className="text-sm text-muted-foreground">
-              {setupSummary.detail}
-            </span>
+            <span className="text-sm text-muted-foreground">{setupSummary.detail}</span>
           ) : null}
           <div className="mt-1 flex items-center gap-2">
             <button
@@ -1241,8 +1457,8 @@ export function AssistantChatPanel({
       ) : (
         <MessageScroller.Provider autoScroll defaultScrollPosition="end">
           <MessageScroller.Root className="relative min-h-0 flex-1">
-            <MessageScroller.Viewport className="h-full overflow-y-auto px-3 py-3">
-              <MessageScroller.Content className="flex flex-col gap-1">
+            <MessageScroller.Viewport className="topbar-scroll-fade h-full overflow-y-auto px-3 pb-3 pt-(--workspace-titlebar-scroll-fade-height)">
+              <MessageScroller.Content className="mx-auto flex w-full max-w-3xl flex-col gap-1">
                 {turns.length === 0 && hydrating === activeId ? (
                   <div className="px-2 pt-6 text-center text-sm text-placeholder">
                     Loading this session from {providerName}…
@@ -1251,15 +1467,10 @@ export function AssistantChatPanel({
                 {turns.map((turn) => {
                   if (turn.role === "user") {
                     return (
-                      <MessageScroller.Item
-                        key={turn.id}
-                        messageId={turn.id}
-                        scrollAnchor
-                      >
+                      <MessageScroller.Item key={turn.id} messageId={turn.id} scrollAnchor>
                         <div className="group flex flex-col items-end gap-1 py-2">
-                          {turn.context ? (
-                            <ContextRecap context={turn.context} />
-                          ) : null}
+                          {turn.intent ? <IntentMarker intent={turn.intent} /> : null}
+                          {turn.context ? <ContextRecap context={turn.context} /> : null}
                           <div className="relative max-w-[80%] whitespace-pre-wrap rounded-2xl bg-message p-3 text-sm leading-relaxed text-message-foreground">
                             {turn.skill ? (
                               <span className="mb-1 mr-1.5 inline-flex align-middle">
@@ -1273,25 +1484,16 @@ export function AssistantChatPanel({
                     );
                   }
                   const isLast = turn.id === turns[turns.length - 1]?.id;
-                  const live =
-                    streamingActive &&
-                    isLast &&
-                    !turn.finishedAt &&
-                    !turn.error;
+                  const live = streamingActive && isLast && !turn.finishedAt && !turn.error;
                   const hasTools = turn.tools.length > 0;
                   const folded = hasTools && !live;
-                  const showTools =
-                    hasTools && (live || expandedFolds.has(turn.id));
+                  const showTools = hasTools && (live || expandedFolds.has(turn.id));
                   const foldLabel =
                     turn.startedAt && turn.finishedAt
                       ? `Worked for ${formatDuration(turn.finishedAt - turn.startedAt)}`
                       : `Ran ${turn.tools.length} tool${turn.tools.length === 1 ? "" : "s"}`;
                   return (
-                    <MessageScroller.Item
-                      key={turn.id}
-                      messageId={turn.id}
-                      scrollAnchor
-                    >
+                    <MessageScroller.Item key={turn.id} messageId={turn.id} scrollAnchor>
                       <div className="flex flex-col">
                         {folded ? (
                           <WorkFoldRow
@@ -1303,11 +1505,7 @@ export function AssistantChatPanel({
                         {showTools ? (
                           <div className="flex flex-col py-1">
                             {turn.tools.map((t, i) => (
-                              <ToolRow
-                                key={i}
-                                name={t.name}
-                                output={t.output}
-                              />
+                              <ToolRow key={i} name={t.name} output={t.output} />
                             ))}
                           </div>
                         ) : null}
@@ -1316,14 +1514,9 @@ export function AssistantChatPanel({
                             <ChatMarkdown text={turn.text} />
                           </div>
                         ) : null}
-                        {live ? (
-                          <WorkingRow startedAt={turn.startedAt} />
-                        ) : null}
+                        {live ? <WorkingRow startedAt={turn.startedAt} /> : null}
                         {turn.error ? (
-                          <ErrorRow
-                            message={turn.error}
-                            providerName={providerName}
-                          />
+                          <ErrorRow message={turn.error} providerName={providerName} />
                         ) : null}
                       </div>
                     </MessageScroller.Item>
@@ -1357,7 +1550,7 @@ export function AssistantChatPanel({
                 : "relative shrink-0 px-3 pb-3 pt-1"
             }
           >
-            <div className="pointer-events-auto relative w-full">
+            <div className="pointer-events-auto relative mx-auto w-full max-w-3xl">
               {hero ? (
                 <div className="absolute inset-x-0 bottom-full pb-6">
                   <h1 className="mx-auto w-full text-balance text-center text-xl font-normal tracking-tight text-foreground">
@@ -1385,9 +1578,7 @@ export function AssistantChatPanel({
                         i === slashIndex && "bg-accent-surface",
                       )}
                     >
-                      <span className="text-xs font-semibold text-foreground">
-                        /{s.name}
-                      </span>
+                      <span className="text-xs font-semibold text-foreground">/{s.name}</span>
                       <span className="w-full truncate text-2xs text-muted-foreground">
                         {s.description}
                       </span>
@@ -1395,13 +1586,29 @@ export function AssistantChatPanel({
                   ))}
                 </div>
               ) : null}
+              <QueuedRunsControl
+                items={activeQueue}
+                editingId={editing?.id ?? null}
+                canSteer={canSteer}
+                onEdit={editQueued}
+                onCancelEdit={cancelQueuedEdit}
+                onSteer={steerQueued}
+                onRemove={removeQueued}
+                onMove={moveQueued}
+              />
+              {pendingApproval && streamingActive ? (
+                <ApprovalBanner
+                  approval={pendingApproval.approval}
+                  pendingCount={approvals.length}
+                  responding={respondingApproval === pendingApproval.approval.id}
+                  onRespond={(decision) => respondApproval(pendingApproval.approval.id, decision)}
+                  onCancel={stop}
+                />
+              ) : null}
               <div className="relative rounded-3xl border border-(--chat-composer-outline) bg-(--chat-composer-surface) shadow-composer transition-colors focus-within:border-input dark:shadow-none dark:inset-shadow-2xs dark:inset-shadow-(color:--chat-composer-highlight)">
                 {activeSkill ? (
                   <div className="px-4 pt-3">
-                    <SkillBadge
-                      name={activeSkill.name}
-                      onRemove={() => setActiveSkill(null)}
-                    />
+                    <SkillBadge name={activeSkill.name} onRemove={() => setActiveSkill(null)} />
                   </div>
                 ) : null}
                 <textarea
@@ -1409,12 +1616,7 @@ export function AssistantChatPanel({
                   value={draft}
                   onChange={(e) => handleDraftChange(e.target.value)}
                   onKeyDown={(e) => {
-                    if (
-                      e.key === "Backspace" &&
-                      draft === "" &&
-                      activeSkill &&
-                      !slashOpen
-                    ) {
+                    if (e.key === "Backspace" && draft === "" && activeSkill && !slashOpen) {
                       e.preventDefault();
                       setActiveSkill(null);
                       return;
@@ -1422,9 +1624,7 @@ export function AssistantChatPanel({
                     if (slashOpen) {
                       if (e.key === "ArrowDown") {
                         e.preventDefault();
-                        setSlashIndex((i) =>
-                          Math.min(slashSkills.length - 1, i + 1),
-                        );
+                        setSlashIndex((i) => Math.min(slashSkills.length - 1, i + 1));
                         return;
                       }
                       if (e.key === "ArrowUp") {
@@ -1443,13 +1643,14 @@ export function AssistantChatPanel({
                         return;
                       }
                     }
-                    if (
-                      e.key === "Enter" &&
-                      !e.shiftKey &&
-                      !e.nativeEvent.isComposing
-                    ) {
+                    if (e.key === "Escape" && editing) {
                       e.preventDefault();
-                      send();
+                      cancelQueuedEdit();
+                      return;
+                    }
+                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      e.preventDefault();
+                      send(e.metaKey || e.ctrlKey);
                     }
                   }}
                   placeholder="Ask anything, / for skills"
@@ -1462,39 +1663,46 @@ export function AssistantChatPanel({
                     <ProviderModelPicker
                       providers={providersState?.providers ?? []}
                       activeKind={providerKind}
-                      lockedKind={
-                        active && active.turns.length > 0
-                          ? active.provider
-                          : null
-                      }
+                      lockedKind={active && active.turns.length > 0 ? active.provider : null}
                       onPick={pickModel}
+                      returnFocus={focusComposer}
                     />
+                    {runtimeMode ? (
+                      <>
+                        <ComposerControlSeparator />
+                        <RuntimeModePicker
+                          returnFocus={focusComposer}
+                          value={runtimeMode}
+                          onChange={(mode) => {
+                            updateSettings({
+                              [providerKind]: { runtimeMode: mode },
+                            });
+                          }}
+                        />
+                      </>
+                    ) : null}
                     {traitOptions.length > 0 ? (
                       <>
                         <ComposerControlSeparator />
                         <TraitsPicker
+                          returnFocus={focusComposer}
                           options={traitOptions}
                           values={traitValues}
-                          onChange={(id, value) =>
-                            updateSettings({ [providerKind]: { [id]: value } })
-                          }
+                          onChange={(id, value) => {
+                            updateSettings({ [providerKind]: { [id]: value } });
+                          }}
                         />
                       </>
                     ) : null}
                     {context ? (
-                      <span
-                        className="mx-0.5 h-4 w-px shrink-0 bg-border"
-                        aria-hidden
-                      />
+                      <span className="mx-0.5 h-4 w-px shrink-0 bg-border" aria-hidden />
                     ) : null}
                     {context ? (
                       <button
                         type="button"
                         aria-pressed={attach}
                         onClick={() => setAttach((a) => !a)}
-                        title={
-                          attach ? "Attached to this message" : "Not attached"
-                        }
+                        title={attach ? "Attached to this message" : "Not attached"}
                         className={cn(
                           "relative inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-[var(--control-radius)] border border-transparent px-1.75 text-xs outline-none transition-colors hover:bg-accent-surface focus-visible:ring-2 focus-visible:ring-focus-ring [&_svg]:shrink-0",
                           attach
@@ -1502,10 +1710,7 @@ export function AssistantChatPanel({
                             : "text-muted-foreground/70 line-through hover:text-foreground/80",
                         )}
                       >
-                        <ContextKindIcon
-                          kind={attachKind}
-                          className="size-3.5"
-                        />
+                        <ContextKindIcon kind={attachKind} className="size-3.5" />
                         <span className="max-w-48 truncate">
                           {quote
                             ? `“${quote.text}”`
@@ -1517,47 +1722,55 @@ export function AssistantChatPanel({
                     ) : null}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    {busy ? (
-                      <button
-                        type="button"
-                        onClick={stop}
-                        aria-label="Stop generation"
-                        className="flex size-8 cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-2xs inset-shadow-white/16 transition-all duration-150 hover:scale-105 hover:bg-destructive active:shadow-none active:inset-shadow-black/8"
-                      >
-                        <svg
-                          width="12"
-                          height="12"
-                          viewBox="0 0 12 12"
-                          fill="currentColor"
-                          aria-hidden
+                    {/* Running + empty composer → Stop; with a draft the button
+                        queues or steers it (Otter Code's primary actions). */}
+                    {busy && !hasDraft && !editing ? (
+                      <HintTooltip label="Interrupt">
+                        <button
+                          type="button"
+                          onClick={stop}
+                          aria-label="Stop generation"
+                          className="flex size-8 cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-2xs inset-shadow-white/16 transition-all duration-150 hover:scale-105 hover:bg-destructive active:shadow-none active:inset-shadow-black/8"
                         >
-                          <rect x="2" y="2" width="8" height="8" rx="1.5" />
-                        </svg>
-                      </button>
+                          <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 12 12"
+                            fill="currentColor"
+                            aria-hidden
+                          >
+                            <rect x="2" y="2" width="8" height="8" rx="1.5" />
+                          </svg>
+                        </button>
+                      </HintTooltip>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={send}
-                        disabled={!draft.trim() && !activeSkill}
-                        aria-label="Send message"
-                        className="relative isolate flex size-8 items-center justify-center overflow-hidden rounded-full bg-primary text-primary-foreground shadow-xs transition-all duration-150 enabled:cursor-pointer enabled:shadow-primary/24 enabled:inset-shadow-2xs enabled:inset-shadow-white/16 hover:scale-105 hover:bg-primary/90 active:shadow-none active:inset-shadow-black/8 disabled:pointer-events-none disabled:opacity-30 disabled:shadow-none"
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 14 14"
-                          fill="none"
-                          aria-hidden
+                      <HintTooltip label={submitTooltip}>
+                        <button
+                          type="button"
+                          onClick={(e) => send(e.metaKey || e.ctrlKey)}
+                          disabled={!hasDraft}
+                          aria-label={submitLabel}
+                          className="relative isolate flex size-8 items-center justify-center overflow-hidden rounded-full bg-primary text-primary-foreground shadow-xs transition-all duration-150 enabled:cursor-pointer enabled:shadow-primary/24 enabled:inset-shadow-2xs enabled:inset-shadow-white/16 hover:scale-105 hover:bg-primary/90 active:shadow-none active:inset-shadow-black/8 disabled:pointer-events-none disabled:opacity-30 disabled:shadow-none"
                         >
-                          <path
-                            d="M7 11.5V2.5M7 2.5L3 6.5M7 2.5L11 6.5"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      </button>
+                          {editing ? (
+                            <CheckIcon className="size-4" aria-hidden />
+                          ) : submitMode === "queue" ? (
+                            <ListPlusIcon className="size-4" aria-hidden />
+                          ) : submitMode === "steer" ? (
+                            <CornerUpRightIcon className="size-4" aria-hidden />
+                          ) : (
+                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+                              <path
+                                d="M7 11.5V2.5M7 2.5L3 6.5M7 2.5L11 6.5"
+                                stroke="currentColor"
+                                strokeWidth="1.8"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          )}
+                        </button>
+                      </HintTooltip>
                     )}
                   </div>
                 </div>

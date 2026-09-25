@@ -46,6 +46,9 @@ import {
   DRAFTS_VIEW_ID,
 } from "./gmail/custom-views";
 
+/** Narrowest the reader gets when the chat panel is dragged wider. */
+const READER_MIN_WIDTH = 360;
+
 /** A place the user was at, for the top-bar back/forward buttons. */
 type NavLoc = {
   accountId: string | null;
@@ -54,8 +57,18 @@ type NavLoc = {
   readerAccountId: string | null;
 };
 
-/** Drag-resizable pane width persisted to localStorage. */
-function useStoredWidth(key: string, def: number, min: number, max: number, dir: 1 | -1 = 1) {
+/**
+ * Drag-resizable pane width persisted to localStorage. `room` (when given)
+ * caps the width at drag start so neighbouring panes keep their minimum.
+ */
+function useStoredWidth(
+  key: string,
+  def: number,
+  min: number,
+  max: number,
+  dir: 1 | -1 = 1,
+  room?: () => number,
+) {
   const [width, setWidth] = useState(() => {
     const saved = Number(localStorage.getItem(key));
     return Number.isFinite(saved) && saved >= min && saved <= max ? saved : def;
@@ -69,6 +82,7 @@ function useStoredWidth(key: string, def: number, min: number, max: number, dir:
     e.preventDefault();
     const startX = e.clientX;
     const startW = widthRef.current;
+    const cap = Math.max(min, Math.min(max, room ? room() : max));
     let latest = startW;
     let raf = 0;
     const apply = () => {
@@ -77,7 +91,7 @@ function useStoredWidth(key: string, def: number, min: number, max: number, dir:
     };
     const move = (ev: PointerEvent) => {
       // dir -1: right-side panes grow when the handle drags left.
-      latest = Math.min(max, Math.max(min, startW + dir * (ev.clientX - startX)));
+      latest = Math.min(cap, Math.max(min, startW + dir * (ev.clientX - startX)));
       // Drive the drag through the DOM only — calling setWidth on every
       // pointermove re-renders the whole HomeView tree (message list, reader,
       // chat) each frame, which is what made resizing slow and shaky. Batch the
@@ -191,7 +205,16 @@ export function HomeView() {
 
   const sidebarPane = useStoredWidth("gmail:pane:sidebar", 256, 224, 400);
   const listPane = useStoredWidth("gmail:pane:list", 400, 300, 640);
-  const chatPane = useStoredWidth("gmail:pane:chat", 340, 280, 560, -1);
+  // The chat can grow wide, as long as the reader keeps READER_MIN_WIDTH.
+  const chatPane = useStoredWidth(
+    "gmail:pane:chat",
+    340,
+    280,
+    900,
+    -1,
+    () =>
+      window.innerWidth - (sidebarOpen ? sidebarPane.width : 0) - listPane.width - READER_MIN_WIDTH,
+  );
   const [chatOpen, setChatOpen] = useState(() => localStorage.getItem("gmail:chat-open") === "1");
   const [sidebarOpen, setSidebarOpen] = useState(
     () => localStorage.getItem("gmail:sidebar-open") !== "0",
