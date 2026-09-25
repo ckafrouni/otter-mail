@@ -1,31 +1,43 @@
 /**
  * Gmail's per-user quota, shared by everything the app does with an account.
  *
- * Gmail allows ~250 quota units per second per user (15,000 per minute), and
- * every call costs units (messages.get 5, threads.get 10, send 100, …). When
- * background sync spends it all, even opening a message fails with a 403
- * "Quota exceeded" — so every request draws from one token bucket per account:
+ * Every Gmail call costs quota units (messages.get 5, threads.get 10, send
+ * 100, …) against a per-user, per-minute limit. For this app's Google project
+ * that limit is 6,000 units a minute (Gmail's 403 "Quota exceeded … Units per
+ * minute per user" reports `quota_limit_value: 6000`), not the 15,000 Gmail
+ * documents as its default — budgeting for the latter made big syncs trip the
+ * limit over and over, failing whole sync runs and the user's own actions.
+ *
+ * Every request draws from one token bucket per account, in three tiers:
  *
  *  - foreground work (what the user just did) takes units as soon as they're
- *    there and goes ahead of any waiting background work;
- *  - background work (mail sync) only spends above a reserve kept for the
- *    user, and pauses entirely for a while after Gmail reports the quota
- *    exhausted.
+ *    there and goes ahead of anything waiting;
+ *  - sync work (keeping the mailbox current) only spends above a reserve kept
+ *    for the user;
+ *  - prefetch work (downloading bodies for offline reading) only spends above
+ *    a larger reserve, and never while sync work is waiting.
  *
- * Background work is marked by running it inside `asBackgroundWork`; anything
- * else counts as foreground.
+ * Background tiers pause entirely for a while after Gmail reports the quota
+ * exhausted. Work is tagged by running it inside `asBackgroundWork` (sync) or
+ * `asPrefetchWork`; anything else counts as foreground.
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
 
-/** Sustained budget, below Gmail's 250 units/s so bursts never tip it over. */
-const UNITS_PER_SEC = 200;
+/** Gmail's per-minute limit for this project, per user. */
+const UNITS_PER_MINUTE_LIMIT = 6_000;
 /** Burst capacity of the bucket. */
 const CAPACITY = 250;
-/** Units background work leaves in the bucket for the user's next action. */
-const FOREGROUND_RESERVE = 100;
-/** How long background work stands down after a quota error. */
+/** Sustained budget: a full minute of refill plus one full burst stays under the limit. */
+const UNITS_PER_SEC = Math.floor((UNITS_PER_MINUTE_LIMIT * 0.92 - CAPACITY) / 60);
+/** Units sync work leaves in the bucket for the user's next action. */
+const SYNC_RESERVE = 100;
+/** Units prefetch work leaves in the bucket (for the user and for sync). */
+const PREFETCH_RESERVE = 175;
+/** How long background work stands down after a quota error (Gmail's window is a minute). */
 const COOLDOWN_MS = 30_000;
+
+type Tier = "sync" | "prefetch";
 
 type Bucket = {
   tokens: number;
@@ -34,17 +46,25 @@ type Bucket = {
   cooldownUntil: number;
   /** Foreground requests waiting for units; background yields to them. */
   foregroundWaiting: number;
+  /** Sync requests waiting for units; prefetch yields to them. */
+  syncWaiting: number;
 };
 
 const buckets = new Map<string, Bucket>();
-const background = new AsyncLocalStorage<true>();
+const tier = new AsyncLocalStorage<Tier>();
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function bucketFor(accountId: string): Bucket {
   let bucket = buckets.get(accountId);
   if (!bucket) {
-    bucket = { tokens: CAPACITY, updatedAt: Date.now(), cooldownUntil: 0, foregroundWaiting: 0 };
+    bucket = {
+      tokens: CAPACITY,
+      updatedAt: Date.now(),
+      cooldownUntil: 0,
+      foregroundWaiting: 0,
+      syncWaiting: 0,
+    };
     buckets.set(accountId, bucket);
   }
   const now = Date.now();
@@ -56,18 +76,30 @@ function bucketFor(accountId: string): Bucket {
   return bucket;
 }
 
-/** Runs `fn` as background work: it yields quota to the user's own actions. */
+/** Runs `fn` as sync work: it yields quota to the user's own actions. */
 export function asBackgroundWork<T>(fn: () => Promise<T>): Promise<T> {
-  return background.run(true, fn);
+  return tier.run("sync", fn);
 }
 
+/** Runs `fn` as prefetch work: it yields quota to the user and to sync. */
+export function asPrefetchWork<T>(fn: () => Promise<T>): Promise<T> {
+  return tier.run("prefetch", fn);
+}
+
+/** True for sync and prefetch work (anything the user isn't waiting on). */
 export function isBackgroundWork(): boolean {
-  return background.getStore() === true;
+  return tier.getStore() !== undefined;
+}
+
+/** Background work is standing down after a quota error (prefetch checks this to pause). */
+export function isCoolingDown(accountId: string): boolean {
+  return Date.now() < bucketFor(accountId).cooldownUntil;
 }
 
 /** Waits until `units` can be spent on this account, then spends them. */
 export async function acquireQuota(accountId: string, units: number): Promise<void> {
-  if (!isBackgroundWork()) {
+  const current = tier.getStore();
+  if (current === undefined) {
     let bucket = bucketFor(accountId);
     if (bucket.tokens >= units) {
       bucket.tokens -= units;
@@ -85,19 +117,30 @@ export async function acquireQuota(accountId: string, units: number): Promise<vo
     }
     return;
   }
-  for (;;) {
-    const bucket = bucketFor(accountId);
-    const now = Date.now();
-    if (now < bucket.cooldownUntil) {
-      await sleep(bucket.cooldownUntil - now);
-      continue;
+
+  const isSync = current === "sync";
+  const reserve = isSync ? SYNC_RESERVE : PREFETCH_RESERVE;
+  const counted = bucketFor(accountId);
+  if (isSync) counted.syncWaiting += 1;
+  try {
+    for (;;) {
+      const bucket = bucketFor(accountId);
+      const now = Date.now();
+      if (now < bucket.cooldownUntil) {
+        await sleep(bucket.cooldownUntil - now);
+        continue;
+      }
+      const needed = units + reserve;
+      // Sync counts itself in syncWaiting, so prefetch alone checks it.
+      const yielding = bucket.foregroundWaiting > 0 || (!isSync && bucket.syncWaiting > 0);
+      if (!yielding && bucket.tokens >= needed) {
+        bucket.tokens -= units;
+        return;
+      }
+      await sleep(Math.max(50, ((needed - bucket.tokens) / UNITS_PER_SEC) * 1000));
     }
-    const needed = units + FOREGROUND_RESERVE;
-    if (bucket.foregroundWaiting === 0 && bucket.tokens >= needed) {
-      bucket.tokens -= units;
-      return;
-    }
-    await sleep(Math.max(50, ((needed - bucket.tokens) / UNITS_PER_SEC) * 1000));
+  } finally {
+    if (isSync) counted.syncWaiting -= 1;
   }
 }
 

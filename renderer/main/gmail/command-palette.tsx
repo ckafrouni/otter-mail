@@ -13,6 +13,7 @@ import {
   ArrowDownIcon,
   ArrowUpIcon,
   BookmarkIcon,
+  MailsIcon,
   CheckIcon,
   ChevronRightIcon,
   FileIcon,
@@ -98,6 +99,7 @@ function viewIcon(view: MailView): ReactNode {
   if (view.kind === "sent") return <SendIcon className={ICON} />;
   if (view.kind === "drafts") return <FileIcon className={ICON} />;
   if (view.kind === "important") return <BookmarkIcon className={ICON} />;
+  if (view.kind === "allmail") return <MailsIcon className={ICON} />;
   if (view.kind === "junk") return <ArchiveXIcon className={ICON} />;
   if (view.kind === "trash") return <Trash2Icon className={ICON} />;
   return <LayersIcon className={ICON} />;

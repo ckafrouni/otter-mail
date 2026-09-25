@@ -81,17 +81,27 @@ export interface ContactSuggestion {
 }
 
 /** Per-account local-sync progress, exposed to the renderer for status UI. */
+/** Pseudo label id for "All Mail": every message except Spam and Trash
+    (Gmail has no such label — archived mail simply lacks INBOX). */
+export const ALL_MAIL_LABEL_ID = "ALL_MAIL";
+
 export interface SyncStatus {
   accountId: string;
+  /** The sync lane (history delta / full sync / labels) is running. */
   syncing: boolean;
-  phase: "idle" | "labels" | "full" | "incremental" | "bodies";
+  phase: "idle" | "labels" | "full" | "incremental";
   /** Messages written to the local store during the current/last run. */
   synced: number;
   /** Best-effort mailbox size estimate (from Gmail), or null if unknown. */
   total: number | null;
   lastSyncAt: number | null;
   fullSyncDone: boolean;
+  /** Why the last sync run failed (readable), or null. */
   error: string | null;
+  /** Offline body download pass in progress (runs apart from `syncing`). */
+  download: { done: number; total: number } | null;
+  /** Bumped whenever sync changed what lists show; refetch when it moves. */
+  revision: number;
 }
 
 /**
@@ -111,6 +121,7 @@ export type ViewKind =
   | "sent"
   | "drafts"
   | "important"
+  | "allmail"
   | "junk"
   | "trash"
   | "custom";

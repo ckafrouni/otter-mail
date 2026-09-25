@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   useQuery,
   useQueries,
@@ -14,6 +14,7 @@ import {
   type ModifyThreadParams,
   type SendMessageParams,
 } from "./api";
+import { ALL_MAIL_LABEL_ID } from "./label-names";
 import { PENDING_LABEL_PREFIX } from "./label-tree";
 import type {
   ContactSuggestion,
@@ -503,7 +504,8 @@ export function useViewUnreadCounts(
       return {
         queryKey: queryKeys.combinedCounts(view.id, rules),
         queryFn: () => gmailApi.countCombinedMessages({ rules }),
-        enabled: enabled && rules.length > 0,
+        // All Mail carries no badge (Gmail parity) — skip a whole-mailbox count.
+        enabled: enabled && rules.length > 0 && view.kind !== "allmail",
         staleTime: STALE_TIME,
       };
     }),
@@ -1100,10 +1102,17 @@ export function useModifyThread() {
       // longer match, so archive/move/junk clear the view instantly like trash.
       // Safe only here (whole-thread removal); single-message ops can't know
       // whether sibling messages still match.
-      if (removeLabelIds.length > 0) {
+      // All Mail (per account, or Combined rules without labels) only loses
+      // threads that become spam/trash.
+      const leavesAllMail = addLabelIds.includes("SPAM") || addLabelIds.includes("TRASH");
+      if (removeLabelIds.length > 0 || leavesAllMail) {
         for (const [key] of prevMessagesQueries) {
           const listLabelId = key[2];
-          if (typeof listLabelId === "string" && removeLabelIds.includes(listLabelId)) {
+          if (
+            typeof listLabelId === "string" &&
+            (removeLabelIds.includes(listLabelId) ||
+              (leavesAllMail && listLabelId === ALL_MAIL_LABEL_ID))
+          ) {
             qc.setQueryData(key, (old: InfiniteData<ListMessagesResult> | undefined) =>
               removeMessagesFromInfiniteData(old, inThread),
             );
@@ -1114,7 +1123,11 @@ export function useModifyThread() {
           if (
             Array.isArray(rules) &&
             rules.length > 0 &&
-            rules.every((r) => r.allOf.some((id) => removeLabelIds.includes(id)))
+            rules.every(
+              (r) =>
+                r.allOf.some((id) => removeLabelIds.includes(id)) ||
+                (leavesAllMail && r.allOf.length === 0),
+            )
           ) {
             qc.setQueryData(key, (old: InfiniteData<ListMessagesResult> | undefined) =>
               removeMessagesFromInfiniteData(old, inThread),
@@ -1332,6 +1345,12 @@ export function useSuggestContacts(q: string, enabled = true) {
 
 // ---- Local-first sync ----
 
+/** Status poll cadence: quick while syncing, relaxed while downloading for offline, slow idle. */
+export function syncStatusPollMs(status: SyncStatus | undefined): number {
+  if (status?.syncing) return 1500;
+  return status?.download ? 4000 : 10_000;
+}
+
 /**
  * Drives background sync for the active account: starts a sync when the
  * account changes, polls progress while syncing, and invalidates the message
@@ -1346,7 +1365,7 @@ export function useAccountSync(accountId: string | null): SyncStatus | null {
     queryFn: () => gmailApi.getSyncStatus(accountId!),
     enabled: accountId != null,
     // Idle poll (vs false) so timer-driven backend syncs are still noticed.
-    refetchInterval: (query) => (query.state.data?.syncing ? 1500 : 10_000),
+    refetchInterval: (query) => syncStatusPollMs(query.state.data),
   });
 
   // Start a sync whenever the active account changes.
@@ -1358,16 +1377,12 @@ export function useAccountSync(accountId: string | null): SyncStatus | null {
     });
   }, [accountId, qc]);
 
-  // Refresh views as sync progresses or finishes (lastSyncAt catches syncs
-  // that start and finish entirely between polls).
-  const prevRef = useRef<{ synced: number; syncing: boolean; lastSyncAt: number | null } | null>(
-    null,
-  );
+  // Refresh views when sync changed what they show (revision moves), never
+  // just because a routine check for new mail ran.
   useEffect(() => {
     const status = statusQuery.data;
     if (!status || !accountId) return;
-    const prev = prevRef.current;
-    if (prev != null && shouldRefreshLists(accountId, status, prev)) {
+    if (shouldRefreshLists(accountId, status)) {
       void qc.invalidateQueries({ queryKey: ["gmail:messages", accountId] });
       void qc.invalidateQueries({ queryKey: ["gmail:searchMessages"] });
       void qc.invalidateQueries({ queryKey: queryKeys.labels(accountId) });
@@ -1375,46 +1390,43 @@ export function useAccountSync(accountId: string | null): SyncStatus | null {
       void qc.invalidateQueries({ queryKey: ["gmail:combinedCounts"] });
       void qc.invalidateQueries({ queryKey: ["gmail:thread", accountId] });
     }
-    prevRef.current = {
-      synced: status.synced,
-      syncing: status.syncing,
-      lastSyncAt: status.lastSyncAt,
-    };
   }, [statusQuery.data, accountId, qc]);
 
   return statusQuery.data ?? null;
 }
 
 /**
- * Whether sync progress warrants refetching message lists. Every refetch of
- * an infinite list reloads ALL its loaded pages, so during a long sync of a
- * big mailbox (progress ticks every poll) lists refresh at most every
- * LIST_REFRESH_MS; a finished sync refreshes at once. Body downloads don't
- * change list rows and never trigger a refresh.
+ * Whether sync changed the cache since lists last refreshed (its revision
+ * moved). Every refetch of an infinite list reloads ALL its loaded pages, so
+ * while a long full sync of a big mailbox keeps writing, lists refresh at
+ * most every LIST_REFRESH_MS; once sync is idle a change refreshes at once.
+ * Offline body downloads don't change list rows and don't move the revision.
  */
 const LIST_REFRESH_MS = 8000;
 const lastListRefresh = new Map<string, number>();
-function shouldRefreshLists(
-  key: string,
-  status: SyncStatus,
-  prev: { synced: number; syncing: boolean; lastSyncAt: number | null },
-): boolean {
-  const finished = (prev.syncing && !status.syncing) || status.lastSyncAt !== prev.lastSyncAt;
-  const grew = status.synced !== prev.synced && status.phase !== "bodies";
-  const now = Date.now();
-  if (finished || (grew && now - (lastListRefresh.get(key) ?? 0) >= LIST_REFRESH_MS)) {
-    lastListRefresh.set(key, now);
-    return true;
+const refreshedRevision = new Map<string, number>();
+function shouldRefreshLists(key: string, status: SyncStatus): boolean {
+  const seen = refreshedRevision.get(key);
+  if (seen === undefined) {
+    // First status for this view: its lists were just loaded.
+    refreshedRevision.set(key, status.revision);
+    return false;
   }
-  return false;
+  if (status.revision === seen) return false;
+  const now = Date.now();
+  if (status.syncing && now - (lastListRefresh.get(key) ?? 0) < LIST_REFRESH_MS) return false;
+  refreshedRevision.set(key, status.revision);
+  lastListRefresh.set(key, now);
+  return true;
 }
 
 export function syncLabel(status: SyncStatus): string {
-  if (status.phase === "full" && status.total) {
+  if (status.syncing && status.phase === "full" && status.total) {
     return `Syncing ${status.synced.toLocaleString()} of ~${status.total.toLocaleString()}`;
   }
-  if (status.phase === "bodies" && status.total) {
-    return `Downloading messages ${status.synced.toLocaleString()} of ${status.total.toLocaleString()}`;
+  if (status.syncing && status.phase === "full") return "Syncing…";
+  if (status.download) {
+    return `Downloading messages ${status.download.done.toLocaleString()} of ${status.download.total.toLocaleString()}`;
   }
   if (status.phase === "incremental") return "Checking for new mail…";
   return "Syncing…";
@@ -1437,15 +1449,15 @@ export function useGlobalSyncStatus(accountIds: string[]): { syncing: boolean; l
       queryKey: ["gmail:syncStatus", id],
       queryFn: () => gmailApi.getSyncStatus(id),
       refetchInterval: (query: { state: { data?: SyncStatus } }) =>
-        query.state.data?.syncing ? 1500 : 10_000,
+        syncStatusPollMs(query.state.data),
     })),
   });
   // Routine incremental checks stay silent (they'd blink every auto-sync
-  // tick); only long-running work — full syncs and body downloads — shows.
+  // tick); only long-running work — full syncs and offline downloads — shows.
   const active = results
     .map((r) => r.data as SyncStatus | undefined)
     .filter(
-      (s): s is SyncStatus => s?.syncing === true && (s.phase === "full" || s.phase === "bodies"),
+      (s): s is SyncStatus => (s?.syncing === true && s.phase === "full") || s?.download != null,
     );
   if (active.length === 0) return { syncing: false, label: "" };
   return {
@@ -1469,7 +1481,7 @@ export function useSyncAccountLabels(accountIds: string[], enabled: boolean): vo
       queryFn: () => gmailApi.getSyncStatus(id),
       enabled,
       refetchInterval: (query: { state: { data?: SyncStatus } }) =>
-        query.state.data?.syncing ? 1500 : 10_000,
+        syncStatusPollMs(query.state.data),
     })),
   });
 
@@ -1481,13 +1493,10 @@ export function useSyncAccountLabels(accountIds: string[], enabled: boolean): vo
     }
   }, [enabled, accountIdsKey]);
 
-  const prevRef = useRef<
-    Map<string, { synced: number; syncing: boolean; lastSyncAt: number | null }>
-  >(new Map());
   const progressKey = results
     .map((r) => {
       const s = r.data as SyncStatus | undefined;
-      return s ? `${s.synced}:${s.syncing}:${s.lastSyncAt ?? 0}` : "";
+      return s ? `${s.revision}:${s.syncing}` : "";
     })
     .join(",");
   useEffect(() => {
@@ -1497,16 +1506,10 @@ export function useSyncAccountLabels(accountIds: string[], enabled: boolean): vo
       const accountId = accountIds[i];
       const status = r.data as SyncStatus | undefined;
       if (!status) return;
-      const prev = prevRef.current.get(accountId);
-      if (prev != null && shouldRefreshLists(`combined:${accountId}`, status, prev)) {
+      if (shouldRefreshLists(`combined:${accountId}`, status)) {
         anyProgressed = true;
         void qc.invalidateQueries({ queryKey: queryKeys.labels(accountId) });
       }
-      prevRef.current.set(accountId, {
-        synced: status.synced,
-        syncing: status.syncing,
-        lastSyncAt: status.lastSyncAt,
-      });
     });
     // The combined list isn't reachable by any per-account invalidation.
     if (anyProgressed) {

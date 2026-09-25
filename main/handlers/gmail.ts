@@ -57,6 +57,7 @@ import { updateDockBadge } from "../services/notifier.js";
 import { refreshTray, createTray, destroyTray } from "../services/tray.js";
 import { getSettings, updateSettings, type AppSettings } from "../services/settings-store.js";
 import * as viewsStore from "../services/views-store.js";
+import { ALL_MAIL_LABEL_ID } from "../gmail/types.js";
 import type { ComposeAttachment, MailView, ViewRule } from "../gmail/types.js";
 
 const LOCAL_PAGE_SIZE = 50;
@@ -341,7 +342,9 @@ export function registerGmailHandlers(): void {
 
       mailSync.syncAccount(accountId);
 
-      const page = await pageWithLiveFill([{ accountId, labelId }], maxResults, () =>
+      // All Mail has no Gmail label: live-fill it from the unfiltered listing.
+      const liveLabelId = labelId === ALL_MAIL_LABEL_ID ? null : labelId;
+      const page = await pageWithLiveFill([{ accountId, labelId: liveLabelId }], maxResults, () =>
         mailStore.getThreadsPage(accountId, labelId, offset, maxResults),
       );
       return {

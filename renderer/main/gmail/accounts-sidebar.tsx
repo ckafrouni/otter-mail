@@ -17,6 +17,7 @@ import {
 } from "./menu";
 import {
   InboxIcon,
+  MailsIcon,
   StarIcon,
   SendIcon,
   FileIcon,
@@ -44,6 +45,7 @@ import {
 } from "./hooks";
 import type { GmailLabel, MailView } from "./types";
 import { COMBINED_ACCOUNT_ID, useMailViews } from "./custom-views";
+import { ALL_MAIL_LABEL_ID } from "./label-names";
 import { buildLabelTree, type LabelTreeNode } from "./label-tree";
 import { UnreadPill, HintTooltip, IconBtn } from "./ui";
 import { MailboxSwitcher, WindowTitle } from "./top-bar";
@@ -88,7 +90,16 @@ const GMAIL_LABEL_COLORS: { backgroundColor: string; textColor: string }[] = [
   { backgroundColor: "#cccccc", textColor: "#000000" },
 ];
 
-const SIDEBAR_SYSTEM_ORDER = ["INBOX", "STARRED", "SENT", "DRAFT", "IMPORTANT", "SPAM", "TRASH"];
+const SIDEBAR_SYSTEM_ORDER = [
+  "INBOX",
+  "STARRED",
+  "SENT",
+  "DRAFT",
+  "IMPORTANT",
+  ALL_MAIL_LABEL_ID,
+  "SPAM",
+  "TRASH",
+];
 
 const SYSTEM_LABEL_MAP: Record<string, { name: string; icon: ReactNode }> = {
   INBOX: { name: "Inbox", icon: <InboxIcon className="size-3.5" /> },
@@ -96,6 +107,7 @@ const SYSTEM_LABEL_MAP: Record<string, { name: string; icon: ReactNode }> = {
   SENT: { name: "Sent", icon: <SendIcon className="size-3.5" /> },
   DRAFT: { name: "Drafts", icon: <FileIcon className="size-3.5" /> },
   IMPORTANT: { name: "Important", icon: <BookmarkIcon className="size-3.5" /> },
+  [ALL_MAIL_LABEL_ID]: { name: "All Mail", icon: <MailsIcon className="size-3.5" /> },
   SPAM: { name: "Junk", icon: <ArchiveXIcon className="size-3.5" /> },
   TRASH: { name: "Trash", icon: <Trash2Icon className="size-3.5" /> },
 };
@@ -106,6 +118,7 @@ function viewIcon(view: MailView): ReactNode {
   if (view.kind === "sent") return <SendIcon className="size-3.5" />;
   if (view.kind === "drafts") return <FileIcon className="size-3.5" />;
   if (view.kind === "important") return <BookmarkIcon className="size-3.5" />;
+  if (view.kind === "allmail") return <MailsIcon className="size-3.5" />;
   if (view.kind === "junk") return <ArchiveXIcon className="size-3.5" />;
   if (view.kind === "trash") return <Trash2Icon className="size-3.5" />;
   return <LayersIcon className="size-3.5" />;
@@ -570,10 +583,14 @@ export function AccountsSidebar({
   );
   const { deleteView, resetView } = useMailViews();
 
-  // Same order as the Combined built-in views, Important appended.
-  const systemLabels = labels
-    .filter((l) => l.type === "system" && l.id in SYSTEM_LABEL_MAP)
-    .sort((a, b) => SIDEBAR_SYSTEM_ORDER.indexOf(a.id) - SIDEBAR_SYSTEM_ORDER.indexOf(b.id));
+  // Same order as the Combined built-in views. All Mail isn't a Gmail label
+  // (archived mail just lacks INBOX), so it's listed without one — and, like
+  // Gmail, without an unread badge.
+  const allMail: GmailLabel = { id: ALL_MAIL_LABEL_ID, name: "All Mail", type: "system" };
+  const systemLabels = [
+    ...labels.filter((l) => l.type === "system" && l.id in SYSTEM_LABEL_MAP),
+    allMail,
+  ].sort((a, b) => SIDEBAR_SYSTEM_ORDER.indexOf(a.id) - SIDEBAR_SYSTEM_ORDER.indexOf(b.id));
   const userLabels = labels.filter((l) => l.type === "user");
   const userLabelTree = buildLabelTree(userLabels);
 
@@ -761,7 +778,7 @@ export function AccountsSidebar({
             </>
           ) : (
             <>
-              {(systemLabels.length > 0
+              {(labels.length > 0
                 ? systemLabels.map((l) => ({
                     id: l.id,
                     unread: l.unread ?? 0,

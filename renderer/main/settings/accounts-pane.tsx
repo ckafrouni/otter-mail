@@ -4,7 +4,13 @@ import { useQuery } from "@tanstack/react-query";
 import { Avatar, AvatarFallback, AvatarImage, Dialog, Text } from "@glaze/core/components";
 import { CheckIcon, EllipsisIcon, PenLineIcon, PlusIcon, Trash2Icon, TypeIcon } from "lucide-react";
 import { gmailApi } from "../gmail/api";
-import { useAccounts, useAddAccount, useRemoveAccount, useUpdateAccount } from "../gmail/hooks";
+import {
+  syncStatusPollMs,
+  useAccounts,
+  useAddAccount,
+  useRemoveAccount,
+  useUpdateAccount,
+} from "../gmail/hooks";
 import { RichTextArea, type RichTextRef } from "../gmail/rich-text";
 import {
   ACCOUNT_COLOR_PALETTE,
@@ -40,19 +46,27 @@ function timeAgo(ts: number): string {
 function syncLine(status: SyncStatus | undefined): {
   text: string;
   tone: "muted" | "active" | "error";
+  detail?: string;
 } {
   if (!status) return { text: "…", tone: "muted" };
-  if (status.error) return { text: "Sync failed — will retry", tone: "error" };
-  if (status.syncing) {
+  // Only a full sync reads as "Syncing": the routine check for new mail runs
+  // every tick and would otherwise blink here all the time.
+  if (status.syncing && (status.phase === "full" || !status.lastSyncAt)) {
     const progress =
       status.phase === "full" && status.total
         ? ` ${status.synced.toLocaleString()} of ~${status.total.toLocaleString()}`
         : "";
     return { text: `Syncing${progress}…`, tone: "active" };
   }
-  return status.lastSyncAt
-    ? { text: `Synced ${timeAgo(status.lastSyncAt)}`, tone: "muted" }
-    : { text: "Not synced yet", tone: "muted" };
+  if (status.error && !status.syncing) {
+    return { text: "Sync failed — will retry", tone: "error", detail: status.error };
+  }
+  const synced = status.lastSyncAt ? `Synced ${timeAgo(status.lastSyncAt)}` : "Not synced yet";
+  if (status.download) {
+    const left = Math.max(0, status.download.total - status.download.done);
+    return { text: `${synced} · Saving ${left.toLocaleString()} for offline`, tone: "muted" };
+  }
+  return { text: synced, tone: "muted" };
 }
 
 /** Read-only sync status (the main view starts syncs; settings only watches). */
@@ -60,7 +74,7 @@ function useSyncStatusOnly(accountId: string) {
   return useQuery<SyncStatus>({
     queryKey: ["gmail:syncStatus", accountId],
     queryFn: () => gmailApi.getSyncStatus(accountId),
-    refetchInterval: (query) => (query.state.data?.syncing ? 1500 : 10_000),
+    refetchInterval: (query) => syncStatusPollMs(query.state.data),
   });
 }
 
@@ -224,6 +238,7 @@ function AccountRow({ account }: { account: GmailAccount }) {
                 {account.email}
                 <span className="px-1.5 text-muted-foreground/40">·</span>
                 <span
+                  title={status.detail}
                   className={cn(
                     status.tone === "error" && "text-destructive-foreground",
                     status.tone === "active" && "text-foreground/80",

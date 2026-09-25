@@ -88,6 +88,7 @@ export type ViewKind =
   | "sent"
   | "drafts"
   | "important"
+  | "allmail"
   | "junk"
   | "trash"
   | "custom";
@@ -121,11 +122,16 @@ export type MailView = {
 /** Per-account local-sync progress, exposed to the renderer for status UI. */
 export type SyncStatus = {
   accountId: string;
+  /** The sync lane (history delta / full sync / labels) is running. */
   syncing: boolean;
-  phase: "idle" | "labels" | "full" | "incremental" | "bodies";
+  phase: "idle" | "labels" | "full" | "incremental";
   synced: number;
   total: number | null;
   lastSyncAt: number | null;
   fullSyncDone: boolean;
   error: string | null;
+  /** Offline body download pass in progress (runs apart from `syncing`). */
+  download: { done: number; total: number } | null;
+  /** Bumped whenever sync changed what lists show; refetch when it moves. */
+  revision: number;
 };
