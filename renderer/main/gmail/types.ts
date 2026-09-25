@@ -88,6 +88,7 @@ export type ViewKind =
   | "sent"
   | "drafts"
   | "important"
+  | "allmail"
   | "junk"
   | "trash"
   | "custom";

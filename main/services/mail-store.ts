@@ -14,6 +14,7 @@
 import path from "path";
 import { DatabaseSync } from "node:sqlite";
 import { app } from "@glaze/core/backend";
+import { ALL_MAIL_LABEL_ID } from "../gmail/types.js";
 import type {
   GmailLabel,
   GmailMessageSummary,
@@ -527,6 +528,18 @@ export function getThreadsPage(
   limit: number,
 ): { messages: GmailMessageSummary[]; hasMore: boolean } {
   const d = getDb();
+  if (labelId === ALL_MAIL_LABEL_ID) {
+    const rows = d
+      .prepare(
+        threadPageQuery(`
+          SELECT DISTINCT m.accountId AS accountId, m.threadId AS threadId
+            FROM messages m
+           WHERE m.accountId = ? AND ${NOT_SPAM_TRASH}
+        `),
+      )
+      .all(accountId, limit + 1, offset) as unknown as ThreadRow[];
+    return { messages: rows.slice(0, limit).map(rowToThreadSummary), hasMore: rows.length > limit };
+  }
   // Gmail semantics: spam/trash stay out of every view except their own.
   const exclusion = labelId === "SPAM" || labelId === "TRASH" ? "" : `AND ${NOT_SPAM_TRASH}`;
   const rows = d

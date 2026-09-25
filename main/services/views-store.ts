@@ -17,6 +17,7 @@ export const STARRED_VIEW_ID = "__starred__";
 export const SENT_VIEW_ID = "__sent__";
 export const DRAFTS_VIEW_ID = "__drafts__";
 export const IMPORTANT_VIEW_ID = "__important__";
+export const ALL_MAIL_VIEW_ID = "__allmail__";
 export const JUNK_VIEW_ID = "__junk__";
 export const TRASH_VIEW_ID = "__trash__";
 
@@ -26,6 +27,7 @@ const DEFAULT_VIEWS: MailView[] = [
   { id: SENT_VIEW_ID, name: "Sent", kind: "sent", rules: null },
   { id: DRAFTS_VIEW_ID, name: "Drafts", kind: "drafts", rules: null },
   { id: IMPORTANT_VIEW_ID, name: "Important", kind: "important", rules: null },
+  { id: ALL_MAIL_VIEW_ID, name: "All Mail", kind: "allmail", rules: null },
   { id: JUNK_VIEW_ID, name: "Junk", kind: "junk", rules: null },
   { id: TRASH_VIEW_ID, name: "Trash", kind: "trash", rules: null },
 ];
@@ -37,6 +39,7 @@ const BUILTIN_NAMES: Record<string, string> = {
   sent: "Sent",
   drafts: "Drafts",
   important: "Important",
+  allmail: "All Mail",
   junk: "Junk",
   trash: "Trash",
 };
