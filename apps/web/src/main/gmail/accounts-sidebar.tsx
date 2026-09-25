@@ -66,6 +66,7 @@ import { formatShortcut, parseShortcut } from "../keybindings/keys";
 import { LabelShortcutDialog } from "../settings/keybindings-pane";
 import { UnreadPill, HintTooltip, IconBtn } from "./ui";
 import { MailboxSwitcher, WindowTitle } from "./top-bar";
+import { UpdateCard } from "../updates";
 
 const LABEL_DRAG_MIME = "application/x-gmail-label";
 
@@ -984,6 +985,8 @@ export function AccountsSidebar({
             </>
           )}
         </div>
+
+        <UpdateCard />
 
         {/* Footer utilities, like the workspace sidebar's bottom row. */}
         <div className="flex shrink-0 items-center gap-1 px-(--sidebar-content-inset) py-1">

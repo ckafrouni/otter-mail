@@ -54,6 +54,8 @@ Environment:
   OTTER_MAIL_UPDATE_REPOSITORY  owner/repo for the GitHub update feed
                                 (falls back to GITHUB_REPOSITORY, then
                                 ${DEFAULT_UPDATE_REPOSITORY}).
+  OTTER_MAIL_UPDATE_URL         Update feed URL instead of GitHub Releases, for
+                                testing the updater against a local server.
 `;
 
 interface Options {
@@ -133,16 +135,14 @@ export function parseOptions(argv: readonly string[]): Options | null {
   };
 }
 
-export function resolveUpdateChannel(version: string): "latest" | "nightly" | null {
-  if (/-nightly\.\d{8}\.\d+$/.test(version)) return "nightly";
-  // Other prereleases (e.g. 1.2.3-rc.1) are downloaded by hand and get no feed.
-  if (version.includes("-")) return null;
-  return "latest";
-}
-
 export function resolvePublishConfig(version: string, env: NodeJS.ProcessEnv) {
-  const channel = resolveUpdateChannel(version);
-  if (!channel) return undefined;
+  // Only stable X.Y.Z builds get an update feed; prereleases (1.2.3-rc.1) are
+  // downloaded by hand.
+  if (version.includes("-")) return undefined;
+  // Testing the updater against a local feed (a folder of release artifacts
+  // served over http) instead of GitHub Releases.
+  const url = env.OTTER_MAIL_UPDATE_URL?.trim();
+  if (url) return { provider: "generic", url };
   const repository =
     env.OTTER_MAIL_UPDATE_REPOSITORY?.trim() ||
     env.GITHUB_REPOSITORY?.trim() ||
@@ -155,8 +155,7 @@ export function resolvePublishConfig(version: string, env: NodeJS.ProcessEnv) {
     provider: "github",
     owner,
     repo,
-    releaseType: channel === "nightly" ? "prerelease" : "release",
-    channel,
+    releaseType: "release",
   };
 }
 
@@ -330,7 +329,7 @@ function main(): void {
   );
   log(
     `Otter Mail ${options.version} for mac/${options.target} (arch=${options.arch}, ` +
-      `channel=${resolveUpdateChannel(options.version) ?? "none"}, signed=${options.signed})`,
+      `update feed=${resolvePublishConfig(options.version, process.env) ? "yes" : "none"}, signed=${options.signed})`,
   );
 
   if (!options.skipBuild) {

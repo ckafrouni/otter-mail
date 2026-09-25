@@ -19,7 +19,8 @@ const APP_DISPLAY_NAME = "Otter Mail (Dev)";
 const APP_BUNDLE_ID = "dev.otterware.mail.dev";
 // Bump when the patching below changes, to force a fresh copy.
 const LAUNCHER_VERSION = 1;
-const iconPath = NodePath.join(desktopDir, "resources", "icon.icns");
+// Dev builds wear the blueprint icon (assets/dev), like T3 Code.
+const iconPath = NodePath.join(desktopDir, "resources", "icon-dev.icns");
 const runtimeDir = NodePath.join(desktopDir, ".electron-runtime");
 
 const require = NodeModule.createRequire(import.meta.url);

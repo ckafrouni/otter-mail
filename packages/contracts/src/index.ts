@@ -27,7 +27,6 @@ export type UpdateStatus =
 export interface UpdateState {
   status: UpdateStatus;
   currentVersion: string;
-  channel: "latest" | "nightly";
   availableVersion: string | null;
   downloadPercent: number | null;
   checkedAt: number | null;
