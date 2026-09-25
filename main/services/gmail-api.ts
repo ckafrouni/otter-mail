@@ -33,6 +33,10 @@ const BASE_URL = "https://gmail.googleapis.com/gmail/v1/users/me";
  */
 const FOREGROUND_RETRY_DELAYS_MS = [700, 1500];
 const BACKGROUND_MAX_RETRIES = 6;
+/** Transient failures (network drop, Gmail 5xx) retried by background work. */
+const BACKGROUND_TRANSIENT_RETRIES = 3;
+/** A request that hangs must not stall a sync run forever. */
+const REQUEST_TIMEOUT_MS = 90_000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -42,6 +46,39 @@ function isRateLimited(status: number, body: string): boolean {
   return (
     status === 403 &&
     /rateLimitExceeded|userRateLimitExceeded|RATE_LIMIT_EXCEEDED|Quota exceeded/.test(body)
+  );
+}
+
+/** A failed Gmail call. The message keeps the "Gmail API error: <status>" shape callers match on. */
+export class GmailApiError extends Error {
+  constructor(
+    readonly status: number,
+    statusText: string,
+    readonly body: string,
+  ) {
+    super(`Gmail API error: ${status} ${statusText}${body ? ` — ${body}` : ""}`);
+    this.name = "GmailApiError";
+  }
+
+  get rateLimited(): boolean {
+    return isRateLimited(this.status, this.body);
+  }
+}
+
+/** Whether an error is Gmail telling us to slow down (after gmailFetch's own retries). */
+export function isRateLimitError(err: unknown): boolean {
+  return err instanceof GmailApiError && err.rateLimited;
+}
+
+/** Whether an error is the request not reaching Gmail at all (offline, DNS, timeout). */
+export function isNetworkError(err: unknown): boolean {
+  if (!(err instanceof Error) || err instanceof GmailApiError) return false;
+  return (
+    err.name === "TimeoutError" ||
+    err.name === "AbortError" ||
+    /fetch failed|ENOTFOUND|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|network/i.test(
+      `${err.message} ${String((err as { cause?: unknown }).cause ?? "")}`,
+    )
   );
 }
 
@@ -58,25 +95,46 @@ async function gmailFetch(
   path: string,
   init: GmailFetchInit = {},
   retryCount = 0,
+  attempt: { tokenRefreshed?: boolean; transientRetries?: number } = {},
 ): Promise<unknown> {
   await acquireQuota(accountId, quotaCost(init.method ?? "GET", path));
   const token = await getAccessToken(accountId);
+  const background = isBackgroundWork();
 
-  const response = await fetch(`${BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      ...init.headers,
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      ...init,
+      headers: {
+        ...init.headers,
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    // Wi-Fi hiccups and sleep/wake drop requests; sync rides them out.
+    const tries = attempt.transientRetries ?? 0;
+    if (background && tries < BACKGROUND_TRANSIENT_RETRIES && isNetworkError(err)) {
+      await sleep(2000 * 2 ** tries);
+      return gmailFetch(accountId, path, init, retryCount, {
+        ...attempt,
+        transientRetries: tries + 1,
+      });
+    }
+    throw err;
+  }
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
+    // The cached access token was revoked or expired early: refresh it once.
+    if (response.status === 401 && !attempt.tokenRefreshed) {
+      await getAccessToken(accountId, { forceRefresh: true });
+      return gmailFetch(accountId, path, init, retryCount, { ...attempt, tokenRefreshed: true });
+    }
     if (isRateLimited(response.status, body)) {
       const retryAfter = parseInt(response.headers.get("Retry-After") ?? "", 10) * 1000;
       reportQuotaExceeded(accountId, retryAfter > 0 ? retryAfter : 0);
-      const background = isBackgroundWork();
       const waitMs = background
         ? retryAfter > 0
           ? retryAfter
@@ -85,12 +143,19 @@ async function gmailFetch(
       const canRetry = background ? retryCount < BACKGROUND_MAX_RETRIES : waitMs !== undefined;
       if (canRetry) {
         await sleep(waitMs);
-        return gmailFetch(accountId, path, init, retryCount + 1);
+        return gmailFetch(accountId, path, init, retryCount + 1, attempt);
       }
     }
-    throw new Error(
-      `Gmail API error: ${response.status} ${response.statusText}${body ? ` — ${body}` : ""}`,
-    );
+    // Gmail's own hiccups ("backendError", 502/503): background work retries.
+    const tries = attempt.transientRetries ?? 0;
+    if (background && response.status >= 500 && tries < BACKGROUND_TRANSIENT_RETRIES) {
+      await sleep(1000 * 2 ** tries);
+      return gmailFetch(accountId, path, init, retryCount, {
+        ...attempt,
+        transientRetries: tries + 1,
+      });
+    }
+    throw new GmailApiError(response.status, response.statusText, body);
   }
 
   // DELETE endpoints (drafts) return an empty 204 body.
@@ -98,47 +163,58 @@ async function gmailFetch(
   return text ? JSON.parse(text) : {};
 }
 
+/**
+ * Runs `fn` over `items` with at most `concurrency` calls in flight, keeping
+ * every slot busy (a slow request doesn't hold up the rest of its batch).
+ * Results keep the order of `items`.
+ */
+export async function mapPool<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await fn(items[index], index);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
+  return results;
+}
+
 // ── listLabels ────────────────────────────────────────────────────────────────
 
-export async function listLabels(accountId: string): Promise<GmailLabel[]> {
+/** Just the label ids and names (one cheap call) — sync uses it to notice
+    labels created, renamed or deleted elsewhere. */
+export async function listLabelNames(
+  accountId: string,
+): Promise<{ id: string; name: string; type: string }[]> {
   const data = (await gmailFetch(accountId, "/labels")) as {
     labels?: { id: string; name: string; type: string }[];
   };
+  return data.labels ?? [];
+}
 
-  const rawLabels = data.labels ?? [];
+export async function listLabels(accountId: string): Promise<GmailLabel[]> {
+  const rawLabels = await listLabelNames(accountId);
 
   // labels.list omits message counts and color — only labels.get returns them,
   // so fetch per-label detail for every label.
-  const detailById = new Map<
-    string,
-    { unread?: number; total?: number; color?: { backgroundColor: string; textColor: string } }
-  >();
-
-  const CONCURRENCY = 8;
-  for (let i = 0; i < rawLabels.length; i += CONCURRENCY) {
-    const batch = rawLabels.slice(i, i + CONCURRENCY);
-    const fetched = await Promise.all(
-      batch.map(
-        (l) =>
-          gmailFetch(accountId, `/labels/${l.id}`) as Promise<{
-            id: string;
-            messagesUnread?: number;
-            messagesTotal?: number;
-            color?: { backgroundColor?: string; textColor?: string };
-          }>,
-      ),
-    );
-    for (const label of fetched) {
-      detailById.set(label.id, {
-        unread: label.messagesUnread,
-        total: label.messagesTotal,
-        color:
-          label.color?.backgroundColor && label.color.textColor
-            ? { backgroundColor: label.color.backgroundColor, textColor: label.color.textColor }
-            : undefined,
-      });
-    }
-  }
+  const fetched = await mapPool(
+    rawLabels,
+    8,
+    (l) =>
+      gmailFetch(accountId, `/labels/${l.id}`) as Promise<{
+        id: string;
+        messagesUnread?: number;
+        messagesTotal?: number;
+        color?: { backgroundColor?: string; textColor?: string };
+      }>,
+  );
+  const detailById = new Map(fetched.map((label) => [label.id, label]));
 
   return rawLabels.map((label) => {
     const detail = detailById.get(label.id);
@@ -146,9 +222,12 @@ export async function listLabels(accountId: string): Promise<GmailLabel[]> {
       id: label.id,
       name: label.name,
       type: label.type === "system" ? "system" : "user",
-      unread: detail?.unread,
-      total: detail?.total,
-      color: detail?.color,
+      unread: detail?.messagesUnread,
+      total: detail?.messagesTotal,
+      color:
+        detail?.color?.backgroundColor && detail.color.textColor
+          ? { backgroundColor: detail.color.backgroundColor, textColor: detail.color.textColor }
+          : undefined,
     };
   });
 }
@@ -300,36 +379,24 @@ export async function fetchMetadataForIds(
   accountId: string,
   ids: string[],
 ): Promise<GmailMessageSummary[]> {
-  // messages.get costs 5 quota units against Gmail's ~250 units/s per user;
-  // 5 in flight (~30 req/s) stays clear of 429 backoffs and leaves headroom
-  // for what the user opens while a big sync runs.
-  const CONCURRENCY = 5;
-  const results: GmailMessageSummary[] = [];
+  // messages.get costs 5 quota units; gmail-quota paces the calls, so the
+  // pool only bounds sockets in flight.
+  const fetched = await mapPool(ids, 6, async (id) => {
+    try {
+      return (await gmailFetch(
+        accountId,
+        `/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=Message-ID&metadataHeaders=References`,
+      )) as RawMessageMetadata;
+    } catch (err) {
+      // A message can be purged between the history feed listing it and this
+      // fetch; a dead id must not kill the sync (the cursor would never
+      // advance and every tick would replay the same failure).
+      if (err instanceof GmailApiError && err.status === 404) return null;
+      throw err;
+    }
+  });
 
-  for (let i = 0; i < ids.length; i += CONCURRENCY) {
-    const batch = ids.slice(i, i + CONCURRENCY);
-    const fetched = await Promise.all(
-      batch.map(async (id) => {
-        try {
-          return (await gmailFetch(
-            accountId,
-            `/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=Message-ID&metadataHeaders=References`,
-          )) as RawMessageMetadata;
-        } catch (err) {
-          // A message can be purged between the history feed listing it and this
-          // fetch; a dead id must not kill the sync (the cursor would never
-          // advance and every tick would replay the same failure).
-          if (err instanceof Error && err.message.includes("Gmail API error: 404")) return null;
-          throw err;
-        }
-      }),
-    );
-    results.push(
-      ...fetched.filter((m): m is RawMessageMetadata => m !== null).map(mapMessageSummary),
-    );
-  }
-
-  return results;
+  return fetched.filter((m): m is RawMessageMetadata => m !== null).map(mapMessageSummary);
 }
 
 // ── listMessages ──────────────────────────────────────────────────────────────
@@ -461,7 +528,7 @@ export async function listHistory(
 
 /** Distinguish an expired-history-cursor (HTTP 404) from other failures. */
 export function isHistoryExpiredError(err: unknown): boolean {
-  return err instanceof Error && err.message.includes("Gmail API error: 404");
+  return err instanceof GmailApiError && err.status === 404;
 }
 
 // ── getMessage ────────────────────────────────────────────────────────────────
