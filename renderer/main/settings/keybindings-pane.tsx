@@ -24,7 +24,8 @@ import {
   KEYBINDING_COMMANDS,
   WHEN_VARIABLES,
   commandLabel,
-  labelToggleCommand,
+  labelMoveCommand,
+  labelMoveName,
   type KeybindingCommand,
   type KeybindingRule,
 } from "../keybindings/commands";
@@ -468,9 +469,9 @@ function useUserLabelNames(): string[] {
 }
 
 /**
- * Records the keyboard shortcut that toggles one label on the selected
- * conversations (opened from a label's menu in the sidebar). It's a regular
- * `label.toggle:<name>` keybinding, listed with the rest in Settings.
+ * Records the keyboard shortcut that moves the selected conversations to one
+ * label (opened from a label's menu in the sidebar). It's a regular
+ * `label.move:<name>` keybinding, listed with the rest in Settings.
  */
 export function LabelShortcutDialog({
   labelName,
@@ -481,8 +482,10 @@ export function LabelShortcutDialog({
   onClose: () => void;
 }) {
   const { rules } = useKeybindingsState();
-  const command = labelName ? labelToggleCommand(labelName) : null;
-  const existing = rules.find((r) => r.command === command) ?? null;
+  const command = labelName ? labelMoveCommand(labelName) : null;
+  // Older `label.toggle:` rules count too; saving rewrites them as moves.
+  const existing =
+    rules.find((r) => labelName !== null && labelMoveName(r.command) === labelName) ?? null;
   const [key, setKey] = useState("");
   const [recording, setRecording] = useState(false);
   useEffect(() => {
@@ -527,7 +530,8 @@ export function LabelShortcutDialog({
     >
       <div className="flex items-center justify-between gap-3">
         <Text variant="small" color="secondary">
-          Adds or removes this label on the open or selected conversations.
+          Moves the open or selected conversations here: this label is added and the mailbox's label
+          and any other labels are taken off.
         </Text>
         <div className="flex shrink-0 items-center gap-1.5">
           <WarningIcon message={warning} />
@@ -570,8 +574,8 @@ function NewKeybindingRow({ rows, onDone }: { rows: Row[]; onDone: () => void })
                 </SelectItem>
               ))}
               {labelNames.map((name) => (
-                <SelectItem key={name} value={labelToggleCommand(name)}>
-                  {commandLabel(labelToggleCommand(name))}
+                <SelectItem key={name} value={labelMoveCommand(name)}>
+                  {commandLabel(labelMoveCommand(name))}
                 </SelectItem>
               ))}
             </SelectContent>

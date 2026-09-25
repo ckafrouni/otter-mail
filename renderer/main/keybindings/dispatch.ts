@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { labelToggleName, type CommandHandlerKey, type KeybindingCommand } from "./commands";
+import { labelMoveName, type CommandHandlerKey, type KeybindingCommand } from "./commands";
 import { evaluateWhen, isModifierOnly, matchesStroke, type WhenContext } from "./keys";
 import { getKeybindings, type ResolvedKeybinding } from "./store";
 
@@ -14,15 +14,15 @@ import { getKeybindings, type ResolvedKeybinding } from "./store";
  */
 
 /** Return `false` when the command doesn't apply right now. `arg` is the
-    label name for `label.toggle:<name>` rules. */
+    label name for `label.move:<name>` rules. */
 export type CommandHandler = (event: KeyboardEvent, arg?: string) => boolean | void;
 
 const handlers = new Map<CommandHandlerKey, { run: CommandHandler }[]>();
 
-/** Where a rule's command is handled, plus its argument (label toggles). */
+/** Where a rule's command is handled, plus its argument (label moves). */
 function handlerFor(command: KeybindingCommand): { key: CommandHandlerKey; arg?: string } {
-  const labelName = labelToggleName(command);
-  if (labelName !== null) return { key: "label.toggle", arg: labelName };
+  const labelName = labelMoveName(command);
+  if (labelName !== null) return { key: "label.move", arg: labelName };
   return { key: command as CommandHandlerKey };
 }
 

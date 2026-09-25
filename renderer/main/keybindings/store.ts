@@ -2,8 +2,8 @@ import { createElement, useSyncExternalStore } from "react";
 import {
   DEFAULT_KEYBINDINGS,
   isKeybindingCommand,
-  labelToggleCommand,
-  labelToggleName,
+  labelMoveCommand,
+  labelMoveName,
   type KeybindingCommand,
   type KeybindingRule,
 } from "./commands";
@@ -190,10 +190,10 @@ export async function openKeybindingsFile(): Promise<void> {
 export async function renameLabelKeybindings(from: string, to: string): Promise<void> {
   let changed = false;
   const rules = state.rules.map((rule) => {
-    const name = labelToggleName(rule.command);
+    const name = labelMoveName(rule.command);
     if (name === null || (name !== from && !name.startsWith(`${from}/`))) return rule;
     changed = true;
-    return { ...rule, command: labelToggleCommand(to + name.slice(from.length)) };
+    return { ...rule, command: labelMoveCommand(to + name.slice(from.length)) };
   });
   if (!changed) return;
   console.log("[Keybindings:renameLabel]", { from, to });
