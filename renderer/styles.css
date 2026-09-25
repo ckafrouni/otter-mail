@@ -38,6 +38,16 @@
   --sidebar-control-gap: 0.5rem;
   --sidebar-row-content-inset: 0.625rem;
   --workspace-topbar-height: 52px;
+  /* Otter Code's titlebar anchors: the sidebar and assistant toggles sit at
+     these window positions whatever the panes do; headers leave room. */
+  --workspace-controls-left: 84px;
+  --workspace-controls-right: 1rem;
+  --workspace-titlebar-control-size: 1.75rem;
+  --workspace-titlebar-control-gap: 0.5rem;
+  --workspace-titlebar-content-left: calc(
+    var(--workspace-controls-left) + var(--workspace-titlebar-control-size) +
+      var(--workspace-titlebar-control-gap)
+  );
   --app-scrollbar-width: 6px;
   /* Height of the fade under borderless top bars (Otter Code). */
   --workspace-titlebar-scroll-fade-height: 1.5rem;

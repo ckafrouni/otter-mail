@@ -23,25 +23,26 @@ import { shortcutLabelFor, useKeybindingsState } from "../keybindings/store";
  * and the right-hand controls.
  */
 
-/** Traffic-light clearance + sidebar toggle + wordmark. */
-export function WindowTitle({
+/**
+ * The sidebar toggle, pinned at one window position (Otter Code's
+ * SidebarControl): right of the traffic lights, whether the sidebar is open
+ * or not. The bands under it leave room (`WindowTitle`, `TitlebarInset`).
+ */
+export function SidebarControl({
   sidebarOpen,
   onToggleSidebar,
-  className,
 }: {
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
-  className?: string;
 }) {
   return (
-    <div
-      className={cn(
-        "drag-region flex h-(--workspace-topbar-height) shrink-0 items-center gap-2 pl-[84px] pr-3",
-        className,
-      )}
-    >
+    <div className="pointer-events-none fixed left-(--workspace-controls-left) top-0 z-40 flex h-(--workspace-topbar-height) items-center">
       <HintTooltip label={sidebarOpen ? "Hide sidebar" : "Show sidebar"} shortcut="sidebar.toggle">
-        <IconBtn label="Toggle sidebar" onClick={onToggleSidebar}>
+        <IconBtn
+          label="Toggle sidebar"
+          className="no-drag pointer-events-auto"
+          onClick={onToggleSidebar}
+        >
           {sidebarOpen ? (
             <PanelLeftCloseIcon className="size-4" />
           ) : (
@@ -49,6 +50,58 @@ export function WindowTitle({
           )}
         </IconBtn>
       </HintTooltip>
+    </div>
+  );
+}
+
+/**
+ * The assistant panel toggle, pinned at the window's top-right. The rightmost
+ * band (list, reader, draft, or the panel's own header) keeps a
+ * `PanelControlSlot` where it sits.
+ */
+export function PanelControl({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  return (
+    <div className="pointer-events-none fixed right-(--workspace-controls-right) top-0 z-40 flex h-(--workspace-topbar-height) items-center">
+      <HintTooltip
+        label={open ? "Hide assistant panel" : "Show assistant panel"}
+        shortcut="assistant.toggle"
+        side="bottom"
+      >
+        <IconBtn
+          label="Toggle assistant panel"
+          active={open}
+          className="no-drag pointer-events-auto"
+          onClick={onToggle}
+        >
+          <PanelRightIcon className="size-4" />
+        </IconBtn>
+      </HintTooltip>
+    </div>
+  );
+}
+
+/** Room left in a band for the pinned panel toggle. */
+export function PanelControlSlot() {
+  return <span aria-hidden className="w-(--workspace-titlebar-control-size) shrink-0" />;
+}
+
+/** Room left at the start of the leftmost band (sidebar hidden): traffic lights + toggle. */
+export function TitlebarInset() {
+  // The band's own px-4 already covers 1rem of it.
+  return (
+    <span aria-hidden className="w-[calc(var(--workspace-titlebar-content-left)-1rem)] shrink-0" />
+  );
+}
+
+/** The sidebar's title band: room for the traffic lights and pinned toggle, then the wordmark. */
+export function WindowTitle({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        "drag-region flex h-(--workspace-topbar-height) shrink-0 items-center pl-(--workspace-titlebar-content-left) pr-3",
+        className,
+      )}
+    >
       {/* Wordmark in Otter Code's style: brand word, then the product muted. */}
       <span className="inline-flex min-w-0 select-none items-baseline gap-1 whitespace-nowrap text-sm font-medium tracking-tight">
         <span className="text-foreground">Otter</span>
@@ -213,27 +266,15 @@ function DefaultMailButton() {
 }
 
 /**
- * Right end of the content column's title band: default-mail nudge and the
- * Assistant panel toggle. Views that own the band (the reader) render it at the
- * end of their own header so the toggle never moves.
+ * Right end of the content column's title band: default-mail nudge and room
+ * for the pinned assistant toggle. Views that own the band (the reader) render
+ * it at the end of their own header.
  */
-export function TitleTrailing({
-  showPanelToggle,
-  onToggleChat,
-}: {
-  showPanelToggle: boolean;
-  onToggleChat: () => void;
-}) {
+export function TitleTrailing({ showPanelToggle }: { showPanelToggle: boolean }) {
   return (
     <>
       <DefaultMailButton />
-      {showPanelToggle ? (
-        <HintTooltip label="Show assistant panel" shortcut="assistant.toggle" side="bottom">
-          <IconBtn label="Toggle assistant panel" onClick={onToggleChat}>
-            <PanelRightIcon className="size-4" />
-          </IconBtn>
-        </HintTooltip>
-      ) : null}
+      {showPanelToggle ? <PanelControlSlot /> : null}
     </>
   );
 }
@@ -244,13 +285,11 @@ export function TitleControls({
   syncing,
   syncLabel,
   showPanelToggle,
-  onToggleChat,
 }: {
   leading?: ReactNode;
   syncing: boolean;
   syncLabel: string;
   showPanelToggle: boolean;
-  onToggleChat: () => void;
 }) {
   return (
     <div
@@ -268,7 +307,7 @@ export function TitleControls({
         </div>
       ) : null}
       <span className="min-w-0 flex-1" />
-      <TitleTrailing showPanelToggle={showPanelToggle} onToggleChat={onToggleChat} />
+      <TitleTrailing showPanelToggle={showPanelToggle} />
     </div>
   );
 }

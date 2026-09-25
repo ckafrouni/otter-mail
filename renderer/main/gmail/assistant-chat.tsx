@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { MessageScroller } from "@shadcn/react/message-scroller";
 import {
   ArrowDownIcon,
-  PanelRightIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CircleAlertIcon,
@@ -24,6 +23,7 @@ import {
   PaperclipIcon,
 } from "lucide-react";
 import { IconBtn, HintTooltip, buttonClass, cn } from "./ui";
+import { PanelControlSlot } from "./top-bar";
 import {
   gmailApi,
   type ChatEvent,
@@ -677,7 +677,6 @@ export function AssistantChatPanel({
   selectedRows,
   quote,
   onClearQuote,
-  onClose,
 }: {
   /** Account of the open conversation (context attach), null when none. */
   accountId: string | null;
@@ -687,7 +686,6 @@ export function AssistantChatPanel({
   /** A highlighted excerpt to attach; overrides the auto-derived context. */
   quote?: QuoteContext | null;
   onClearQuote?: () => void;
-  onClose: () => void;
 }) {
   const [store, setStore] = useState<Store>(() => loadStore());
   const { conversations, activeId } = store;
@@ -1434,11 +1432,8 @@ export function AssistantChatPanel({
           </IconBtn>
         </HintTooltip>
         <span className="min-w-0 flex-1" />
-        <HintTooltip label="Hide assistant panel" shortcut="assistant.toggle" side="bottom">
-          <IconBtn label="Toggle assistant panel" active onClick={onClose}>
-            <PanelRightIcon className="size-4" />
-          </IconBtn>
-        </HintTooltip>
+        {/* The pinned assistant toggle (home view) sits here. */}
+        <PanelControlSlot />
       </div>
 
       {historyOpen ? (

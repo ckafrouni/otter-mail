@@ -8,7 +8,14 @@ import { CommandPalette } from "./gmail/command-palette";
 import { AssistantChatPanel } from "./gmail/assistant-chat";
 import { SEARCH_MAILBOX } from "./gmail/gmail-query";
 import { searchTabId, searchTitle, type SearchTab } from "./gmail/search-tabs";
-import { TitleControls, TitleTrailing, WindowTitle } from "./gmail/top-bar";
+import {
+  PanelControl,
+  SidebarControl,
+  TitleControls,
+  TitleTrailing,
+  TitlebarInset,
+  WindowTitle,
+} from "./gmail/top-bar";
 import { SettingsPage, type SettingsRoute } from "./settings/settings-page";
 import { SettingsNav, settingsSectionLabel } from "./settings/settings-nav";
 import { isTypingTarget } from "./gmail/keyboard";
@@ -824,9 +831,7 @@ export function HomeView() {
   // and the panel toggle in one row) instead of an empty band above it.
   const readerOwnsBand =
     !settingsRoute && !(composeOpen && composeAccountId) && !!readerAccount && !!selectedMessageId;
-  const titleTrailing = (
-    <TitleTrailing showPanelToggle={!chatOpen && !settingsRoute} onToggleChat={toggleChat} />
-  );
+  const titleTrailing = <TitleTrailing showPanelToggle={!chatOpen && !settingsRoute} />;
   // With the sidebar hidden and no list pane, this band is the leftmost one: it
   // needs the traffic-light clearance and the toggle to bring the sidebar (and
   // Settings' Back button) back.
@@ -835,13 +840,7 @@ export function HomeView() {
     <TitleControls
       leading={
         <>
-          {mainIsLeftmost ? (
-            <WindowTitle
-              sidebarOpen={false}
-              onToggleSidebar={toggleSidebar}
-              className="-ml-4 h-auto"
-            />
-          ) : null}
+          {mainIsLeftmost ? <TitlebarInset /> : null}
           {settingsRoute ? (
             <nav aria-label="Settings" className="min-w-0">
               <ol className="m-0 flex min-w-0 list-none items-center gap-2 p-0 text-sm">
@@ -859,10 +858,9 @@ export function HomeView() {
       }
       syncing={globalSync.syncing}
       syncLabel={globalSync.label}
-      // The toggle lives here only while the panel is closed; when open, the
-      // panel header draws it at the same top-right spot. Settings has no panel.
+      // Room for the pinned panel toggle while the panel is closed; when
+      // open, the panel's header keeps it. Settings has no panel.
       showPanelToggle={!chatOpen && !settingsRoute}
-      onToggleChat={toggleChat}
     />
   );
   return (
@@ -879,7 +877,7 @@ export function HomeView() {
               >
                 {settingsRoute ? (
                   <>
-                    <WindowTitle sidebarOpen={sidebarOpen} onToggleSidebar={toggleSidebar} />
+                    <WindowTitle />
                     <SettingsNav
                       pane={settingsRoute.pane}
                       onSelect={(pane) => setSettingsRoute({ pane, viewId: null, mailbox: null })}
@@ -888,8 +886,6 @@ export function HomeView() {
                   </>
                 ) : (
                   <AccountsSidebar
-                    sidebarOpen={sidebarOpen}
-                    onToggleSidebar={toggleSidebar}
                     onOpenSettings={() =>
                       setSettingsRoute({ pane: "general", viewId: null, mailbox: null })
                     }
@@ -936,15 +932,7 @@ export function HomeView() {
                 className={`${PANE_LIST} shrink-0`}
               >
                 <MessageList
-                  headerLeading={
-                    sidebarOpen ? null : (
-                      <WindowTitle
-                        sidebarOpen={false}
-                        onToggleSidebar={toggleSidebar}
-                        className="-ml-4 h-auto"
-                      />
-                    )
-                  }
+                  headerLeading={sidebarOpen ? null : <TitlebarInset />}
                   accountId={(isCombined ? firstRealAccountId : effectiveAccountId) ?? ""}
                   labelId={selectedLabelId}
                   combined={combined}
@@ -1051,16 +1039,24 @@ export function HomeView() {
                   selectedRows={chatSelection}
                   quote={pendingQuote}
                   onClearQuote={() => setPendingQuote(null)}
-                  onClose={() => {
-                    setPendingQuote(null);
-                    toggleChat();
-                  }}
                 />
               </div>
             </>
           ) : null}
         </div>
       </div>
+
+      {/* Pinned titlebar toggles (Otter Code): same window spot whatever the panes do. */}
+      <SidebarControl sidebarOpen={sidebarOpen} onToggleSidebar={toggleSidebar} />
+      {!settingsRoute ? (
+        <PanelControl
+          open={chatOpen}
+          onToggle={() => {
+            if (chatOpen) setPendingQuote(null);
+            toggleChat();
+          }}
+        />
+      ) : null}
 
       {accounts.length > 0 ? (
         <CommandPalette

@@ -499,8 +499,6 @@ function LabelNode({
 }
 
 type AccountsSidebarProps = {
-  sidebarOpen: boolean;
-  onToggleSidebar: () => void;
   /** Footer utilities. */
   onOpenSettings: () => void;
   /** Opens Settings → Views on a view ("new" to create one) for a mailbox. */
@@ -525,8 +523,6 @@ type AccountsSidebarProps = {
 };
 
 export function AccountsSidebar({
-  sidebarOpen,
-  onToggleSidebar,
   onOpenSettings,
   onEditView,
   onSync,
@@ -705,7 +701,7 @@ export function AccountsSidebar({
   return (
     <SearchRowsContext.Provider value={renderSearchRows}>
       <div className="flex h-full min-w-0 flex-col">
-        <WindowTitle sidebarOpen={sidebarOpen} onToggleSidebar={onToggleSidebar} />
+        <WindowTitle />
 
         {/* Mailbox switcher row (All mailboxes / an account). */}
         <div className="shrink-0 px-(--sidebar-content-inset) pb-1">
