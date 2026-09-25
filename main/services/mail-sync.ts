@@ -3,16 +3,24 @@
  *
  * Background sync engine that keeps the local SQLite cache (mail-store) in
  * step with Gmail. First run does a full-mailbox metadata sync; subsequent
- * runs use Gmail's history feed for cheap incremental deltas. Full message
- * bodies are fetched lazily on open (see gmail handlers) and cached.
+ * runs use Gmail's history feed for cheap incremental deltas.
+ *
+ * Two independent lanes per account:
+ *  - sync: history delta (or full sync), labels, draft ids. Short once the
+ *    mailbox is synced, so new mail shows up every tick and the account reads
+ *    as synced as soon as it finishes.
+ *  - downloads: full bodies for offline reading, newest first, at the lowest
+ *    quota priority. It can take a long time on a big mailbox and never holds
+ *    up the sync lane or the "Syncing…" status.
  *
  * Sync is fire-and-forget; the renderer polls getSyncStatus() to show
- * progress and refresh its views as the local store fills in.
+ * progress and refreshes its views when `revision` says the cache changed.
  */
 
 import { ipcMain, logger } from "@glaze/core/backend";
 import {
   listLabels,
+  listLabelNames,
   getProfile,
   listMessageIdsPage,
   fetchMetadataForIds,
@@ -20,9 +28,13 @@ import {
   getAttachmentData,
   listHistory,
   isHistoryExpiredError,
+  isNetworkError,
+  isRateLimitError,
   listDraftIds,
+  mapPool,
+  GmailApiError,
 } from "./gmail-api.js";
-import { asBackgroundWork } from "./gmail-quota.js";
+import { asBackgroundWork, asPrefetchWork, isCoolingDown } from "./gmail-quota.js";
 import { hasCachedAttachment } from "./attachment-cache.js";
 import { listAccounts } from "./account-store.js";
 import * as store from "./mail-store.js";
@@ -45,6 +57,8 @@ function ensureStatus(accountId: string): SyncStatus {
     lastSyncAt: state.lastSyncAt,
     fullSyncDone: state.fullSyncDone,
     error: null,
+    download: null,
+    revision: 0,
   };
   statuses.set(accountId, status);
   return status;
@@ -54,8 +68,15 @@ function update(accountId: string, patch: Partial<SyncStatus>): void {
   Object.assign(ensureStatus(accountId), patch);
 }
 
+/** The cache changed in a way lists show: the renderer refetches on a new revision. */
+function bumpRevision(accountId: string): void {
+  const status = ensureStatus(accountId);
+  status.revision += 1;
+}
+
 export function getSyncStatus(accountId: string): SyncStatus {
-  return { ...ensureStatus(accountId) };
+  const status = ensureStatus(accountId);
+  return { ...status, download: status.download ? { ...status.download } : null };
 }
 
 const lastFinishedAt = new Map<string, number>();
@@ -64,12 +85,41 @@ const lastFinishedAt = new Map<string, number>();
 // refetch hits those handlers again — without a cooldown that loops forever.
 const READ_TRIGGER_COOLDOWN_MS = 20_000;
 
-/** Kick off a background sync for one account (no-op if one is already running).
-    Non-forced calls (read-path triggers) are skipped during the post-sync cooldown. */
-export function syncAccount(accountId: string, opts?: { force?: boolean }): void {
-  if (running.has(accountId)) return;
+// ── Failure backoff ──────────────────────────────────────────────────────
+// A failing account (offline, revoked sign-in, Gmail rate limits) is retried
+// on a growing delay instead of on every timer tick and list refetch. Asking
+// explicitly (Sync button, menu, switching to the account) always runs.
+
+const BACKOFF_BASE_MS = 30_000;
+const BACKOFF_MAX_MS = 10 * 60_000;
+const failures = new Map<string, { count: number; retryAt: number }>();
+/** A sync was requested while one ran: run once more when it ends. */
+const rerun = new Set<string>();
+
+function recordFailure(accountId: string): void {
+  const count = (failures.get(accountId)?.count ?? 0) + 1;
+  const delay = Math.min(BACKOFF_BASE_MS * 2 ** (count - 1), BACKOFF_MAX_MS);
+  failures.set(accountId, { count, retryAt: Date.now() + delay });
+}
+
+/**
+ * Kick off a background sync for one account (no-op if one is already running).
+ * `force` skips the post-sync cooldown (launch, timer, user); non-forced calls
+ * are read-path triggers. `trigger: "timer"` still respects failure backoff,
+ * which only an explicit request (`force` without a trigger) skips.
+ */
+export function syncAccount(
+  accountId: string,
+  opts?: { force?: boolean; trigger?: "timer" },
+): void {
+  const explicit = opts?.force === true && opts.trigger !== "timer";
+  if (running.has(accountId)) {
+    if (explicit) rerun.add(accountId);
+    return;
+  }
   // Re-added after removal: the old run has ended (not running), start fresh.
   removed.delete(accountId);
+  if (!explicit && Date.now() < (failures.get(accountId)?.retryAt ?? 0)) return;
   if (
     !opts?.force &&
     Date.now() - (lastFinishedAt.get(accountId) ?? 0) < READ_TRIGGER_COOLDOWN_MS
@@ -82,11 +132,17 @@ export function syncAccount(accountId: string, opts?: { force?: boolean }): void
   void runSync(accountId).finally(() => {
     running.delete(accountId);
     lastFinishedAt.set(accountId, Date.now());
+    if (rerun.delete(accountId) && !removed.has(accountId)) {
+      syncAccount(accountId, { force: true });
+    }
   });
 }
 
 /** Sync every connected account — launch, menu, and the auto timer force it. */
-export async function syncAllAccounts(opts?: { force?: boolean }): Promise<void> {
+export async function syncAllAccounts(opts?: {
+  force?: boolean;
+  trigger?: "timer";
+}): Promise<void> {
   try {
     const accounts = await listAccounts();
     for (const account of accounts) syncAccount(account.id, opts);
@@ -105,7 +161,7 @@ export function configureAutoSync(intervalSeconds: number): void {
   }
   if (intervalSeconds > 0) {
     autoSyncTimer = setInterval(
-      () => void syncAllAccounts({ force: true }),
+      () => void syncAllAccounts({ force: true, trigger: "timer" }),
       intervalSeconds * 1000,
     );
   }
@@ -137,6 +193,32 @@ export function forgetAccount(accountId: string): void {
   removed.add(accountId);
   statuses.delete(accountId);
   lastFinishedAt.delete(accountId);
+  failures.delete(accountId);
+  rerun.delete(accountId);
+  labelRefresh.delete(accountId);
+  draftCheckAt.delete(accountId);
+}
+
+/** A short, readable reason for the status line (Gmail errors carry whole JSON bodies). */
+function describeSyncError(err: unknown): string {
+  if (isRateLimitError(err)) return "Gmail is limiting requests right now — retrying shortly";
+  if (isNetworkError(err)) return "Can't reach Gmail — retrying when the connection is back";
+  const text = String(err);
+  if (text.includes("safeStorage")) return "Couldn't read this account's sign-in — retrying";
+  if (err instanceof GmailApiError) {
+    if (err.status === 401) {
+      return "Gmail rejected this account's sign-in — try removing and re-adding it";
+    }
+    if (err.status >= 500) return "Gmail is having trouble right now — retrying shortly";
+    let detail = "";
+    try {
+      detail = (JSON.parse(err.body) as { error?: { message?: string } }).error?.message ?? "";
+    } catch {
+      // not JSON: fall back to the status alone
+    }
+    return `Gmail error ${err.status}${detail ? `: ${detail.slice(0, 160)}` : ""}`;
+  }
+  return text.length > 240 ? `${text.slice(0, 240)}…` : text;
 }
 
 /** A sync run is background work: it only spends Gmail quota the user isn't using. */
@@ -146,39 +228,43 @@ function runSync(accountId: string): Promise<void> {
 
 async function runSyncNow(accountId: string): Promise<void> {
   const state = store.getSyncState(accountId);
-  // Stamped as the run's START: mail arriving while a long run is busy (bodies,
-  // attachments) is newer than this and still gets notified next time.
+  // Stamped as the run's START: mail arriving while the run is busy is newer
+  // than this and still gets notified next time.
   const startedAt = Date.now();
-  update(accountId, { syncing: true, error: null, synced: 0, phase: "labels" });
+  const incremental = state.fullSyncDone && state.historyId !== null;
+  update(accountId, {
+    syncing: true,
+    error: null,
+    synced: 0,
+    total: null,
+    phase: incremental ? "incremental" : "labels",
+  });
 
   try {
-    // Labels first — the sidebar and message chips depend on them.
-    const labels = await listLabels(accountId);
-    assertActive(accountId);
-    store.upsertLabels(accountId, labels);
-
-    if (state.fullSyncDone && state.historyId) {
-      const added = await incrementalSync(accountId, state.historyId);
-      await notifyNewMail(accountId, added, state.lastSyncAt);
+    let mailChanged = true;
+    if (incremental && state.historyId) {
+      const delta = await incrementalSync(accountId, state.historyId);
+      mailChanged = delta.changed;
+      if (await refreshLabels(accountId, mailChanged)) bumpRevision(accountId);
+      await notifyNewMail(accountId, delta.added, state.lastSyncAt);
       // Accounts fully synced before spam/trash were included need a one-time
       // backfill; new accounts get them in the full sync itself.
       if (store.getKv(`spamTrashBackfilled:${accountId}`) !== "1") {
         await backfillSpamTrash(accountId);
       }
     } else {
+      // Labels first — the sidebar and message chips depend on them.
+      if (await refreshLabels(accountId, true)) bumpRevision(accountId);
       await fullSync(accountId);
     }
 
-    // Download full bodies so the whole mailbox is readable offline.
-    await backfillBodies(accountId);
-
-    // Local-first drafts: know every draft's id and warm its attachment bytes,
-    // so opening one needs no Gmail round trip.
-    await learnDraftIds(accountId);
-    await prefetchDraftAttachments(accountId);
+    // Local-first drafts: know every draft's id, so opening one needs no
+    // Gmail round trip.
+    await learnDraftIds(accountId, mailChanged);
 
     assertActive(accountId);
     store.setSyncState(accountId, { lastSyncAt: startedAt });
+    failures.delete(accountId);
     update(accountId, {
       syncing: false,
       phase: "idle",
@@ -190,11 +276,49 @@ async function runSyncNow(accountId: string): Promise<void> {
       logger.info("mail-sync", err.message);
       return;
     }
-    logger.error("mail-sync", `sync failed for ${accountId}: ${String(err)}`);
-    update(accountId, { syncing: false, phase: "idle", error: String(err) });
+    recordFailure(accountId);
+    logger.error("mail-sync", `sync failed for ${accountId}: ${describeSyncError(err)}`);
+    update(accountId, { syncing: false, phase: "idle", error: describeSyncError(err) });
   }
 
   updateDockBadge();
+  // Offline bodies download in their own lane, after the mailbox is current.
+  startDownloads(accountId);
+}
+
+// ── Labels ───────────────────────────────────────────────────────────────
+// labels.get per label (names, colors, Gmail's counts) is ~30 requests per
+// account — too much for every 30s tick. Each tick does one labels.list to
+// catch labels created/renamed/deleted elsewhere; the per-label detail is
+// re-read when mail changed (at most once a minute) and every 10 minutes.
+// Between detail reads, applyHistoryChanges keeps counts current locally.
+
+const LABEL_DETAIL_MIN_GAP_MS = 60_000;
+const LABEL_DETAIL_MAX_AGE_MS = 10 * 60_000;
+const labelRefresh = new Map<string, { refreshedAt: number; dirty: boolean }>();
+
+/** Refreshes the cached labels when due. Returns whether they were rewritten. */
+async function refreshLabels(accountId: string, mailChanged: boolean): Promise<boolean> {
+  let state = labelRefresh.get(accountId);
+  if (!state) {
+    state = { refreshedAt: 0, dirty: true };
+    labelRefresh.set(accountId, state);
+  }
+  if (mailChanged) state.dirty = true;
+  const age = Date.now() - state.refreshedAt;
+  let due = age > LABEL_DETAIL_MAX_AGE_MS || (state.dirty && age > LABEL_DETAIL_MIN_GAP_MS);
+  if (!due) {
+    const names = await listLabelNames(accountId);
+    const cached = new Map(store.getLabels(accountId).map((l) => [l.id, l.name]));
+    due = names.length !== cached.size || names.some((l) => cached.get(l.id) !== l.name);
+  }
+  if (!due) return false;
+  const labels = await listLabels(accountId);
+  assertActive(accountId);
+  store.upsertLabels(accountId, labels);
+  state.refreshedAt = Date.now();
+  state.dirty = false;
+  return true;
 }
 
 const META_CHUNK = 100;
@@ -265,6 +389,7 @@ async function fullSync(accountId: string): Promise<void> {
       store.upsertMessages(accountId, summaries);
       synced += summaries.length;
       update(accountId, { synced });
+      bumpRevision(accountId);
     }
 
     pageToken = page.nextPageToken;
@@ -275,7 +400,10 @@ async function fullSync(accountId: string): Promise<void> {
   if (refresh && listedFromStart) {
     assertActive(accountId);
     const gone = store.pruneMessagesNotIn(accountId, seen);
-    if (gone > 0) logger.info("mail-sync", `removed ${gone} messages deleted in Gmail`);
+    if (gone > 0) {
+      logger.info("mail-sync", `removed ${gone} messages deleted in Gmail`);
+      bumpRevision(accountId);
+    }
   }
 
   assertActive(accountId);
@@ -285,19 +413,28 @@ async function fullSync(accountId: string): Promise<void> {
   store.setKv(`spamTrashBackfilled:${accountId}`, "1");
 }
 
+/** Draft ids are re-checked when mail changed, else at most this often. */
+const DRAFT_CHECK_MAX_AGE_MS = 10 * 60_000;
+const draftCheckAt = new Map<string, number>();
+
 /**
- * One cheap drafts.list per run: records each cached draft's id (opening a
- * draft then needs no Gmail lookup) and removes stale local draft rows — every
- * draft edit mints a new message id, so older copies (and drafts sent or
- * deleted elsewhere) would otherwise linger in Drafts and its count.
+ * One cheap drafts.list: records each cached draft's id (opening a draft then
+ * needs no Gmail lookup) and removes stale local draft rows — every draft
+ * edit mints a new message id, so older copies (and drafts sent or deleted
+ * elsewhere) would otherwise linger in Drafts and its count. Runs when the
+ * history feed reported changes (drafts show up there) or every 10 minutes.
  */
-async function learnDraftIds(accountId: string): Promise<void> {
+async function learnDraftIds(accountId: string, mailChanged: boolean): Promise<void> {
+  if (!mailChanged && Date.now() - (draftCheckAt.get(accountId) ?? 0) < DRAFT_CHECK_MAX_AGE_MS) {
+    return;
+  }
   const local = store.getMessageIdsForLabel(accountId, "DRAFT");
   if (local.length === 0) return;
   try {
     const listedAt = Date.now();
     const drafts = await listDraftIds(accountId);
     assertActive(accountId);
+    draftCheckAt.set(accountId, listedAt);
     for (const d of drafts) store.setDraftId(accountId, d.messageId, d.draftId);
     // Only prune against a complete list (listDraftIds stops at 500).
     if (drafts.length < 500) {
@@ -309,11 +446,14 @@ async function learnDraftIds(accountId: string): Promise<void> {
         .filter((m) => !current.has(m.id) && m.date < listedAt - 60_000)
         .map((m) => m.id);
       for (const id of stale) store.deleteMessage(accountId, id);
-      if (stale.length > 0) logger.info("mail-sync", `removed ${stale.length} stale draft rows`);
+      if (stale.length > 0) {
+        logger.info("mail-sync", `removed ${stale.length} stale draft rows`);
+        bumpRevision(accountId);
+      }
     }
   } catch (err) {
     if (err instanceof SyncCancelled) throw err;
-    logger.info("mail-sync", `draft id refresh skipped: ${String(err)}`);
+    logger.info("mail-sync", `draft id refresh skipped: ${describeSyncError(err)}`);
   }
 }
 
@@ -341,7 +481,11 @@ async function prefetchDraftAttachments(accountId: string): Promise<void> {
         await getAttachmentData(accountId, id, att.id);
       }
     } catch (err) {
-      logger.info("mail-sync", `draft attachment prefetch skipped ${id}: ${String(err)}`);
+      if (err instanceof SyncCancelled) throw err;
+      logger.info(
+        "mail-sync",
+        `draft attachment prefetch skipped ${id}: ${describeSyncError(err)}`,
+      );
     }
   }
 }
@@ -355,6 +499,7 @@ async function backfillSpamTrash(accountId: string): Promise<void> {
         const summaries = await fetchMetadataForIds(accountId, page.ids);
         assertActive(accountId);
         store.upsertMessages(accountId, summaries);
+        bumpRevision(accountId);
       }
       pageToken = page.nextPageToken;
     } while (pageToken);
@@ -363,54 +508,94 @@ async function backfillSpamTrash(accountId: string): Promise<void> {
   logger.info("mail-sync", `spam/trash backfill done for ${accountId}`);
 }
 
-/**
- * Fetch and cache the full body of every message whose body isn't stored yet
- * (newest first), so the entire mailbox can be read offline. Resumable: each
- * run only touches messages still missing a body. Individual failures (e.g. a
- * message deleted since metadata sync) are skipped and retried next run.
- */
-/** Bodies fetched per sync run (newest first): huge mailboxes backfill over
-    several runs instead of holding the sync — and new mail — for hours. */
-const BODIES_PER_RUN = 300;
+// ── Offline downloads ────────────────────────────────────────────────────
+// Full bodies for every message, newest first, so the whole mailbox reads
+// offline. Runs as prefetch work (after the user and sync in the quota
+// queue), in its own lane: a big backlog takes a while and must not keep the
+// account "syncing" or delay new mail. A pass stops when Gmail pushes back
+// (rate limit, offline) and the next sync starts a new one.
 
-async function backfillBodies(accountId: string): Promise<void> {
-  const ids = store.getUndownloadedMessageIds(accountId).slice(0, BODIES_PER_RUN);
-  if (ids.length === 0) return;
+const downloading = new Set<string>();
+const DOWNLOAD_CHUNK = 60;
+const DOWNLOAD_CONCURRENCY = 6;
 
-  update(accountId, { phase: "bodies", synced: 0, total: ids.length });
+function startDownloads(accountId: string): void {
+  if (downloading.has(accountId) || removed.has(accountId)) return;
+  downloading.add(accountId);
+  void asPrefetchWork(() => downloadBodies(accountId))
+    .catch((err: unknown) => {
+      if (err instanceof SyncCancelled) return;
+      logger.info(
+        "mail-sync",
+        `offline download paused for ${accountId}: ${describeSyncError(err)}`,
+      );
+    })
+    .finally(() => {
+      downloading.delete(accountId);
+      if (statuses.has(accountId)) update(accountId, { download: null });
+    });
+}
 
-  // Full-message fetches share the per-user Gmail quota with everything else.
-  const CONCURRENCY = 4;
-  let done = 0;
-
-  for (let i = 0; i < ids.length; i += CONCURRENCY) {
-    // Per-message errors are skipped below, so check removal between batches.
-    assertActive(accountId);
-    const batch = ids.slice(i, i + CONCURRENCY);
-    await Promise.all(
-      batch.map(async (id) => {
+async function downloadBodies(accountId: string): Promise<void> {
+  const total = store.countUndownloaded(accountId);
+  if (total > 0) {
+    let done = 0;
+    const attempted = new Set<string>();
+    update(accountId, { download: { done, total } });
+    for (;;) {
+      assertActive(accountId);
+      if (isCoolingDown(accountId)) break;
+      const ids = store
+        .getUndownloadedMessageIds(accountId, DOWNLOAD_CHUNK)
+        .filter((id) => !attempted.has(id));
+      if (ids.length === 0) break;
+      let pushedBack = false;
+      await mapPool(ids, DOWNLOAD_CONCURRENCY, async (id) => {
+        if (pushedBack || removed.has(accountId)) return;
+        attempted.add(id);
         try {
           const detail = await getMessage(accountId, id);
           assertActive(accountId);
           store.upsertMessageDetail(accountId, detail);
         } catch (err) {
-          logger.info("mail-sync", `body fetch skipped for ${id}: ${String(err)}`);
+          if (err instanceof SyncCancelled) throw err;
+          if (isRateLimitError(err) || isNetworkError(err)) {
+            // Not the message's fault: leave it queued and end this pass.
+            attempted.delete(id);
+            pushedBack = true;
+          } else if (err instanceof GmailApiError && err.status === 404) {
+            // Deleted in Gmail since it was listed (sync may have dropped it already).
+            if (store.deleteMessage(accountId, id)) bumpRevision(accountId);
+          } else {
+            logger.info("mail-sync", `body fetch failed for ${id}: ${describeSyncError(err)}`);
+            store.markBodyFetchFailed(accountId, id);
+          }
         }
-      }),
-    );
-    done += batch.length;
-    update(accountId, { synced: done });
+        done += 1;
+        update(accountId, { download: { done: Math.min(done, total), total } });
+      });
+      if (pushedBack) break;
+    }
   }
+
+  // Drafts' attachment bytes must be in memory before the composer can save.
+  await prefetchDraftAttachments(accountId);
 }
 
-/** Returns the summaries of messages newly added by the history feed. */
+/**
+ * Replays the history feed since `startHistoryId`. All pages are read before
+ * anything is written, so a failure mid-feed leaves the cursor and cache
+ * untouched and the next run replays the same delta. Returns the summaries of
+ * newly added messages and whether anything changed.
+ */
 async function incrementalSync(
   accountId: string,
   startHistoryId: string,
-): Promise<GmailMessageSummary[]> {
+): Promise<{ added: GmailMessageSummary[]; changed: boolean }> {
   update(accountId, { phase: "incremental", synced: 0 });
 
   const addedIds = new Set<string>();
+  const ops: store.HistoryOp[] = [];
   let latestHistoryId = startHistoryId;
   let pageToken: string | undefined;
 
@@ -424,17 +609,14 @@ async function incrementalSync(
           addedIds.add(added.message.id);
         }
         for (const deleted of entry.messagesDeleted ?? []) {
-          assertActive(accountId);
-          store.deleteMessage(accountId, deleted.message.id);
+          ops.push({ kind: "deleted", id: deleted.message.id });
           addedIds.delete(deleted.message.id);
         }
         for (const change of entry.labelsAdded ?? []) {
-          assertActive(accountId);
-          store.applyLabelChange(accountId, change.message.id, change.labelIds, []);
+          ops.push({ kind: "labelsAdded", id: change.message.id, labelIds: change.labelIds });
         }
         for (const change of entry.labelsRemoved ?? []) {
-          assertActive(accountId);
-          store.applyLabelChange(accountId, change.message.id, [], change.labelIds);
+          ops.push({ kind: "labelsRemoved", id: change.message.id, labelIds: change.labelIds });
         }
       }
 
@@ -453,21 +635,32 @@ async function incrementalSync(
       assertActive(accountId);
       store.setSyncState(accountId, { fullSyncDone: false });
       await fullSync(accountId);
-      return [];
+      return { added: [], changed: true };
     }
     throw err;
   }
 
+  assertActive(accountId);
+  const { unknownIds } = store.applyHistoryChanges(accountId, ops);
+
+  // New mail, plus mail the feed changed that the cache never got (an
+  // earlier run missed it): both are fetched and stored with current labels.
+  const ids = [...new Set([...addedIds, ...unknownIds])];
   let added: GmailMessageSummary[] = [];
-  const ids = [...addedIds];
   if (ids.length > 0) {
-    added = await fetchMetadataForIds(accountId, ids);
+    const summaries = await fetchMetadataForIds(accountId, ids);
     assertActive(accountId);
-    store.upsertMessages(accountId, added);
-    update(accountId, { synced: added.length });
+    store.upsertMessages(accountId, summaries);
+    store.recountLabels(
+      accountId,
+      summaries.flatMap((m) => m.labelIds),
+    );
+    added = summaries.filter((m) => addedIds.has(m.id));
+    update(accountId, { synced: summaries.length });
   }
 
-  assertActive(accountId);
+  const changed = ops.length > 0 || ids.length > 0;
+  if (changed) bumpRevision(accountId);
   store.setSyncState(accountId, { historyId: latestHistoryId });
-  return added;
+  return { added, changed };
 }

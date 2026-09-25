@@ -111,6 +111,17 @@ function getDb(): DatabaseSync {
   if (!messageCols.has("draftId")) {
     handle.exec("ALTER TABLE messages ADD COLUMN draftId TEXT;");
   }
+  // Offline body downloads that failed: retried with backoff instead of on
+  // every sync (a message Gmail can't serve would otherwise block the queue).
+  if (!messageCols.has("bodyAttempts")) {
+    handle.exec("ALTER TABLE messages ADD COLUMN bodyAttempts INTEGER NOT NULL DEFAULT 0;");
+  }
+  if (!messageCols.has("bodyRetryAt")) {
+    handle.exec("ALTER TABLE messages ADD COLUMN bodyRetryAt INTEGER NOT NULL DEFAULT 0;");
+  }
+  handle.exec(
+    "CREATE INDEX IF NOT EXISTS idx_messages_undownloaded ON messages (accountId, detailFetched, date DESC);",
+  );
 
   // Full-text search: external-content FTS5 over messages, kept in sync via
   // triggers. On first creation, rebuild indexes every already-cached row.
@@ -383,12 +394,14 @@ export function deleteOtherDraftsInThread(
   for (const row of rows) deleteMessage(accountId, row.id);
 }
 
-export function deleteMessage(accountId: string, messageId: string): void {
+/** Removes a cached message; returns whether it was cached. */
+export function deleteMessage(accountId: string, messageId: string): boolean {
   const d = getDb();
   const existing = d
     .prepare("SELECT labelIds FROM messages WHERE accountId = ? AND id = ?")
     .get(accountId, messageId) as unknown as { labelIds: string } | undefined;
-  const priorLabelIds = existing ? parseLabelIds(existing.labelIds) : [];
+  if (!existing) return false;
+  const priorLabelIds = parseLabelIds(existing.labelIds);
 
   d.exec("BEGIN");
   try {
@@ -404,6 +417,7 @@ export function deleteMessage(accountId: string, messageId: string): void {
   }
 
   recomputeLabelCounts(accountId, priorLabelIds);
+  return true;
 }
 
 /** Apply an optimistic label add/remove to a locally-cached message. */
@@ -629,13 +643,133 @@ export function setReplyHeaders(
     .run(messageIdHeader, referencesHeader, accountId, messageId);
 }
 
-/** Ids of messages whose full body hasn't been downloaded yet (newest first). */
-export function getUndownloadedMessageIds(accountId: string): string[] {
-  const d = getDb();
-  const rows = d
-    .prepare("SELECT id FROM messages WHERE accountId = ? AND detailFetched = 0 ORDER BY date DESC")
-    .all(accountId) as unknown as { id: string }[];
+/** Ids of messages whose full body hasn't been downloaded yet (newest first),
+    skipping ones waiting out a retry backoff. */
+export function getUndownloadedMessageIds(accountId: string, limit: number): string[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT id FROM messages
+        WHERE accountId = ? AND detailFetched = 0 AND bodyRetryAt <= ?
+        ORDER BY date DESC LIMIT ?`,
+    )
+    .all(accountId, Date.now(), limit) as unknown as { id: string }[];
   return rows.map((r) => r.id);
+}
+
+/** Messages still missing a body that are due for download. */
+export function countUndownloaded(accountId: string): number {
+  const row = getDb()
+    .prepare(
+      "SELECT COUNT(*) AS n FROM messages WHERE accountId = ? AND detailFetched = 0 AND bodyRetryAt <= ?",
+    )
+    .get(accountId, Date.now()) as unknown as { n: number };
+  return row?.n ?? 0;
+}
+
+const BODY_RETRY_BASE_MS = 10 * 60_000;
+const BODY_RETRY_MAX_MS = 24 * 60 * 60_000;
+
+/** Backs off a body download that failed: 10 min, 20 min, … up to a day. */
+export function markBodyFetchFailed(accountId: string, messageId: string): void {
+  const row = getDb()
+    .prepare("SELECT bodyAttempts FROM messages WHERE accountId = ? AND id = ?")
+    .get(accountId, messageId) as unknown as { bodyAttempts: number } | undefined;
+  if (!row) return;
+  const delay = Math.min(BODY_RETRY_BASE_MS * 2 ** row.bodyAttempts, BODY_RETRY_MAX_MS);
+  getDb()
+    .prepare(
+      "UPDATE messages SET bodyAttempts = bodyAttempts + 1, bodyRetryAt = ? WHERE accountId = ? AND id = ?",
+    )
+    .run(Date.now() + delay, accountId, messageId);
+}
+
+/** One history-feed change, applied in feed order (a message can be marked
+    read and unread again within one delta). */
+export type HistoryOp =
+  | { kind: "labelsAdded" | "labelsRemoved"; id: string; labelIds: string[] }
+  | { kind: "deleted"; id: string };
+
+/**
+ * Applies one history-feed delta in a single transaction and recounts every
+ * touched label once at the end (instead of once per change). Returns the ids
+ * that had label changes but aren't cached, so sync can fetch mail it missed.
+ */
+export function applyHistoryChanges(accountId: string, ops: HistoryOp[]): { unknownIds: string[] } {
+  const d = getDb();
+  const selectLabels = d.prepare("SELECT labelIds FROM messages WHERE accountId = ? AND id = ?");
+  const delMsg = d.prepare("DELETE FROM messages WHERE accountId = ? AND id = ?");
+  const delAllLabels = d.prepare(
+    "DELETE FROM message_labels WHERE accountId = ? AND messageId = ?",
+  );
+  const delLabel = d.prepare(
+    "DELETE FROM message_labels WHERE accountId = ? AND messageId = ? AND labelId = ?",
+  );
+  const insLabel = d.prepare(
+    "INSERT OR IGNORE INTO message_labels (accountId, messageId, labelId) VALUES (?, ?, ?)",
+  );
+  const setLabels = d.prepare(
+    "UPDATE messages SET labelIds = ?, unread = ?, starred = ? WHERE accountId = ? AND id = ?",
+  );
+
+  const touched = new Set<string>();
+  const unknown = new Set<string>();
+  const current = new Map<string, Set<string> | null>();
+  const labelsOf = (id: string): Set<string> | null => {
+    if (!current.has(id)) {
+      const row = selectLabels.get(accountId, id) as unknown as { labelIds: string } | undefined;
+      current.set(id, row ? new Set(parseLabelIds(row.labelIds)) : null);
+    }
+    return current.get(id) ?? null;
+  };
+  const change = (id: string, labelIds: string[], add: boolean) => {
+    const labels = labelsOf(id);
+    if (!labels) {
+      unknown.add(id);
+      return;
+    }
+    for (const lid of labelIds) {
+      touched.add(lid);
+      if (add) {
+        labels.add(lid);
+        insLabel.run(accountId, id, lid);
+      } else {
+        labels.delete(lid);
+        delLabel.run(accountId, id, lid);
+      }
+    }
+    const next = [...labels];
+    setLabels.run(
+      JSON.stringify(next),
+      labels.has("UNREAD") ? 1 : 0,
+      labels.has("STARRED") ? 1 : 0,
+      accountId,
+      id,
+    );
+  };
+
+  d.exec("BEGIN");
+  try {
+    for (const op of ops) {
+      if (op.kind !== "deleted") {
+        change(op.id, op.labelIds, op.kind === "labelsAdded");
+        continue;
+      }
+      unknown.delete(op.id);
+      const labels = labelsOf(op.id);
+      if (!labels) continue;
+      for (const lid of labels) touched.add(lid);
+      delMsg.run(accountId, op.id);
+      delAllLabels.run(accountId, op.id);
+      current.set(op.id, null);
+    }
+    d.exec("COMMIT");
+  } catch (err) {
+    d.exec("ROLLBACK");
+    throw err;
+  }
+
+  recomputeLabelCounts(accountId, [...touched]);
+  return { unknownIds: [...unknown] };
 }
 
 // ── Draft ids ───────────────────────────────────────────────────────────────
