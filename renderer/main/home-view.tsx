@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { EmptyState, Button, toast } from "@glaze/core/components";
 import { AccountsSidebar } from "./gmail/accounts-sidebar";
 import { MessageList } from "./gmail/message-list";
@@ -19,6 +25,8 @@ import {
 import { SettingsPage, type SettingsRoute } from "./settings/settings-page";
 import { SettingsNav, settingsSectionLabel } from "./settings/settings-nav";
 import { isTypingTarget } from "./gmail/keyboard";
+import { cn } from "./gmail/ui";
+import { usePanelAnimationSettings, usePanelPresence } from "./panel-animations";
 import {
   useCommandHandlers,
   useKeybindingContext,
@@ -86,6 +94,9 @@ function useStoredWidth(
   widthRef.current = width;
   // The pane element itself, resized imperatively during a drag.
   const paneRef = useRef<HTMLDivElement>(null);
+  // The animated frame around a collapsible pane: follows the drag with its
+  // open/close transition switched off.
+  const frameRef = useRef<HTMLDivElement>(null);
 
   const start = (e: ReactPointerEvent) => {
     e.preventDefault();
@@ -97,6 +108,7 @@ function useStoredWidth(
     const apply = () => {
       raf = 0;
       if (paneRef.current) paneRef.current.style.width = `${latest}px`;
+      if (frameRef.current) frameRef.current.style.width = `${latest}px`;
     };
     const move = (ev: PointerEvent) => {
       // dir -1: right-side panes grow when the handle drags left.
@@ -111,15 +123,18 @@ function useStoredWidth(
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       if (raf) cancelAnimationFrame(raf);
+      apply();
+      if (frameRef.current) frameRef.current.style.transitionProperty = "";
       widthRef.current = latest;
       setWidth(latest);
       localStorage.setItem(key, String(latest));
     };
+    if (frameRef.current) frameRef.current.style.transitionProperty = "none";
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   };
 
-  return { width, start, paneRef };
+  return { width, start, paneRef, frameRef };
 }
 
 function PaneResizer({ onPointerDown }: { onPointerDown: (e: ReactPointerEvent) => void }) {
@@ -145,6 +160,10 @@ const PANE_SIDEBAR = `${PANE} surface-grain border-r border-sidebar-line bg-side
 const PANE_LIST = `${PANE} border-r border-border bg-canvas`;
 const PANE_MAIN = `${PANE} bg-canvas`;
 const PANE_CHAT = `${PANE} border-l border-border bg-card`;
+/** Clips a collapsible pane while its width animates open or closed (Otter
+    Code's panel animations); the pane keeps its width so nothing reflows. */
+const PANE_FRAME =
+  "flex min-h-0 shrink-0 overflow-hidden [[data-panel-animations=true]_&]:transition-[width] [[data-panel-animations=true]_&]:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:ease-out";
 
 export function HomeView() {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
@@ -231,6 +250,20 @@ export function HomeView() {
   const [chatOpen, setChatOpen] = useState(() => localStorage.getItem("gmail:chat-open") === "1");
   const [sidebarOpen, setSidebarOpen] = useState(
     () => localStorage.getItem("gmail:sidebar-open") !== "0",
+  );
+  // Entering or leaving Settings swaps panes in place rather than animating them.
+  const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
+    usePanelAnimationSettings(settingsRoute ? "settings" : "mail");
+  const chatVisible = chatOpen && !settingsRoute;
+  const sidebarPresent = usePanelPresence(
+    sidebarOpen,
+    panelAnimationsActive,
+    panelAnimationDurationMs,
+  );
+  const chatPresent = usePanelPresence(
+    chatVisible,
+    panelAnimationsActive,
+    panelAnimationDurationMs,
   );
   const toggleSidebar = () => {
     setSidebarOpen((open) => {
@@ -865,63 +898,79 @@ export function HomeView() {
   );
   return (
     <>
-      <div className="flex h-full bg-canvas text-foreground">
+      <div
+        className="flex h-full bg-canvas text-foreground"
+        data-panel-animations={panelAnimationsActive ? "true" : "false"}
+        style={{ "--panel-animation-duration": `${panelAnimationDurationMs}ms` } as CSSProperties}
+      >
         <div className="contents">
-          {sidebarOpen ? (
+          {sidebarPresent ? (
             <>
               <div
-                ref={sidebarPane.paneRef}
-                style={{ width: sidebarPane.width }}
-                className={`${PANE_SIDEBAR} flex shrink-0 flex-col`}
-                data-app-sidebar=""
-              >
-                {settingsRoute ? (
-                  <>
-                    <WindowTitle />
-                    <SettingsNav
-                      pane={settingsRoute.pane}
-                      onSelect={(pane) => setSettingsRoute({ pane, viewId: null, mailbox: null })}
-                      onBack={() => setSettingsRoute(null)}
-                    />
-                  </>
-                ) : (
-                  <AccountsSidebar
-                    onOpenSettings={() =>
-                      setSettingsRoute({ pane: "general", viewId: null, mailbox: null })
-                    }
-                    onEditView={(viewId, mailbox) =>
-                      setSettingsRoute({ pane: "views", viewId, mailbox })
-                    }
-                    onSync={syncNow}
-                    syncing={globalSync.syncing || manualSyncing}
-                    selectedAccountId={effectiveAccountId}
-                    onSelectAccount={handleSelectAccount}
-                    selectedLabelId={selectedLabelId}
-                    onSelectLabel={handleSelectLabel}
-                    views={views}
-                    onCompose={() => setComposeOpen(true)}
-                    searchSelected={activeSearch?.id === topSearchId}
-                    searchPending={Boolean(
-                      searchTabs.find((t) => t.id === topSearchId)?.draft.trim(),
-                    )}
-                    searches={searchTabs
-                      .filter((t) => t.mailbox === searchMailbox && t.parent)
-                      .map((t) => ({
-                        id: t.id,
-                        parent: t.parent!,
-                        title: searchTitle(t),
-                        selected: activeSearch?.id === t.id,
-                      }))}
-                    onSelectSearch={(id) => {
-                      showSearch(id);
-                      focusSearchEnd();
-                    }}
-                    onCloseSearch={closeSearch}
-                    onOpenSearch={() => openSearch()}
-                  />
+                ref={sidebarPane.frameRef}
+                style={{ width: sidebarOpen ? sidebarPane.width : 0 }}
+                className={cn(
+                  PANE_FRAME,
+                  // Anchored right, so the sidebar slides out to the left.
+                  "justify-end",
+                  sidebarOpen && "[[data-panel-animations=true]_&]:starting:w-0!",
+                  !sidebarOpen && "pointer-events-none",
                 )}
+              >
+                <div
+                  ref={sidebarPane.paneRef}
+                  style={{ width: sidebarPane.width }}
+                  className={`${PANE_SIDEBAR} flex shrink-0 flex-col`}
+                  data-app-sidebar=""
+                >
+                  {settingsRoute ? (
+                    <>
+                      <WindowTitle />
+                      <SettingsNav
+                        pane={settingsRoute.pane}
+                        onSelect={(pane) => setSettingsRoute({ pane, viewId: null, mailbox: null })}
+                        onBack={() => setSettingsRoute(null)}
+                      />
+                    </>
+                  ) : (
+                    <AccountsSidebar
+                      onOpenSettings={() =>
+                        setSettingsRoute({ pane: "general", viewId: null, mailbox: null })
+                      }
+                      onEditView={(viewId, mailbox) =>
+                        setSettingsRoute({ pane: "views", viewId, mailbox })
+                      }
+                      onSync={syncNow}
+                      syncing={globalSync.syncing || manualSyncing}
+                      selectedAccountId={effectiveAccountId}
+                      onSelectAccount={handleSelectAccount}
+                      selectedLabelId={selectedLabelId}
+                      onSelectLabel={handleSelectLabel}
+                      views={views}
+                      onCompose={() => setComposeOpen(true)}
+                      searchSelected={activeSearch?.id === topSearchId}
+                      searchPending={Boolean(
+                        searchTabs.find((t) => t.id === topSearchId)?.draft.trim(),
+                      )}
+                      searches={searchTabs
+                        .filter((t) => t.mailbox === searchMailbox && t.parent)
+                        .map((t) => ({
+                          id: t.id,
+                          parent: t.parent!,
+                          title: searchTitle(t),
+                          selected: activeSearch?.id === t.id,
+                        }))}
+                      onSelectSearch={(id) => {
+                        showSearch(id);
+                        focusSearchEnd();
+                      }}
+                      onCloseSearch={closeSearch}
+                      onOpenSearch={() => openSearch()}
+                    />
+                  )}
+                </div>
               </div>
-              <PaneResizer onPointerDown={sidebarPane.start} />
+              {sidebarOpen ? <PaneResizer onPointerDown={sidebarPane.start} /> : null}
             </>
           ) : null}
           {hasListTarget && !settingsRoute ? (
@@ -1025,21 +1074,31 @@ export function HomeView() {
               )}
             </div>
           </div>
-          {chatOpen && !settingsRoute ? (
+          {chatPresent ? (
             <>
-              <PaneResizer onPointerDown={chatPane.start} />
+              {chatVisible ? <PaneResizer onPointerDown={chatPane.start} /> : null}
               <div
-                ref={chatPane.paneRef}
-                style={{ width: chatPane.width }}
-                className={`${PANE_CHAT} shrink-0`}
+                ref={chatPane.frameRef}
+                style={{ width: chatVisible ? chatPane.width : 0 }}
+                className={cn(
+                  PANE_FRAME,
+                  chatVisible && "[[data-panel-animations=true]_&]:starting:w-0!",
+                  !chatVisible && "pointer-events-none",
+                )}
               >
-                <AssistantChatPanel
-                  accountId={selectedMessageId ? readerAccount : null}
-                  messageId={selectedMessageId}
-                  selectedRows={chatSelection}
-                  quote={pendingQuote}
-                  onClearQuote={() => setPendingQuote(null)}
-                />
+                <div
+                  ref={chatPane.paneRef}
+                  style={{ width: chatPane.width }}
+                  className={`${PANE_CHAT} shrink-0`}
+                >
+                  <AssistantChatPanel
+                    accountId={selectedMessageId ? readerAccount : null}
+                    messageId={selectedMessageId}
+                    selectedRows={chatSelection}
+                    quote={pendingQuote}
+                    onClearQuote={() => setPendingQuote(null)}
+                  />
+                </div>
               </div>
             </>
           ) : null}

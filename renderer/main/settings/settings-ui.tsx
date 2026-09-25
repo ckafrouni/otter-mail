@@ -1,5 +1,6 @@
 import { forwardRef, type ComponentProps, type ReactNode } from "react";
-import { cn } from "../gmail/ui";
+import { Undo2Icon } from "lucide-react";
+import { cn, HintTooltip } from "../gmail/ui";
 
 /** Shared settings card surface, with separators between rows. */
 export function SettingsGroup({
@@ -66,6 +67,7 @@ export function SettingsRow({
   description,
   status,
   control,
+  resetAction,
   children,
   className,
   ...props
@@ -74,6 +76,8 @@ export function SettingsRow({
   description?: ReactNode;
   status?: ReactNode;
   control?: ReactNode;
+  /** Shown beside the title while the setting differs from its default. */
+  resetAction?: ReactNode;
   children?: ReactNode;
 }) {
   return (
@@ -90,6 +94,11 @@ export function SettingsRow({
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex min-h-5 items-center gap-1.5">
             <h3 className="text-sm font-medium text-foreground">{title}</h3>
+            {resetAction ? (
+              <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+                {resetAction}
+              </span>
+            ) : null}
           </div>
           {description ? (
             <p className="max-w-xl text-xs leading-normal text-muted-foreground/80">
@@ -106,6 +115,25 @@ export function SettingsRow({
       </div>
       {children}
     </div>
+  );
+}
+
+/** Small undo button that puts one setting back to its default. */
+export function SettingResetButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <HintTooltip label="Reset to default">
+      <button
+        type="button"
+        aria-label={`Reset ${label} to default`}
+        onClick={(event) => {
+          event.stopPropagation();
+          onClick();
+        }}
+        className="inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-accent-surface hover:text-foreground focus-visible:ring-2 focus-visible:ring-focus-ring"
+      >
+        <Undo2Icon className="size-3" />
+      </button>
+    </HintTooltip>
   );
 }
 

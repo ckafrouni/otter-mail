@@ -10,7 +10,20 @@ import {
   useThemeChoice,
 } from "../theme/apply-theme";
 import type { ThemeAppearance, ThemeColors, ThemeDefinition } from "../theme/theme-palettes";
-import { SettingsPageContainer } from "./settings-ui";
+import {
+  DEFAULT_PANEL_ANIMATION_DURATION_MS,
+  MAX_PANEL_ANIMATION_DURATION_MS,
+  MIN_PANEL_ANIMATION_DURATION_MS,
+  setPanelAnimationDurationMs,
+  usePanelAnimationDurationMs,
+} from "../panel-animations";
+import { PanelAnimationsPreview } from "./panel-animations-preview";
+import {
+  SettingResetButton,
+  SettingsPageContainer,
+  SettingsRow,
+  SettingsSection,
+} from "./settings-ui";
 
 type ColorScheme = "system" | "light" | "dark";
 
@@ -280,6 +293,15 @@ export function AppearancePane() {
     }
   };
 
+  const panelAnimationDurationMs = usePanelAnimationDurationMs();
+  const panelAnimationDurationRatio =
+    (panelAnimationDurationMs - MIN_PANEL_ANIMATION_DURATION_MS) /
+    (MAX_PANEL_ANIMATION_DURATION_MS - MIN_PANEL_ANIMATION_DURATION_MS);
+  const panelAnimationDurationSliderStyle = {
+    "--settings-slider-progress": `${panelAnimationDurationRatio * 100}%`,
+    "--settings-slider-fill-offset": `${0.5 - panelAnimationDurationRatio}rem`,
+  } as CSSProperties;
+
   const light = themeColors(choice.light, "light");
   const dark = themeColors(choice.dark, "dark");
 
@@ -319,6 +341,48 @@ export function AppearancePane() {
           Click a theme to use it everywhere, or a single orb to use it for light or dark mode only.
         </p>
       </section>
+
+      <SettingsSection title="Motion">
+        <SettingsRow
+          title="Panel animations"
+          description="Set how fast panels open and close."
+          control={
+            <div className="grid w-full grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 sm:w-auto sm:grid-cols-[7rem_13rem] sm:gap-4">
+              <PanelAnimationsPreview durationMs={panelAnimationDurationMs} />
+              <div className="flex w-full items-center gap-3">
+                <output
+                  className="min-w-16 rounded-md bg-muted px-2 py-1 text-center font-mono text-xs font-medium tabular-nums text-foreground"
+                  htmlFor="panel-animation-duration"
+                >
+                  {panelAnimationDurationMs} ms
+                </output>
+                <input
+                  aria-label="Panel animation duration"
+                  className="settings-slider min-w-0 flex-1"
+                  id="panel-animation-duration"
+                  max={MAX_PANEL_ANIMATION_DURATION_MS}
+                  min={MIN_PANEL_ANIMATION_DURATION_MS}
+                  onChange={(event) =>
+                    setPanelAnimationDurationMs(Number(event.currentTarget.value))
+                  }
+                  step={25}
+                  style={panelAnimationDurationSliderStyle}
+                  type="range"
+                  value={panelAnimationDurationMs}
+                />
+              </div>
+            </div>
+          }
+          resetAction={
+            panelAnimationDurationMs !== DEFAULT_PANEL_ANIMATION_DURATION_MS ? (
+              <SettingResetButton
+                label="panel animations"
+                onClick={() => setPanelAnimationDurationMs(DEFAULT_PANEL_ANIMATION_DURATION_MS)}
+              />
+            ) : null
+          }
+        />
+      </SettingsSection>
     </SettingsPageContainer>
   );
 }
