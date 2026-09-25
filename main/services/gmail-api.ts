@@ -893,6 +893,20 @@ export async function sendMessage(
   return { ok: true, messageId: sent.id };
 }
 
+/** Sends a ready-made RFC 822 message (calendar replies build their own MIME). */
+export async function sendRawMessage(
+  accountId: string,
+  raw: string,
+  threadId?: string,
+): Promise<{ id?: string }> {
+  const payload: { raw: string; threadId?: string } = { raw: encodeBase64url(raw) };
+  if (threadId) payload.threadId = threadId;
+  return (await gmailFetch(accountId, "/messages/send", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  })) as { id?: string };
+}
+
 /** Creates or updates a Gmail draft with the same MIME builder as sends. */
 export async function saveDraft(
   accountId: string,

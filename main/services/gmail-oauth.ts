@@ -27,6 +27,9 @@ const SCOPES = [
   // re-adding the account upgrades its consent in place.
   "https://www.googleapis.com/auth/contacts.readonly",
   "https://www.googleapis.com/auth/contacts.other.readonly",
+  // Calendar, for answering invitations in place. Older tokens lack it: RSVP
+  // then falls back to an email reply; re-adding the account upgrades it.
+  "https://www.googleapis.com/auth/calendar.events",
 ];
 
 function buildServiceOptions(

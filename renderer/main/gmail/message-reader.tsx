@@ -30,6 +30,8 @@ import {
   XIcon,
 } from "lucide-react";
 import { SenderHoverCard } from "./sender-hovercard";
+import { InviteCard, requestRsvp, rsvpFromGoogleLink } from "./invite-card";
+import type { RsvpResponse } from "./api";
 import {
   useAccounts,
   useMessage,
@@ -489,10 +491,13 @@ function HtmlBody({
   html,
   inlineImages,
   onQuoteText,
+  inviteMessageId,
 }: {
   html: string;
   inlineImages?: InlineImageSource;
   onQuoteText?: (text: string) => void;
+  /** A calendar invite: its Yes / No / Maybe links answer in the app. */
+  inviteMessageId?: string;
 }) {
   // Quoted history is hidden inside the frame; the toggle lives outside it
   // (WKWebView doesn't reliably deliver clicks from the sandboxed frame).
@@ -513,6 +518,8 @@ function HtmlBody({
   quoteRef.current = onQuoteText;
   const inlineRef = useRef(inlineImages);
   inlineRef.current = inlineImages;
+  const inviteRef = useRef(inviteMessageId);
+  inviteRef.current = inviteMessageId;
   const dark = useDarkAppearance();
   // Light: white card, email's own dark-mode CSS disabled, white-on-white
   // rescued. Dark: transparent canvas, email's dark CSS honored, dark-on-dark
@@ -631,10 +638,33 @@ function HtmlBody({
       // on a plain click, and a targetless link would navigate the iframe away
       // from the email — route them all through the OS instead. (Right-click →
       // Open works today only because that's the native WKWebView menu.)
+      // Google Calendar's Yes / No / Maybe links answer in place: they become
+      // in-page anchors (#otter-rsvp-…), caught by click or, when the sandbox
+      // swallows the click, by the frame's hashchange.
+      const inviteId = inviteRef.current;
+      if (inviteId) {
+        doc.querySelectorAll<HTMLAnchorElement>("a[href]").forEach((a) => {
+          const response = rsvpFromGoogleLink(a.href);
+          if (response) a.setAttribute("href", `#otter-rsvp-${response}`);
+        });
+        iframe.contentWindow?.addEventListener("hashchange", () => {
+          const hash = iframe.contentWindow?.location.hash ?? "";
+          const m = hash.match(/^#otter-rsvp-(accepted|declined|tentative)$/);
+          if (!m) return;
+          requestRsvp(inviteId, m[1] as RsvpResponse);
+          iframe.contentWindow?.history.replaceState(null, "", " ");
+        });
+      }
       doc.addEventListener("click", (e) => {
         const anchor = (e.target as Element | null)?.closest?.("a");
         if (!anchor) return;
         const raw = anchor.getAttribute("href") ?? "";
+        const rsvp = raw.match(/^#otter-rsvp-(accepted|declined|tentative)$/);
+        if (rsvp && inviteRef.current) {
+          e.preventDefault();
+          requestRsvp(inviteRef.current, rsvp[1] as RsvpResponse);
+          return;
+        }
         if (raw.startsWith("#")) return; // in-page anchor: let the iframe scroll
         const url = anchor.href; // resolved absolute URL
         if (/^(https?|mailto):/i.test(url)) {
@@ -765,7 +795,9 @@ function MessageBody({
   bodyText,
   inlineImages,
   onQuoteText,
+  inviteMessageId,
 }: {
+  inviteMessageId?: string;
   bodyHtml: string | null;
   bodyText: string | null;
   inlineImages?: InlineImageSource;
@@ -773,7 +805,14 @@ function MessageBody({
   onQuoteText?: (text: string) => void;
 }) {
   if (bodyHtml) {
-    return <HtmlBody html={bodyHtml} inlineImages={inlineImages} onQuoteText={onQuoteText} />;
+    return (
+      <HtmlBody
+        html={bodyHtml}
+        inlineImages={inlineImages}
+        onQuoteText={onQuoteText}
+        inviteMessageId={inviteMessageId}
+      />
+    );
   }
   if (bodyText) {
     // Flush inside the message card (the card is the surface now).
@@ -1197,6 +1236,12 @@ export function ExpandedRow({
     () => matchInlineImages(detail?.bodyHtml ?? null, detail?.attachments ?? []),
     [detail],
   );
+  // Calendar invitations (an .ics part) get the RSVP bar.
+  const hasInvite = Boolean(
+    detail?.attachments.some(
+      (a) => /text\/calendar|application\/ics/i.test(a.mimeType) || /\.ics$/i.test(a.filename),
+    ),
+  );
 
   return (
     <div className="group border-b border-border/50 px-6 py-4">
@@ -1275,7 +1320,9 @@ export function ExpandedRow({
             </div>
           ) : detail ? (
             <>
+              {hasInvite ? <InviteCard accountId={accountId} messageId={summary.id} /> : null}
               <MessageBody
+                inviteMessageId={hasInvite ? summary.id : undefined}
                 bodyHtml={detail.bodyHtml}
                 bodyText={detail.bodyText}
                 inlineImages={
