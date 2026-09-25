@@ -214,7 +214,7 @@ function DefaultMailButton() {
 
 /**
  * Right end of the content column's title band: default-mail nudge and the
- * Hermes panel toggle. Views that own the band (the reader) render it at the
+ * Assistant panel toggle. Views that own the band (the reader) render it at the
  * end of their own header so the toggle never moves.
  */
 export function TitleTrailing({
@@ -228,8 +228,8 @@ export function TitleTrailing({
     <>
       <DefaultMailButton />
       {showPanelToggle ? (
-        <HintTooltip label="Show Hermes panel" shortcut="assistant.toggle" side="bottom">
-          <IconBtn label="Toggle Hermes panel" onClick={onToggleChat}>
+        <HintTooltip label="Show assistant panel" shortcut="assistant.toggle" side="bottom">
+          <IconBtn label="Toggle assistant panel" onClick={onToggleChat}>
             <PanelRightIcon className="size-4" />
           </IconBtn>
         </HintTooltip>

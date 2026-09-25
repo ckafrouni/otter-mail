@@ -5,7 +5,7 @@ import { MessageList } from "./gmail/message-list";
 import { MessageReader } from "./gmail/message-reader";
 import { NewMessageView } from "./gmail/new-message-view";
 import { CommandPalette } from "./gmail/command-palette";
-import { HermesChatPanel } from "./gmail/hermes-chat";
+import { AssistantChatPanel } from "./gmail/assistant-chat";
 import { TitleControls, TitleTrailing, WindowTitle } from "./gmail/top-bar";
 import { SettingsPage, type SettingsRoute } from "./settings/settings-page";
 import { SettingsNav, settingsSectionLabel } from "./settings/settings-nav";
@@ -851,7 +851,7 @@ export function HomeView() {
                 style={{ width: chatPane.width }}
                 className={`${PANE_CHAT} shrink-0`}
               >
-                <HermesChatPanel
+                <AssistantChatPanel
                   accountId={selectedMessageId ? readerAccount : null}
                   messageId={selectedMessageId}
                   selectedRows={chatSelection}

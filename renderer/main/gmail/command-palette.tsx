@@ -236,8 +236,8 @@ export function CommandPalette({
       {
         id: "chat",
         icon: <PanelRightIcon className={ICON} />,
-        title: "Toggle Hermes panel",
-        keywords: "chat assistant ai",
+        title: "Toggle assistant panel",
+        keywords: "chat assistant ai hermes codex",
         shortcut: sc("assistant.toggle"),
         run: onToggleChat,
       },

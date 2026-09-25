@@ -8,6 +8,8 @@
  * - dialogOpen:    a dialog, popover, or menu is open
  * - settingsOpen:  the settings page is showing
  * - messageOpen:   a conversation is open in the reader
+ * - assistantOpen:  the assistant chat panel is showing
+ * - modelPickerOpen: the composer's model picker is open
  */
 
 export const MAILBOX_JUMP_COMMANDS = [
@@ -22,10 +24,28 @@ export const MAILBOX_JUMP_COMMANDS = [
   "mailbox.jump.9",
 ] as const;
 
+/** ⌘1…⌘9 pick the Nth model while the model picker is open (T3's modelPicker.jump.N). */
+export const MODEL_PICKER_JUMP_COMMANDS = [
+  "modelPicker.jump.1",
+  "modelPicker.jump.2",
+  "modelPicker.jump.3",
+  "modelPicker.jump.4",
+  "modelPicker.jump.5",
+  "modelPicker.jump.6",
+  "modelPicker.jump.7",
+  "modelPicker.jump.8",
+  "modelPicker.jump.9",
+] as const;
+
 export const KEYBINDING_COMMANDS = [
   "commandPalette.toggle",
   "sidebar.toggle",
   "assistant.toggle",
+  "assistant.newChat",
+  "modelPicker.toggle",
+  "modelPicker.previousProvider",
+  "modelPicker.nextProvider",
+  ...MODEL_PICKER_JUMP_COMMANDS,
   "search.focus",
   "compose.new",
   "composer.send",
@@ -66,6 +86,8 @@ export const WHEN_VARIABLES = [
   "dialogOpen",
   "settingsOpen",
   "messageOpen",
+  "assistantOpen",
+  "modelPickerOpen",
   "true",
   "false",
 ] as const;
@@ -79,6 +101,13 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   // ⌘B / ⌘I mean bold / italic while typing.
   { key: "mod+b", command: "sidebar.toggle", when: OUTSIDE_FIELDS },
   { key: "mod+i", command: "assistant.toggle", when: OUTSIDE_FIELDS },
+  { key: "mod+shift+o", command: "assistant.newChat", when: "!dialogOpen" },
+  { key: "mod+shift+m", command: "modelPicker.toggle", when: "assistantOpen" },
+  { key: "mod+shift+arrowup", command: "modelPicker.previousProvider", when: "modelPickerOpen" },
+  { key: "mod+shift+arrowdown", command: "modelPicker.nextProvider", when: "modelPickerOpen" },
+  ...MODEL_PICKER_JUMP_COMMANDS.map(
+    (command, i): KeybindingRule => ({ key: `mod+${i + 1}`, command, when: "modelPickerOpen" }),
+  ),
   { key: "/", command: "search.focus", when: OUTSIDE_FIELDS },
   { key: "mod+f", command: "search.focus", when: "!dialogOpen" },
   { key: "c", command: "compose.new", when: OUTSIDE_FIELDS },

@@ -79,25 +79,100 @@ export type MailtoTarget = { to: string; cc: string; subject: string; body: stri
 export type MailApp = { bundleId: string; name: string; path: string };
 export type MailAppsResult = { apps: MailApp[]; defaultBundleId: string | null };
 
-/** Hermes chat panel (built-in API server) state and stream events. */
-export type ChatStatus = {
-  configured: boolean;
-  baseUrl: string | null;
+/*
+ * Assistant providers (mirrors main/services/assistant/types.ts). A snapshot
+ * is one provider's health; every provider streams the same ChatEvents.
+ */
+export type ProviderKind = "hermes" | "codex";
+export type ProviderState = "ready" | "warning" | "error" | "disabled";
+export type ProviderOptionChoice = {
+  id: string;
+  label: string;
+  description?: string;
+  isDefault?: boolean;
+};
+/** A per-model option (Codex: Reasoning, Service Tier), like T3's option descriptors. */
+export type ProviderModelOption = {
+  id: "reasoningEffort" | "serviceTier";
+  label: string;
+  choices: ProviderOptionChoice[];
+};
+export type ProviderModel = {
+  slug: string;
+  name: string;
+  /** Upstream provider behind an aggregating agent (Hermes: "OpenRouter"). */
+  subProvider?: string;
+  isDefault?: boolean;
+  options?: ProviderModelOption[];
+};
+export type ProviderSnapshot = {
+  kind: ProviderKind;
+  displayName: string;
+  enabled: boolean;
+  installed: boolean;
+  version: string | null;
+  status: ProviderState;
+  auth: {
+    status: "authenticated" | "unauthenticated" | "unknown";
+    label?: string;
+    email?: string;
+  };
+  /** Epoch ms of the last check; null while the first check runs. */
+  checkedAt: number | null;
+  message?: string;
+  models: ProviderModel[];
   model: string | null;
-  /** The server exposes the native Sessions API (/api/sessions). */
+  /** Chats persist on the provider and can be listed/resumed. */
   sessions: boolean;
 };
+export type RuntimeMode = "full-access" | "read-only";
+export type ProviderSettingsView = {
+  selected: ProviderKind;
+  hermes: {
+    enabled: boolean;
+    baseUrl: string;
+    agentModel: string;
+    /** `provider::model`; empty → the gateway default. */
+    model: string;
+    reasoningEffort: string;
+    serviceTier: string;
+    sessions?: boolean;
+  };
+  codex: {
+    enabled: boolean;
+    binaryPath: string;
+    homePath: string;
+    launchArgs: string;
+    model: string;
+    reasoningEffort: string;
+    serviceTier: string;
+    runtimeMode: RuntimeMode;
+  };
+  hermesHasKey: boolean;
+};
+export type ProvidersState = {
+  providers: ProviderSnapshot[];
+  selected: ProviderKind;
+  settings: ProviderSettingsView;
+};
+export type AssistantSettingsPatch = {
+  selected?: ProviderKind;
+  hermes?: { enabled?: boolean; model?: string; reasoningEffort?: string; serviceTier?: string };
+  codex?: Partial<ProviderSettingsView["codex"]>;
+};
+
 export type ChatEvent =
+  | { requestId: string; type: "session"; sessionId: string }
   | { requestId: string; type: "delta"; text: string }
   | { requestId: string; type: "tool"; name: string }
   | { requestId: string; type: "toolResult"; output: string }
   | { requestId: string; type: "done"; responseId: string | null }
   | { requestId: string; type: "error"; message: string };
 
-/** An installed Hermes skill, for the composer's "/" picker. */
-export type Skill = { name: string; description: string; category: string | null };
+/** An installed agent skill, for the composer's "/" picker. */
+export type Skill = { name: string; description: string; category: string | null; path?: string };
 
-/** A persisted Hermes session (native Sessions API). */
+/** A persisted provider-side chat (Hermes session / Codex thread). */
 export type ChatSession = {
   id: string;
   title: string | null;
@@ -394,40 +469,46 @@ export const gmailApi = {
 
   listMailApps: (): Promise<MailAppsResult> => ipc("app:listMailApps"),
 
-  chatStatus: (): Promise<ChatStatus> => ipc("assistant:chatStatus"),
+  /** Cached provider snapshots; stale ones re-check and arrive as `assistant:providersChanged`. */
+  assistantProviders: (): Promise<ProvidersState> => ipc("assistant:providers"),
 
-  chatConfigure: (params: { baseUrl: string; apiKey: string }): Promise<ChatStatus> =>
-    ipc("assistant:chatConfigure", params),
+  refreshAssistantProviders: (): Promise<{ ok: boolean }> => ipc("assistant:refreshProviders"),
+
+  updateAssistantSettings: (patch: AssistantSettingsPatch): Promise<ProvidersState> =>
+    ipc("assistant:updateSettings", patch),
+
+  connectHermes: (params: { baseUrl: string; apiKey: string }): Promise<ProvidersState> =>
+    ipc("assistant:connectHermes", params),
 
   /**
-   * Streams via the assistant:chatEvent broadcast; resolves when the turn ends.
-   * With `sessionId` the turn runs in that native session; otherwise it chains
-   * the legacy Responses API via `previousResponseId`.
+   * Starts a turn and returns at once; it streams as `assistant:chatEvent`.
+   * Without `sessionId` the provider opens a session and reports it in a
+   * `session` event; Hermes legacy chats chain via `previousResponseId`.
    */
-  chatSend: (params: {
+  assistantSend: (params: {
+    provider: ProviderKind;
     requestId: string;
     input: string;
     sessionId?: string;
+    title?: string;
+    skill?: { name: string; path?: string };
     previousResponseId?: string;
-  }): Promise<{ ok: boolean }> => ipc("assistant:chatSend", params),
+  }): Promise<{ ok: boolean }> => ipc("assistant:send", params),
 
-  chatCancel: (requestId: string): Promise<{ ok: boolean }> =>
-    ipc("assistant:chatCancel", { requestId }),
+  assistantCancel: (provider: ProviderKind, requestId: string): Promise<{ ok: boolean }> =>
+    ipc("assistant:cancel", { provider, requestId }),
 
-  chatSkills: (): Promise<Skill[]> => ipc("assistant:chatSkills"),
+  assistantSkills: (provider: ProviderKind): Promise<Skill[]> =>
+    ipc("assistant:skills", { provider }),
 
-  chatSessionCreate: (params: { title?: string }): Promise<ChatSession> =>
-    ipc("assistant:chatSessionCreate", params),
+  assistantSessions: (provider: ProviderKind, limit = 40): Promise<ChatSession[]> =>
+    ipc("assistant:sessions", { provider, limit }),
 
-  chatSessionDelete: (sessionId: string): Promise<{ ok: boolean }> =>
-    ipc("assistant:chatSessionDelete", { sessionId }),
+  assistantSessionMessages: (
+    provider: ProviderKind,
+    sessionId: string,
+  ): Promise<ChatSessionMessage[]> => ipc("assistant:sessionMessages", { provider, sessionId }),
 
-  chatSessionRename: (sessionId: string, title: string): Promise<{ ok: boolean }> =>
-    ipc("assistant:chatSessionRename", { sessionId, title }),
-
-  chatSessionList: (params: { limit?: number } = {}): Promise<ChatSession[]> =>
-    ipc("assistant:chatSessionList", params),
-
-  chatSessionMessages: (sessionId: string): Promise<ChatSessionMessage[]> =>
-    ipc("assistant:chatSessionMessages", { sessionId }),
+  assistantDeleteSession: (provider: ProviderKind, sessionId: string): Promise<{ ok: boolean }> =>
+    ipc("assistant:deleteSession", { provider, sessionId }),
 };

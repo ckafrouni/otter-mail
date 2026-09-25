@@ -107,7 +107,7 @@ type MessageReaderProps = {
   onDeselect?: () => void;
   /** Toolbar archive/trash move on to the next conversation through this. */
   onAdvance?: () => void;
-  /** Opens the in-app Hermes chat panel (this conversation becomes its context). */
+  /** Opens the in-app assistant chat panel (this conversation becomes its context). */
   onOpenChat?: () => void;
   /** A selected excerpt was sent to the chat panel as a quote. */
   onQuote?: (quote: QuoteContext) => void;
@@ -2262,7 +2262,7 @@ export function MessageReader({
               )}
               <DropdownMenuSeparator />
               <DropdownMenuItem icon={<BotMessageSquareIcon />} onSelect={() => onOpenChat?.()}>
-                Chat about this in Hermes
+                Chat about this with the assistant
               </DropdownMenuItem>
               {isTrashed || isJunk ? (
                 <>

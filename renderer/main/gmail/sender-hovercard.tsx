@@ -129,7 +129,7 @@ export function SenderHoverCard({
                 {onAsk ? (
                   <Action
                     icon={<SparklesIcon className="size-3.5" />}
-                    label="Ask Hermes about them"
+                    label="Ask the assistant about them"
                     onClick={() => {
                       onAsk(email, displayName);
                       setOpen(false);

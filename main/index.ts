@@ -26,6 +26,7 @@ import { getSettings } from "./services/settings-store.js";
 import { getPreloadPath, getWindowUrl } from "./windows/window-paths.js";
 import { setSettingsTarget } from "./windows/settings-window.js";
 import { focusMainWindow } from "./services/tray.js";
+import { shutdownProviders } from "./services/assistant/service.js";
 
 // Get directory paths
 const __filename = fileURLToPath(import.meta.url);
@@ -274,6 +275,8 @@ app.on("before-quit", () => {
 
 app.on("will-quit", () => {
   destroyTray();
+  // Codex app-servers are child processes; don't leave them behind.
+  shutdownProviders();
 });
 
 // ── App ready ─────────────────────────────────────────────────────────

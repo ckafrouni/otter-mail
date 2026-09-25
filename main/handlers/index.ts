@@ -11,7 +11,7 @@ import { appHandlers } from "./app.js";
 import { setSettingsTarget, takeSettingsTarget } from "../windows/settings-window.js";
 import { registerGmailHandlers } from "./gmail.js";
 import { registerTrayPopoverHandlers } from "./tray-popover.js";
-import * as assistantChat from "../services/assistant-chat.js";
+import { registerAssistantHandlers } from "./assistant.js";
 import { takePendingOpenMessage } from "../services/open-message-target.js";
 import { focusMainWindow } from "../services/tray.js";
 import { listMailApps, setDefaultMailHandler } from "../services/default-mail.js";
@@ -113,74 +113,7 @@ export function registerHandlers(): void {
 
   ipcMain.handle("app:listMailApps", async () => listMailApps());
 
-  ipcMain.handle("assistant:chatStatus", async () => assistantChat.chatStatus());
-
-  ipcMain.handle("assistant:chatConfigure", async (_event, params: unknown) => {
-    const p = params as Record<string, unknown>;
-    const baseUrl = typeof p?.baseUrl === "string" ? p.baseUrl.trim() : "";
-    const apiKey = typeof p?.apiKey === "string" ? p.apiKey.trim() : "";
-    if (!baseUrl || !apiKey) throw new Error("Base URL and API key are both required.");
-    return assistantChat.chatConfigure(baseUrl, apiKey);
-  });
-
-  ipcMain.handle("assistant:chatSend", async (_event, params: unknown) => {
-    const p = params as Record<string, unknown>;
-    const requestId = typeof p?.requestId === "string" ? p.requestId : "";
-    const input = typeof p?.input === "string" ? p.input : "";
-    if (!requestId || !input.trim()) throw new Error("Nothing to send.");
-    return assistantChat.chatSend({
-      requestId,
-      input,
-      sessionId: typeof p?.sessionId === "string" && p.sessionId ? p.sessionId : undefined,
-      previousResponseId:
-        typeof p?.previousResponseId === "string" && p.previousResponseId
-          ? p.previousResponseId
-          : undefined,
-    });
-  });
-
-  ipcMain.handle("assistant:chatCancel", async (_event, params: unknown) => {
-    const p = params as Record<string, unknown>;
-    if (typeof p?.requestId === "string") assistantChat.chatCancel(p.requestId);
-    return { ok: true };
-  });
-
-  ipcMain.handle("assistant:chatSkills", async () => assistantChat.listSkills());
-
-  // Native Sessions API: one persistent server-side session per conversation.
-  ipcMain.handle("assistant:chatSessionCreate", async (_event, params: unknown) => {
-    const p = params as Record<string, unknown> | undefined;
-    const title = typeof p?.title === "string" ? p.title.trim() : "";
-    return assistantChat.sessionCreate(title ? { title } : {});
-  });
-
-  ipcMain.handle("assistant:chatSessionDelete", async (_event, params: unknown) => {
-    const p = params as Record<string, unknown>;
-    const sessionId = typeof p?.sessionId === "string" ? p.sessionId.trim() : "";
-    if (!sessionId) throw new Error("A session id is required.");
-    return assistantChat.sessionDelete(sessionId);
-  });
-
-  ipcMain.handle("assistant:chatSessionRename", async (_event, params: unknown) => {
-    const p = params as Record<string, unknown>;
-    const sessionId = typeof p?.sessionId === "string" ? p.sessionId.trim() : "";
-    const title = typeof p?.title === "string" ? p.title.trim() : "";
-    if (!sessionId || !title) throw new Error("A session id and title are required.");
-    return assistantChat.sessionRename(sessionId, title);
-  });
-
-  ipcMain.handle("assistant:chatSessionList", async (_event, params: unknown) => {
-    const p = params as Record<string, unknown> | undefined;
-    const limit = typeof p?.limit === "number" && Number.isFinite(p.limit) ? p.limit : undefined;
-    return assistantChat.sessionList(limit ? { limit } : {});
-  });
-
-  ipcMain.handle("assistant:chatSessionMessages", async (_event, params: unknown) => {
-    const p = params as Record<string, unknown>;
-    const sessionId = typeof p?.sessionId === "string" ? p.sessionId.trim() : "";
-    if (!sessionId) throw new Error("A session id is required.");
-    return assistantChat.sessionMessages(sessionId);
-  });
+  registerAssistantHandlers();
 
   // Register Gmail handlers
   registerGmailHandlers();

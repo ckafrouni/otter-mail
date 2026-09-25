@@ -92,7 +92,7 @@ type MessageListProps = {
   advanceRef: React.MutableRefObject<(fromMessageId: string) => boolean>;
   /** Reports the multi-selected rows so the chat panel can attach them. */
   onSelectionChange?: (rows: GmailMessageSummary[]) => void;
-  /** Opens the in-app Hermes chat panel. */
+  /** Opens the in-app assistant chat panel. */
   onOpenChat?: () => void;
 
   searchQuery: string;
@@ -191,7 +191,7 @@ type MessageRowProps = {
   viewLabelIds: ReadonlySet<string>;
   /** Opens the permanent-delete confirm (offered on trashed/junk rows only). */
   onDeleteForever: () => void;
-  /** Opens this conversation in the in-app Hermes chat panel. */
+  /** Opens this conversation in the in-app assistant chat panel. */
   onChatAssistant: () => void;
   /** Closes the reader — used after marking the open row unread, so the
       reader's auto mark-read doesn't immediately undo it (Gmail does this too). */
@@ -489,7 +489,7 @@ function MessageRow({
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem icon="bubble.left" onSelect={onChatAssistant}>
-            Open in Hermes chat
+            Open in assistant chat
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuSub label="Label">
@@ -1453,9 +1453,9 @@ export function MessageList({
               </IconBtn>
             </HintTooltip>
             <span className="mx-1 h-5 w-px shrink-0 bg-border" aria-hidden />
-            <HintTooltip label="Chat about the selection in Hermes">
+            <HintTooltip label="Chat about the selection with the assistant">
               <IconBtn
-                label="Open in Hermes chat"
+                label="Open in assistant chat"
                 className="size-7"
                 onClick={() => onOpenChat?.()}
               >

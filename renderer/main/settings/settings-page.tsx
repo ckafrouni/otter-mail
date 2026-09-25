@@ -3,7 +3,6 @@ import { Switch, toast } from "@glaze/core/components";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../gmail/select";
 import {
   gmailApi,
-  type ChatStatus,
   type MailApp,
   type NotificationsMode,
   type SettingsPane,
@@ -13,12 +12,13 @@ import {
   setAdvanceDirection as persistAdvanceDirection,
   type AdvanceDirection,
 } from "../gmail/advance-direction";
-import { Btn, cn } from "../gmail/ui";
+import { cn } from "../gmail/ui";
 import { AppearancePane } from "./appearance-pane";
 import { KeybindingsPane } from "./keybindings-pane";
 import { AccountsPane } from "./accounts-pane";
 import { ViewsPane } from "./views-pane";
-import { SettingsPageContainer, SettingsRow, SettingsSection, TextInput } from "./settings-ui";
+import { ProvidersPane } from "./providers-pane";
+import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settings-ui";
 
 /** Where the settings page is. */
 export type SettingsRoute = {
@@ -285,118 +285,6 @@ function GeneralPane() {
 }
 
 // ---------------------------------------------------------------------------
-// Assistant
-// ---------------------------------------------------------------------------
-
-function AssistantPane() {
-  const [chatStatus, setChatStatus] = useState<ChatStatus | null>(null);
-  const [chatBaseUrl, setChatBaseUrl] = useState("");
-  const [chatApiKey, setChatApiKey] = useState("");
-  const [chatSaving, setChatSaving] = useState(false);
-
-  const loadChatStatus = async () => {
-    try {
-      setChatStatus(await gmailApi.chatStatus());
-    } catch (error) {
-      console.log("[Settings:chatStatus] failed", { error: String(error) });
-    }
-  };
-  useEffect(() => {
-    void loadChatStatus();
-  }, []);
-
-  const handleChatSave = async () => {
-    if (!chatBaseUrl.trim() || !chatApiKey.trim()) {
-      toast.error("API base URL and key are both required");
-      return;
-    }
-    setChatSaving(true);
-    console.log("[Settings:chatConfigure]");
-    try {
-      const status = await gmailApi.chatConfigure({
-        baseUrl: chatBaseUrl.trim(),
-        apiKey: chatApiKey.trim(),
-      });
-      setChatStatus(status);
-      setChatBaseUrl("");
-      setChatApiKey("");
-      toast.success(`Hermes chat connected (${status.model ?? "agent"})`);
-    } catch (error) {
-      toast.error(`Could not connect: ${error}`);
-    } finally {
-      setChatSaving(false);
-    }
-  };
-
-  const chatStatusLine = chatStatus?.configured ? (
-    <span className="inline-flex items-center gap-1.5">
-      <span className="size-1.5 rounded-full bg-success" aria-hidden />
-      Connected to {chatStatus.baseUrl} ({chatStatus.model}) ·{" "}
-      {chatStatus.sessions
-        ? "native sessions: chats persist on Hermes."
-        : "no Sessions API; chats chain by response id."}
-    </span>
-  ) : (
-    <span className="inline-flex items-center gap-1.5">
-      <span className="size-1.5 rounded-full bg-muted-foreground/50" aria-hidden />
-      Not connected
-    </span>
-  );
-
-  return (
-    <SettingsPageContainer>
-      <SettingsSection title="Hermes chat">
-        <SettingsRow
-          title="API server"
-          description="The chat panel talks to Hermes' built-in API server (port 8642) over Tailscale."
-          status={chatStatusLine}
-        />
-        <SettingsRow
-          title="Base URL"
-          control={
-            <TextInput
-              value={chatBaseUrl}
-              onChange={(e) => setChatBaseUrl(e.target.value)}
-              placeholder={chatStatus?.baseUrl ?? "https://<host>:8642"}
-              aria-label="Hermes API base URL"
-              className="sm:w-64"
-            />
-          }
-        />
-        <SettingsRow
-          title="API key"
-          description="The server's API_SERVER_KEY. Stored encrypted on this Mac."
-          control={
-            <TextInput
-              type="password"
-              value={chatApiKey}
-              onChange={(e) => setChatApiKey(e.target.value)}
-              placeholder={chatStatus?.configured ? "Replace API key" : "API key"}
-              aria-label="Hermes API key"
-              className="sm:w-64"
-            />
-          }
-        />
-        <SettingsRow
-          title={chatStatus?.configured ? "Reconnect" : "Connect"}
-          description="Verifies the URL and key against the server, then saves them."
-          control={
-            <Btn
-              size="sm"
-              variant="primary"
-              disabled={chatSaving}
-              onClick={() => void handleChatSave()}
-            >
-              {chatSaving ? "Connecting…" : chatStatus?.configured ? "Reconnect" : "Connect"}
-            </Btn>
-          }
-        />
-      </SettingsSection>
-    </SettingsPageContainer>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
@@ -411,7 +299,7 @@ export function SettingsPage({
   if (route.pane === "appearance") return <AppearancePane />;
   if (route.pane === "keybindings") return <KeybindingsPane />;
   if (route.pane === "accounts") return <AccountsPane />;
-  if (route.pane === "assistant") return <AssistantPane />;
+  if (route.pane === "assistant") return <ProvidersPane />;
   if (route.pane === "views") {
     return (
       <ViewsPane

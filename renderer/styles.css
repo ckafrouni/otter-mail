@@ -96,7 +96,7 @@
   );
   --code-background: color-mix(in srgb, var(--card) 90%, var(--canvas));
   --code-foreground: var(--foreground);
-  /* The composer's glass card (Hermes chat, reply editor, new message). */
+  /* The composer's glass card (assistant chat, reply editor, new message). */
   --chat-composer-surface: var(--card);
   --chat-composer-outline: rgb(0 0 0 / 8%);
   --chat-composer-highlight: transparent;

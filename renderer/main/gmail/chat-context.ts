@@ -1,7 +1,7 @@
 import type { GmailMessageSummary } from "./types";
 
 /**
- * Pointer-sized mail context for the Hermes chat. Hermes has gog
+ * Pointer-sized mail context for the assistant chat. The agent has gog
  * access to the same mailboxes, so ids are enough — no mail content leaves
  * the app.
  */
