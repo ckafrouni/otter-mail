@@ -11,8 +11,9 @@
  * - assistantOpen:  the assistant chat panel is showing
  * - modelPickerOpen: the composer's model picker is open
  *
- * Besides the closed set, `label.toggle:<label name>` rules toggle one of the
- * user's labels (by full name, so one binding works in every account).
+ * Besides the closed set, `label.move:<label name>` rules move the selection
+ * to one of the user's labels (by full name, so one binding works in every
+ * account).
  */
 
 export const MAILBOX_JUMP_COMMANDS = [
@@ -81,29 +82,32 @@ export const KEYBINDING_COMMANDS = [
   "message.move",
 ] as const;
 
-export const LABEL_TOGGLE_PREFIX = "label.toggle:";
+export const LABEL_MOVE_PREFIX = "label.move:";
+/** Label shortcuts saved before they became moves; they now move too. */
+const LEGACY_LABEL_PREFIX = "label.toggle:";
 
-export type LabelToggleCommand = `${typeof LABEL_TOGGLE_PREFIX}${string}`;
+export type LabelMoveCommand = `${typeof LABEL_MOVE_PREFIX}${string}`;
 
-export type KeybindingCommand = (typeof KEYBINDING_COMMANDS)[number] | LabelToggleCommand;
+export type KeybindingCommand = (typeof KEYBINDING_COMMANDS)[number] | LabelMoveCommand;
 
-/** What a handler registers under: a fixed command, or every label toggle. */
-export type CommandHandlerKey = (typeof KEYBINDING_COMMANDS)[number] | "label.toggle";
+/** What a handler registers under: a fixed command, or every label move. */
+export type CommandHandlerKey = (typeof KEYBINDING_COMMANDS)[number] | "label.move";
 
-export function labelToggleCommand(labelName: string): LabelToggleCommand {
-  return `${LABEL_TOGGLE_PREFIX}${labelName}`;
+export function labelMoveCommand(labelName: string): LabelMoveCommand {
+  return `${LABEL_MOVE_PREFIX}${labelName}`;
 }
 
-/** The label name of a `label.toggle:<name>` command, else null. */
-export function labelToggleName(command: string): string | null {
-  if (!command.startsWith(LABEL_TOGGLE_PREFIX)) return null;
-  const name = command.slice(LABEL_TOGGLE_PREFIX.length).trim();
+/** The label name of a `label.move:<name>` command, else null. */
+export function labelMoveName(command: string): string | null {
+  const prefix = [LABEL_MOVE_PREFIX, LEGACY_LABEL_PREFIX].find((p) => command.startsWith(p));
+  if (!prefix) return null;
+  const name = command.slice(prefix.length).trim();
   return name || null;
 }
 
 export function isKeybindingCommand(value: string): value is KeybindingCommand {
   return (
-    (KEYBINDING_COMMANDS as readonly string[]).includes(value) || labelToggleName(value) !== null
+    (KEYBINDING_COMMANDS as readonly string[]).includes(value) || labelMoveName(value) !== null
   );
 }
 
@@ -214,9 +218,9 @@ function titleCaseSegment(segment: string): string {
     .join(" ");
 }
 
-/** "message.markUnread" → "Message: Mark Unread"; label toggles → "Label: Clients/Acme". */
+/** "message.markUnread" → "Message: Mark Unread"; label moves → "Move to Label: Clients/Acme". */
 export function commandLabel(command: string): string {
-  const labelName = labelToggleName(command);
-  if (labelName !== null) return `Label: ${labelName}`;
+  const labelName = labelMoveName(command);
+  if (labelName !== null) return `Move to Label: ${labelName}`;
   return command.split(".").map(titleCaseSegment).join(": ");
 }

@@ -1334,10 +1334,11 @@ export function MessageList({
       if (!row || !shortcutState.current.moveContextLabelId) return false;
       setLabelOverlay("move");
     }),
-    // A label's own shortcut (label.toggle:<name>): labels the selection, or
-    // takes the label off when every conversation already has it. Resolved by
-    // name so one binding works in every account.
-    "label.toggle": (_e, labelName) => {
+    // A label's own shortcut (label.move:<name>): moves the selection there,
+    // folder-style: the label is added, and the mailbox's label plus every
+    // other label on the conversation come off. Resolved by name so one
+    // binding works in every account.
+    "label.move": (_e, labelName) => {
       const {
         visibleMessages: rows,
         selectedMessageId: selId,
@@ -1351,41 +1352,45 @@ export function MessageList({
         ? rows.filter((m) => checkedRef.current.has(m.id))
         : rows.filter((m) => m.id === selId);
       if (targets.length === 0) return false;
-      const labelFor = (m: GmailMessageSummary) =>
-        labelsByAccount
-          .find((a) => a.accountId === (m.accountId ?? fallbackAccount))
-          ?.labels.find((l) => l.type === "user" && l.name === labelName);
-      const labeled = targets.filter((m) => labelFor(m));
-      if (labeled.length === 0) {
+      const moves = targets.flatMap((m) => {
+        const owner = m.accountId ?? fallbackAccount;
+        const userLabels = labelsByAccount
+          .find((a) => a.accountId === owner)
+          ?.labels.filter((l) => l.type === "user");
+        const target = userLabels?.find((l) => l.name === labelName);
+        if (!userLabels || !target) return [];
+        const userIds = new Set(userLabels.map((l) => l.id));
+        const remove = rowLabels(m).filter((id) => userIds.has(id) && id !== target.id);
+        const leavesView = viewLabelId != null && isMoveSourceLabel(viewLabelId, target.id);
+        if (leavesView && !remove.includes(viewLabelId)) remove.push(viewLabelId);
+        return [{ m, owner, targetId: target.id, remove, leavesView }];
+      });
+      if (moves.length === 0) {
         toast.error(`No label named “${labelName}” in this account`);
         return;
       }
-      const remove = labeled.every((m) => rowLabels(m).includes(labelFor(m)!.id));
-      console.log("[MessageList:labelShortcut]", { labelName, remove, count: labeled.length });
-      // Taking the label you're browsing off drops the open row from the view.
-      const single = !multi ? labeled[0] : null;
-      if (single && remove && labelFor(single)!.id === viewLabelId) {
-        const idx = rows.findIndex((m) => m.id === single.id);
+      console.log("[MessageList:labelShortcut]", { labelName, count: moves.length });
+      // The open conversation leaves the mailbox: move on, like archive does.
+      if (!multi && moves[0].leavesView) {
+        const idx = rows.findIndex((m) => m.id === moves[0].m.id);
         const next = pickAdvanceTarget(rows, idx);
         if (next) onSelectMessage(next.id, next.accountId ?? fallbackAccount);
         else onDeselect();
       }
-      if (multi) beginUndoGroup(labeled.length);
-      for (const m of labeled) {
-        const id = labelFor(m)!.id;
+      if (multi) beginUndoGroup(moves.length);
+      for (const { m, owner, targetId, remove } of moves) {
         void listModifyThread.mutateAsync({
-          accountId: m.accountId ?? fallbackAccount,
+          accountId: owner,
           threadId: m.threadId || m.id,
-          addLabelIds: remove ? undefined : [id],
-          removeLabelIds: remove ? [id] : undefined,
+          addLabelIds: [targetId],
+          removeLabelIds: remove.length > 0 ? remove : undefined,
         });
       }
       if (multi) clearChecked();
-      const count = labeled.length === 1 ? "" : ` ${labeled.length} conversations`;
       toast.success(
-        remove
-          ? `Removed “${labelName}”${count && ` from${count}`}`
-          : `Added “${labelName}”${count && ` to${count}`}`,
+        moves.length === 1
+          ? `Moved to “${labelName}”`
+          : `Moved ${moves.length} conversations to “${labelName}”`,
       );
     },
   });

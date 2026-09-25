@@ -55,7 +55,7 @@ import {
   type ThreadDragPayload,
 } from "./thread-drag";
 import { beginUndoGroup } from "./undo";
-import { labelToggleCommand } from "../keybindings/commands";
+import { labelMoveName } from "../keybindings/commands";
 import { renameLabelKeybindings, useKeybindingsState } from "../keybindings/store";
 import { formatShortcut, parseShortcut } from "../keybindings/keys";
 import { LabelShortcutDialog } from "../settings/keybindings-pane";
@@ -399,7 +399,7 @@ type LabelActions = {
   /** Conversations dropped from the message list; `keep` = ⌥ held (label only). */
   onDropThreads: (payload: ThreadDragPayload, label: GmailLabel, keep: boolean) => void;
   onEditShortcut: (label: GmailLabel) => void;
-  /** The label's own toggle shortcut, formatted (⌘⇧1), if it has one. */
+  /** The label's own move shortcut, formatted (⌘⇧1), if it has one. */
   shortcutFor: (label: GmailLabel) => string | undefined;
 };
 
@@ -756,7 +756,7 @@ export function AccountsSidebar({
     onDropThreads: handleDropThreads,
     onEditShortcut: (label) => setShortcutTarget(label.name),
     shortcutFor: (label) => {
-      const rule = keybindingRules.find((r) => r.command === labelToggleCommand(label.name));
+      const rule = keybindingRules.find((r) => labelMoveName(r.command) === label.name);
       const shortcut = rule ? parseShortcut(rule.key) : null;
       return shortcut ? formatShortcut(shortcut) : undefined;
     },
