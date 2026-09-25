@@ -63,13 +63,13 @@
   "packageManager": "npm@11.11.0+sha512-82gRxKrh/eY5UnNorkTFcdBQAGpgjWehkfGVqAGlJjejEtJZGGJUqjo3mbBTNbc5BTnPKGVtGPBZGhElujX5cw==",
   "glaze": {
     "capabilities": {},
-    "sdkVersion": "0.14.2.0",
+    "sdkVersion": "0.14.3.0",
     "createdAt": "2026-07-01T12:05:07.615Z",
     "lastMigration": "tray-retina-icons",
     "host": {
-      "minVersion": "0.14.2.0"
+      "minVersion": "0.14.3.0"
     },
-    "updatedAt": 1790331787810,
+    "updatedAt": 1790332116208,
     "appId": "gmail-inbox-local-2fv8ixle",
     "variant": "local"
   }

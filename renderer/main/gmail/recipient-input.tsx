@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  useRef,
   useState,
   type ClipboardEvent,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -9,6 +10,14 @@ import { useDebouncedValue, useSuggestContacts } from "./hooks";
 import { splitAddressList, parseAddressEntry, formatAddressEntry } from "./address";
 import { SenderAvatar } from "./sender-avatar";
 import { cn } from "./ui";
+import { toast } from "@glaze/core/components";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "./menu";
 
 /**
  * Recipients field: finished addresses render as chips, the one being typed
@@ -31,6 +40,9 @@ export const RecipientInput = forwardRef<
   }
 >(function RecipientInput({ value, onChange, placeholder, ariaLabel }, ref) {
   const [focused, setFocused] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  // Set while a chip is being turned back into text, so focusing doesn't re-chip it.
+  const editingRef = useRef(false);
   const [dismissed, setDismissed] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
 
@@ -117,6 +129,21 @@ export const RecipientInput = forwardRef<
     }
   };
 
+  const copy = (text: string) => {
+    void navigator.clipboard?.writeText(text).then(
+      () => toast.success(`Copied ${text}`),
+      () => toast.error("Couldn't copy the address"),
+    );
+  };
+
+  /** Turns a chip back into editable text (the field's typed text). */
+  const editAt = (index: number) => {
+    const others = chips.filter((_, i) => i !== index);
+    editingRef.current = true;
+    write(others, chips[index]);
+    inputRef.current?.focus();
+  };
+
   // Pasting a list ("a@x, b@y") commits everything but a trailing fragment.
   const handlePaste = (e: ClipboardEvent<HTMLInputElement>) => {
     const text = e.clipboardData.getData("text");
@@ -134,31 +161,74 @@ export const RecipientInput = forwardRef<
         const { name, email } = parseAddressEntry(entry);
         const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
         return (
-          <span
-            key={`${entry}:${i}`}
-            title={email}
-            className={cn(
-              "inline-flex h-6 max-w-64 items-center gap-1 rounded-full border pl-2 pr-1 text-xs",
-              valid
-                ? "border-border bg-secondary text-foreground"
-                : "border-destructive/50 bg-destructive/10 text-destructive-foreground",
-            )}
-          >
-            <span className="min-w-0 truncate">{name || email}</span>
-            <button
-              type="button"
-              aria-label={`Remove ${email}`}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => removeAt(i)}
-              className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
-            >
-              <XIcon className="size-3" />
-            </button>
-          </span>
+          <ContextMenu key={`${entry}:${i}`}>
+            <ContextMenuTrigger asChild>
+              <span
+                tabIndex={0}
+                title={name ? `${name} <${email}>` : email}
+                // Focusable chip: ⌘C copies the address, Delete removes it,
+                // Enter / double-click puts it back into the field to edit.
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c") {
+                    e.preventDefault();
+                    copy(email);
+                  } else if (e.key === "Backspace" || e.key === "Delete") {
+                    e.preventDefault();
+                    removeAt(i);
+                  } else if (e.key === "Enter") {
+                    e.preventDefault();
+                    editAt(i);
+                  }
+                }}
+                // Edit › Copy (⌘C via the app menu) fires a copy event, not a key.
+                onCopy={(e) => {
+                  e.preventDefault();
+                  e.clipboardData.setData("text/plain", email);
+                  toast.success(`Copied ${email}`);
+                }}
+                onDoubleClick={() => editAt(i)}
+                className={cn(
+                  "inline-flex h-6 max-w-64 cursor-default items-center gap-1 rounded-full border pl-2 pr-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus:bg-accent-surface",
+                  valid
+                    ? "border-border bg-secondary text-foreground"
+                    : "border-destructive/50 bg-destructive/10 text-destructive-foreground",
+                )}
+              >
+                <span className="min-w-0 truncate">{name || email}</span>
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  aria-label={`Remove ${email}`}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => removeAt(i)}
+                  className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+                >
+                  <XIcon className="size-3" />
+                </button>
+              </span>
+            </ContextMenuTrigger>
+            <ContextMenuContent>
+              <ContextMenuItem onSelect={() => copy(email)}>Copy address</ContextMenuItem>
+              {name ? (
+                <ContextMenuItem onSelect={() => copy(formatAddressEntry(name, email))}>
+                  Copy name and address
+                </ContextMenuItem>
+              ) : null}
+              <ContextMenuSeparator />
+              <ContextMenuItem onSelect={() => editAt(i)}>Edit</ContextMenuItem>
+              <ContextMenuItem color="red" onSelect={() => removeAt(i)}>
+                Remove
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
         );
       })}
       <input
-        ref={ref}
+        ref={(el) => {
+          inputRef.current = el;
+          if (typeof ref === "function") ref(el);
+          else if (ref) ref.current = el;
+        }}
         value={typing}
         onChange={(e) => {
           const next = e.target.value;
@@ -174,7 +244,8 @@ export const RecipientInput = forwardRef<
         onFocus={() => {
           setFocused(true);
           // A prefilled list keeps its last address as a chip too.
-          if (token.trim()) write([...entries, ...splitAddressList(token)], "");
+          if (editingRef.current) editingRef.current = false;
+          else if (token.trim()) write([...entries, ...splitAddressList(token)], "");
         }}
         onBlur={() => {
           setFocused(false);

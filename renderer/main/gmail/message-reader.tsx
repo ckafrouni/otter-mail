@@ -1243,9 +1243,25 @@ export function ExpandedRow({
                 {formatTime(summary.date)}
               </span>
             </button>
-            <div className="truncate text-xs text-muted-foreground/70" title={`to ${summary.to}`}>
-              to {summary.to}
-              {detail?.cc ? ` · cc ${detail.cc}` : ""}
+            <div className="truncate text-xs text-muted-foreground/70">
+              to{" "}
+              <RecipientList
+                list={summary.to}
+                accountId={accountId}
+                onComposeTo={onComposeTo}
+                onSearchSender={onSearchSender}
+              />
+              {detail?.cc ? (
+                <>
+                  {" · cc "}
+                  <RecipientList
+                    list={detail.cc}
+                    accountId={accountId}
+                    onComposeTo={onComposeTo}
+                    onSearchSender={onSearchSender}
+                  />
+                </>
+              ) : null}
             </div>
           </div>
         </div>
@@ -1285,6 +1301,45 @@ export function ExpandedRow({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * A message's To/Cc list: each person is selectable text (the app is
+ * unselectable by default) with the sender hovercard — Copy address, New
+ * message, Find emails — like the From line.
+ */
+function RecipientList({
+  list,
+  accountId,
+  onComposeTo,
+  onSearchSender,
+}: {
+  list: string;
+  accountId: string;
+  onComposeTo?: (email: string) => void;
+  onSearchSender?: (email: string) => void;
+}) {
+  const people = splitAddressList(list).map(parseAddressEntry);
+  return (
+    <>
+      {people.map((p, i) => (
+        <span key={`${p.email}:${i}`}>
+          {i > 0 ? ", " : null}
+          <SenderHoverCard
+            name={p.name}
+            email={p.email}
+            accountId={accountId}
+            onCompose={onComposeTo}
+            onSearch={onSearchSender}
+          >
+            <span className="cursor-text select-text hover:text-foreground" title={p.email}>
+              {p.name || p.email}
+            </span>
+          </SenderHoverCard>
+        </span>
+      ))}
+    </>
   );
 }
 
