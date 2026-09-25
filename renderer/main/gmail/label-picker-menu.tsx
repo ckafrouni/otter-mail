@@ -113,3 +113,35 @@ export function LabelPickerMenu({ accountId, threadId, labelIds, children }: Lab
     </DropdownMenu>
   );
 }
+
+/** The same label checklist as a submenu ("Label ▸"), for overflow menus. */
+export function LabelSubmenu({
+  accountId,
+  threadId,
+  labelIds,
+}: Omit<LabelPickerMenuProps, "children">) {
+  const labelsQuery = useLabels(accountId);
+  const modifyThread = useModifyThread();
+  const tree = buildLabelTree((labelsQuery.data ?? []).filter(isAssignableLabel));
+  const applied = new Set(labelIds);
+  const handleToggle = (labelId: string, checked: boolean) =>
+    void modifyThread.mutateAsync({
+      accountId,
+      threadId,
+      addLabelIds: checked ? [labelId] : undefined,
+      removeLabelIds: checked ? undefined : [labelId],
+    });
+  return (
+    <DropdownMenuSub label="Label">
+      {tree.length === 0 ? (
+        <DropdownMenuItem disabled>No labels</DropdownMenuItem>
+      ) : (
+        renderLabelMenuNodes(tree, applied, handleToggle, {
+          CheckboxItem: DropdownMenuCheckboxItem,
+          Sub: DropdownMenuSub,
+          Separator: DropdownMenuSeparator,
+        })
+      )}
+    </DropdownMenuSub>
+  );
+}

@@ -1,5 +1,6 @@
 import {
   Fragment,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -60,7 +61,7 @@ import {
   draftStatus,
 } from "./composer-kit";
 import { decodeEntities, htmlToText } from "./text";
-import { LabelPickerMenu } from "./label-picker-menu";
+import { LabelPickerMenu, LabelSubmenu } from "./label-picker-menu";
 import {
   formatAddressEntry,
   normalizeAddressList,
@@ -1877,6 +1878,24 @@ export function MessageReader({
     {},
   );
   const junkShortcut = useShortcutLabel("message.junk");
+  const replyAllShortcut = useShortcutLabel("message.replyAll");
+  const forwardShortcut = useShortcutLabel("message.forward");
+  const flagShortcut = useShortcutLabel("message.star");
+  // The band adapts to the reader's width (panels open → narrow): the subject
+  // moves to its own row below 44rem, secondary actions fold into "…" below
+  // 36rem. Measured in JS because the "…" menu renders outside this element.
+  const [readerWidth, setReaderWidth] = useState(Infinity);
+  const readerObserver = useRef<ResizeObserver | null>(null);
+  const readerRef = useCallback((el: HTMLDivElement | null) => {
+    readerObserver.current?.disconnect();
+    readerObserver.current = null;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => setReaderWidth(entry.contentRect.width));
+    ro.observe(el);
+    readerObserver.current = ro;
+  }, []);
+  const compactTitle = readerWidth < 44 * 16;
+  const compactActions = readerWidth < 36 * 16;
   const readerAction = (name: "reply" | "replyAll" | "forward") => () => {
     const action = readerActions.current[name];
     if (!action) return false;
@@ -2219,65 +2238,90 @@ export function MessageReader({
 
   const groupDivider = <span className="mx-1 h-5 w-px shrink-0 bg-border" aria-hidden />;
 
+  /** Subject + label chips: one truncated line in the band, or a wrapping heading. */
+  const renderTitle = (wrap: boolean) => (
+    <>
+      <span
+        className={
+          wrap
+            ? "text-base font-semibold leading-snug text-foreground"
+            : "truncate text-sm font-medium text-foreground"
+        }
+        title={isThread ? `${rows.length} messages` : formatFullDate(message.date)}
+      >
+        {message.subject || "(no subject)"}
+      </span>
+      {conversationLabelIds.includes("INBOX") ||
+      conversationLabelIds.some(isCategoryLabelId) ||
+      messageLabels.length > 0 ? (
+        <span
+          className={
+            wrap
+              ? "flex flex-wrap items-center gap-1"
+              : "flex min-w-0 shrink items-center gap-1 overflow-hidden"
+          }
+        >
+          {conversationLabelIds.includes("INBOX") ? <InboxChip onRemove={handleArchive} /> : null}
+          {conversationLabelIds.filter(isCategoryLabelId).map((id) => (
+            <CategoryChip key={id} id={id} />
+          ))}
+          {messageLabels.map((label) => (
+            <LabelChip
+              key={label.id}
+              label={label}
+              onRemove={() => {
+                console.log("[MessageReader:removeLabelChip]", { labelId: label.id });
+                void modifyThread.mutateAsync({
+                  accountId,
+                  threadId: conversationId,
+                  removeLabelIds: [label.id],
+                });
+              }}
+            />
+          ))}
+        </span>
+      ) : null}
+    </>
+  );
+
   return (
     <>
-      <div className="flex h-full min-w-0 flex-col">
+      <div ref={readerRef} className="flex h-full min-w-0 flex-col">
         {/* Conversation header = the title band: subject + labels, the
             everyday actions, a "more" menu, then the window's panel toggle. */}
         <div
           data-toolbar=""
           className="drag-region flex h-(--workspace-topbar-height) shrink-0 items-center gap-1 border-b border-border px-4"
         >
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <span
-              className="truncate text-sm font-medium text-foreground"
-              title={isThread ? `${rows.length} messages` : formatFullDate(message.date)}
-            >
-              {message.subject || "(no subject)"}
-            </span>
-            {conversationLabelIds.includes("INBOX") ||
-            conversationLabelIds.some(isCategoryLabelId) ||
-            messageLabels.length > 0 ? (
-              <span className="flex min-w-0 shrink items-center gap-1 overflow-hidden">
-                {conversationLabelIds.includes("INBOX") ? (
-                  <InboxChip onRemove={handleArchive} />
-                ) : null}
-                {conversationLabelIds.filter(isCategoryLabelId).map((id) => (
-                  <CategoryChip key={id} id={id} />
-                ))}
-                {messageLabels.map((label) => (
-                  <LabelChip
-                    key={label.id}
-                    label={label}
-                    onRemove={() => {
-                      console.log("[MessageReader:removeLabelChip]", { labelId: label.id });
-                      void modifyThread.mutateAsync({
-                        accountId,
-                        threadId: conversationId,
-                        removeLabelIds: [label.id],
-                      });
-                    }}
-                  />
-                ))}
-              </span>
-            ) : null}
-          </div>
+          {/* Wide: subject + labels live in the band. Narrow: they move to a
+              heading under it (see below) so the actions keep their room. */}
+          {compactTitle ? (
+            <span className="min-w-0 flex-1" />
+          ) : (
+            <div className="flex min-w-0 flex-1 items-center gap-2">{renderTitle(false)}</div>
+          )}
 
+          {/* Priority + overflow: Reply, Archive, Trash and "…" always show;
+              as the pane narrows the rest folds into "…". */}
           <HintTooltip label="Reply" shortcut="message.reply" side="bottom">
             <IconBtn label="Reply" onClick={handleReply}>
               <ReplyIcon className="size-4" />
             </IconBtn>
           </HintTooltip>
-          <HintTooltip label="Reply all" shortcut="message.replyAll" side="bottom">
-            <IconBtn label="Reply all" onClick={handleReplyAll}>
-              <ReplyAllIcon className="size-4" />
-            </IconBtn>
-          </HintTooltip>
-          <HintTooltip label="Forward" shortcut="message.forward" side="bottom">
-            <IconBtn label="Forward" onClick={handleForward}>
-              <ForwardIcon className="size-4" />
-            </IconBtn>
-          </HintTooltip>
+          {compactActions ? null : (
+            <>
+              <HintTooltip label="Reply all" shortcut="message.replyAll" side="bottom">
+                <IconBtn label="Reply all" onClick={handleReplyAll}>
+                  <ReplyAllIcon className="size-4" />
+                </IconBtn>
+              </HintTooltip>
+              <HintTooltip label="Forward" shortcut="message.forward" side="bottom">
+                <IconBtn label="Forward" onClick={handleForward}>
+                  <ForwardIcon className="size-4" />
+                </IconBtn>
+              </HintTooltip>
+            </>
+          )}
 
           {groupDivider}
 
@@ -2323,20 +2367,30 @@ export function MessageReader({
               </IconBtn>
             </HintTooltip>
           )}
-          <LabelPickerMenu
-            accountId={accountId}
-            threadId={conversationId}
-            labelIds={conversationLabelIds}
-          >
-            <IconBtn label="Label">
-              <FolderIcon className="size-4" />
-            </IconBtn>
-          </LabelPickerMenu>
-          <HintTooltip label={isFlagged ? "Unflag" : "Flag"} shortcut="message.star" side="bottom">
-            <IconBtn label={isFlagged ? "Unflag" : "Flag"} onClick={handleToggleFlag}>
-              <FlagIcon className={cn("size-4", isFlagged ? "fill-current text-(--red)" : "")} />
-            </IconBtn>
-          </HintTooltip>
+          {compactActions ? null : (
+            <>
+              <LabelPickerMenu
+                accountId={accountId}
+                threadId={conversationId}
+                labelIds={conversationLabelIds}
+              >
+                <IconBtn label="Label">
+                  <FolderIcon className="size-4" />
+                </IconBtn>
+              </LabelPickerMenu>
+              <HintTooltip
+                label={isFlagged ? "Unflag" : "Flag"}
+                shortcut="message.star"
+                side="bottom"
+              >
+                <IconBtn label={isFlagged ? "Unflag" : "Flag"} onClick={handleToggleFlag}>
+                  <FlagIcon
+                    className={cn("size-4", isFlagged ? "fill-current text-(--red)" : "")}
+                  />
+                </IconBtn>
+              </HintTooltip>
+            </>
+          )}
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -2345,6 +2399,37 @@ export function MessageReader({
               </IconBtn>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {compactActions ? (
+                <>
+                  <DropdownMenuItem
+                    icon={<ReplyAllIcon />}
+                    accelerator={replyAllShortcut}
+                    onSelect={handleReplyAll}
+                  >
+                    Reply all
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    icon={<ForwardIcon />}
+                    accelerator={forwardShortcut}
+                    onSelect={handleForward}
+                  >
+                    Forward
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <LabelSubmenu
+                    accountId={accountId}
+                    threadId={conversationId}
+                    labelIds={conversationLabelIds}
+                  />
+                  <DropdownMenuItem
+                    icon={<FlagIcon />}
+                    accelerator={flagShortcut}
+                    onSelect={handleToggleFlag}
+                  >
+                    {isFlagged ? "Unflag" : "Flag"}
+                  </DropdownMenuItem>
+                </>
+              ) : null}
               <DropdownMenuItem
                 icon={isUnread ? <MailOpenIcon /> : <MailIcon />}
                 onSelect={handleToggleRead}
@@ -2394,6 +2479,13 @@ export function MessageReader({
             <span className="ml-1 flex items-center gap-1">{titleTrailing}</span>
           ) : null}
         </div>
+
+        {/* Narrow reader: the subject + labels as a wrapping heading. */}
+        {compactTitle ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-border/60 px-6 py-3">
+            {renderTitle(true)}
+          </div>
+        ) : null}
 
         {isTrashed ? (
           <div className="mx-5 mt-3 flex shrink-0 items-center gap-2 rounded-lg border border-warning/32 bg-warning-surface px-3 py-2">
