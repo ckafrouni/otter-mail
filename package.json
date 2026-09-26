@@ -6,6 +6,8 @@
     "prepare": "vp config --no-agent",
     "dev": "node scripts/dev-runner.ts",
     "dev:web": "vp run --filter @otter-mail/web dev",
+    "dev:mobile": "vp run --filter @otter-mail/mobile dev",
+    "ios": "vp run --filter @otter-mail/mobile ios",
     "start": "vp run --filter @otter-mail/desktop start",
     "build": "vp run --filter './apps/*' build",
     "build:translator": "node scripts/build-translator.ts",

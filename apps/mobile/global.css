@@ -1,0 +1,110 @@
+@import "tailwindcss";
+@import "uniwind";
+
+/* ─── Theme tokens ──────────────────────────────────────────────────────
+ * Otter Code's default palette (packages/shared/src/themePalettes.ts there,
+ * apps/web/src/main/theme/theme-palettes.ts here), with the names Otter Code
+ * Mobile gives its roles. Quiet zinc surfaces in light mode, a neutral-black
+ * canvas in dark mode, one blue primary for solid controls and focus.
+ * ─────────────────────────────────────────────────────────────────────── */
+@layer theme {
+  :root {
+    @variant light {
+      --color-screen: #fcfcfc;
+      --color-sheet: #fcfcfc;
+      --color-card: #ffffff;
+      --color-grouped-card: #f4f4f5;
+      --color-row-pressed: #f4f4f5;
+      --color-foreground: #27272a;
+      --color-foreground-muted: #6f6f79;
+      --color-border: #e4e4e7;
+      --color-separator: rgba(228, 228, 231, 0.8);
+      --color-primary: #1b4ed8;
+      --color-primary-foreground: #ffffff;
+      --color-primary-text: #1b4ed8;
+      --color-secondary: #f4f4f5;
+      --color-secondary-foreground: #27272a;
+      --color-input: #ffffff;
+      --color-input-border: #d4d4d8;
+      --color-placeholder: #6f6f79;
+      --color-icon: #27272a;
+      --color-icon-muted: #71717b;
+      --color-chevron: rgba(113, 113, 123, 0.42);
+      --color-danger: #fcebec;
+      --color-danger-foreground: #c10007;
+      --color-warning: #fcf4e8;
+      --color-warning-foreground: #bb4d00;
+      --color-star: #f59e0b;
+      --color-swipe-archive: #16a34a;
+      --color-swipe-read: #1b4ed8;
+      --color-swipe-trash: #dc2626;
+    }
+
+    @variant dark {
+      --color-screen: #0a0a0a;
+      --color-sheet: #0a0a0a;
+      --color-card: #111111;
+      --color-grouped-card: #1a1b1b;
+      --color-row-pressed: #141414;
+      --color-foreground: #f5f5f5;
+      --color-foreground-muted: #838383;
+      --color-border: #191919;
+      --color-separator: rgba(38, 38, 38, 0.9);
+      --color-primary: #346bf1;
+      --color-primary-foreground: #ffffff;
+      --color-primary-text: #4b7cf3;
+      --color-secondary: #1a1b1b;
+      --color-secondary-foreground: #f5f5f5;
+      --color-input: #111111;
+      --color-input-border: #1e1e1e;
+      --color-placeholder: #838383;
+      --color-icon: #f5f5f5;
+      --color-icon-muted: #818181;
+      --color-chevron: rgba(129, 129, 129, 0.42);
+      --color-danger: #301214;
+      --color-danger-foreground: #ff6467;
+      --color-warning: #312108;
+      --color-warning-foreground: #ffb900;
+      --color-star: #fbbf24;
+      --color-swipe-archive: #16a34a;
+      --color-swipe-read: #346bf1;
+      --color-swipe-trash: #dc2626;
+    }
+  }
+}
+
+/* ─── Typography ────────────────────────────────────────────────────── */
+@theme {
+  /* Keep these native family names aligned with app.config.ts. */
+  --font-sans: "DMSans-Regular";
+  --font-medium: "DMSans-Medium";
+  --font-bold: "DMSans-Bold";
+
+  /* Otter Code Mobile's type scale. */
+  --text-3xs: 11px;
+  --text-3xs--line-height: 14px;
+  --text-2xs: 12px;
+  --text-2xs--line-height: 16px;
+  --text-xs: 13px;
+  --text-xs--line-height: 17px;
+  --text-sm: 14px;
+  --text-sm--line-height: 19px;
+  --text-base: 16px;
+  --text-base--line-height: 23px;
+  --text-lg: 18px;
+  --text-lg--line-height: 23px;
+  --text-xl: 21px;
+  --text-xl--line-height: 28px;
+  --text-2xl: 26px;
+  --text-2xl--line-height: 32px;
+  --text-3xl: 30px;
+  --text-3xl--line-height: 36px;
+}
+
+@utility font-t3-medium {
+  font-family: var(--font-medium);
+}
+
+@utility font-t3-bold {
+  font-family: var(--font-bold);
+}

@@ -1,8 +1,9 @@
 # Otter Mail
 
-Otter Mail is a calm, fast Gmail client for macOS. It is an Electron app laid out like Otter Code
-(our fork of T3 Code): a pnpm monorepo built with Vite+ (`vp`), released through GitHub
-Releases with auto-update.
+Otter Mail is a calm, fast Gmail client for macOS, with an iPhone app alongside. It is an Electron
+app laid out like Otter Code (our fork of T3 Code): a pnpm monorepo built with Vite+ (`vp`),
+released through GitHub Releases with auto-update. The iPhone app is an Expo app set up like Otter
+Code Mobile.
 
 ## Where code lives
 
@@ -14,8 +15,13 @@ Releases with auto-update.
   - `src/updates.ts`: electron-updater against GitHub Releases.
 - `apps/web`: the React renderer. `index.html` is the main window, `tray-popover.html` the
   menu-bar mini inbox. UI primitives live in `src/components/ui/`.
-- `packages/contracts`: types shared by both sides, including `DesktopBridge`, the
-  `window.desktopBridge` API the preload exposes.
+- `apps/mobile`: the iPhone app (Expo, React Native, uniwind, react-navigation native stacks).
+  It talks to Gmail directly, with its own SQLite cache; there is no server. See `docs/mobile.md`.
+  - `src/gmail/`: OAuth (PKCE, Keychain), the Gmail REST client, MIME reading and writing.
+  - `src/state/`: the expo-sqlite cache (`db.ts`), sync, and optimistic mail actions.
+  - `src/features/`: one folder per screen (mailboxes, mailbox, thread, compose, settings).
+- `packages/contracts`: types shared across apps: `DesktopBridge`, the `window.desktopBridge`
+  API the preload exposes, and the Gmail types (`@otter-mail/contracts/gmail`).
 - `native/translator`: a Swift command-line helper for Apple's on-device Translation. It reads a
   JSON request on stdin and prints JSON. Building it needs full Xcode (macOS 26 SDK).
 - `scripts/`: dev runner, desktop packaging (`build-desktop-artifact.ts`), release helpers.
@@ -35,6 +41,7 @@ Releases with auto-update.
 
 - `pnpm install`, then `pnpm dev` (Vite dev server + main-process watcher + Electron with reload).
 - `pnpm start` runs the built app unpackaged; `pnpm dist:desktop:dmg` builds a DMG in `release/`.
+- `pnpm ios` builds the iPhone app into the booted simulator; `pnpm dev:mobile` starts Metro for it.
 - Data homes (`apps/desktop/src/paths.ts`, as in T3 Code): the installed app uses
   `~/.otter-mail/userdata`; dev runs use `~/.otter-mail/dev`, or `<worktree>/.otter-mail` in a
   linked worktree. `pnpm dev --home <dir>` overrides. Never point dev at the installed app's home.
@@ -62,4 +69,7 @@ For UI or behavior changes, run the app and check the change in it.
 - Match the surrounding code: its naming, comment density and idioms.
 - The mail cache is local-first: the UI renders from SQLite and sync catches up. Keep IPC
   payloads small and never block the renderer on Gmail.
-- macOS is the only target for now (Apple Translation, the Dock badge, the menu-bar popover).
+- macOS is the only desktop target for now (Apple Translation, the Dock badge, the menu-bar
+  popover), and iOS the only mobile one.
+- Mobile styling goes through uniwind classNames and the tokens in `apps/mobile/global.css`
+  (Otter Code's palette). Header buttons are native items (`unstable_headerRightItems`), not views.

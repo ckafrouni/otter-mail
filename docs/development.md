@@ -19,6 +19,7 @@
 | `pnpm typecheck`         | TypeScript across the workspace.                                               |
 | `pnpm lint` / `pnpm fmt` | Oxlint and Oxfmt through Vite+.                                                |
 | `pnpm dist:desktop:dmg`  | Unsigned DMG + ZIP for this Mac's architecture in `release/`.                  |
+| `pnpm ios`               | Builds the iPhone app into the booted simulator (see [mobile.md](mobile.md)).  |
 
 `pnpm dev` picks a port from the worktree path, so several checkouts can run at once. Set
 `OTTER_MAIL_PORT_OFFSET` to choose one yourself.
