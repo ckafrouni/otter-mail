@@ -1,0 +1,17 @@
+# Expo
+.expo/
+dist/
+expo-env.d.ts
+
+# Generated native projects (`expo prebuild`)
+/ios
+/android
+
+# Metro
+.metro-health-check*
+
+# Signing
+*.p8
+*.p12
+*.key
+*.mobileprovision

@@ -1,6 +1,6 @@
 # Otter Mail
 
-Gmail, calm and fast. A macOS desktop client for Gmail.
+Gmail, calm and fast. A macOS desktop client for Gmail, with an iPhone app alongside.
 
 - Several Gmail accounts side by side, or combined into one inbox
 - Gmail labels, plus saved views that filter across accounts
@@ -24,6 +24,7 @@ pnpm install
 pnpm dev
 ```
 
-See [docs/development.md](docs/development.md) for the full setup and
+See [docs/development.md](docs/development.md) for the full setup,
+[docs/mobile.md](docs/mobile.md) for the iPhone app, and
 [docs/release.md](docs/release.md) for how releases are cut. Contributions are welcome;
 start with [CONTRIBUTING.md](CONTRIBUTING.md).

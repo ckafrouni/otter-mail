@@ -3,6 +3,7 @@
 //   assets/dev/blueprint-macos-1024.png   the development ("blueprint") variant
 //   apps/desktop/resources/icon.icns      the released app
 //   apps/desktop/resources/icon-dev.icns  `pnpm dev` / `pnpm start` builds
+//   assets/*/…-ios-1024.png               full-bleed opaque icons for the iPhone app
 // macOS only (swift, sips, iconutil). Run with `pnpm icons:export`.
 
 import * as NodeChildProcess from "node:child_process";
@@ -42,6 +43,9 @@ function icns(png: string, output: string): void {
 run("swift", [NodePath.join(root, "scripts/lib/blueprint-icon.swift"), prodPng, devPng]);
 icns(prodPng, NodePath.join(resources, "icon.icns"));
 icns(devPng, NodePath.join(resources, "icon-dev.icns"));
+const iosIcon = NodePath.join(root, "scripts/lib/ios-icon.swift");
+run("swift", [iosIcon, prodPng, NodePath.join(root, "assets/prod/otter-mail-ios-1024.png")]);
+run("swift", [iosIcon, devPng, NodePath.join(root, "assets/dev/blueprint-ios-1024.png")]);
 console.log(
-  "Icons exported: assets/dev/blueprint-macos-1024.png, resources/icon.icns, resources/icon-dev.icns",
+  "Icons exported: assets/dev/blueprint-macos-1024.png, resources/icon.icns, resources/icon-dev.icns, assets/*/…-ios-1024.png",
 );
