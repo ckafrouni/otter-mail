@@ -46,6 +46,28 @@ export interface GoogleAuth {
   removeTokens(accountId: string): Promise<void>;
 }
 
+export type LanguageDetection = { language: string | null; confidence: number };
+
+/**
+ * `needsDownload`: the browser must download the language pack, which it
+ * only does after a click. `notInstalled`: the Mac's languages must be
+ * downloaded in System Settings.
+ */
+export type TranslationStatus =
+  | "ok"
+  | "notInstalled"
+  | "needsDownload"
+  | "unsupported"
+  | "unavailable";
+
+export type TranslationResult = { status: TranslationStatus; texts: string[] };
+
+/** On-device translation: Apple Translation on the Mac, Chrome's built-in Translator on the web. */
+export interface Translator {
+  detect(text: string): Promise<LanguageDetection>;
+  translate(texts: string[], source: string, target: string): Promise<TranslationResult>;
+}
+
 /** Tells background work (sync, prefetch) apart from the user's own requests. */
 export interface AsyncContext<T> {
   run<R>(value: T, fn: () => R): R;
@@ -106,6 +128,8 @@ export interface Platform {
   asyncContext<T>(): AsyncContext<T>;
   /** Download bodies of all mail for offline reading (not in a browser's storage). */
   offlineDownloads: boolean;
+  /** Absent where there's no on-device translator (browsers other than Chrome). */
+  translator?: Translator;
 }
 
 let current: Platform | null = null;

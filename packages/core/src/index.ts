@@ -8,6 +8,7 @@ import { registerCalendarHandlers } from "./handlers/calendar.js";
 import { registerGmailHandlers } from "./handlers/gmail.js";
 import { registerOtterAccountHandlers } from "./handlers/otter-account.js";
 import { registerSearchHandlers } from "./handlers/search.js";
+import { registerTranslationHandlers } from "./handlers/translation.js";
 import { broadcast, handle } from "./ipc.js";
 import { setPlatform, type Platform } from "./platform.js";
 import { pruneAttachmentCache } from "./services/attachment-cache.js";
@@ -26,6 +27,7 @@ export async function startCore(platform: Platform): Promise<void> {
   registerSearchHandlers();
   registerCalendarHandlers();
   registerOtterAccountHandlers();
+  registerTranslationHandlers();
   handle("keybindings:read", async () => readKeybindings());
   handle("keybindings:write", async (params: unknown) => {
     const result = await writeKeybindings((params as { rules?: unknown } | undefined)?.rules);

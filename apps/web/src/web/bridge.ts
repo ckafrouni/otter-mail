@@ -18,6 +18,7 @@ import type {
 } from "@otter-mail/contracts";
 
 import { connectBackend } from "./backend";
+import { detectLanguage, hasBuiltInTranslator, translate } from "./translator";
 import {
   SIGN_IN_CANCELLED,
   type GoogleSignInResult,
@@ -135,6 +136,13 @@ function applyEffect(effect: PageEffect): void {
 const backend = connectBackend({
   onEvent: emit,
   async onRequest(kind, params) {
+    if (kind === "detectLanguage") {
+      return detectLanguage((params as PageRequests["detectLanguage"]["params"]).text) as never;
+    }
+    if (kind === "translate") {
+      const { texts, source, target } = params as PageRequests["translate"]["params"];
+      return translate(texts, source, target) as never;
+    }
     const action =
       started[kind] ??
       (kind === "pickFiles"
@@ -228,7 +236,7 @@ export const webBridge: DesktopBridge = {
     menuBar: false,
     launchAtLogin: false,
     defaultMailApp: false,
-    translation: false,
+    translation: hasBuiltInTranslator,
     assistant: false,
     keybindingsFile: false,
     dragOut: false,

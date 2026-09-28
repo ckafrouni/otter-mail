@@ -1,13 +1,14 @@
 /**
- * Email translation (Apple's on-device translator) and its settings: the
- * languages the user reads, and whether other languages translate by
- * themselves. Translation can outlast the 5s IPC budget, so it runs as a task.
+ * Email translation (on the device: see services/translation.ts) and its
+ * settings: the languages the user reads, and whether other languages
+ * translate by themselves. Translation can outlast the 5s IPC budget, so it
+ * runs as a task.
  */
 
-import { ipcMain } from "electron";
-import { broadcast } from "../ipc.js";
-import { getSettings, runAsTask, updateSettings, type AppSettings } from "@otter-mail/core";
-import { detectLanguage, translateSegments } from "../services/translator.js";
+import { broadcast, handle } from "../ipc.js";
+import { getSettings, updateSettings, type AppSettings } from "../services/settings-store.js";
+import { detectLanguage, translateSegments } from "../services/translation.js";
+import { runAsTask } from "./ipc-budget.js";
 
 type Params = Record<string, unknown> | undefined;
 const str = (v: unknown) => (typeof v === "string" ? v : "");
@@ -19,9 +20,9 @@ async function translationSettings() {
 }
 
 export function registerTranslationHandlers(): void {
-  ipcMain.handle("translation:getSettings", async () => translationSettings());
+  handle("translation:getSettings", async () => translationSettings());
 
-  ipcMain.handle("translation:setSettings", async (_event, params: unknown) => {
+  handle("translation:setSettings", async (params: unknown) => {
     const p = params as Params;
     const patch: Partial<AppSettings> = {};
     if (p?.readLanguages !== undefined) {
@@ -45,13 +46,13 @@ export function registerTranslationHandlers(): void {
     return settings;
   });
 
-  ipcMain.handle("translation:detect", async (_event, params: unknown) => {
+  handle("translation:detect", async (params: unknown) => {
     const text = str((params as Params)?.text);
     if (!text.trim()) return { language: null, confidence: 0 };
     return detectLanguage(text.slice(0, 4000));
   });
 
-  ipcMain.handle("translation:translate", async (_event, params: unknown) => {
+  handle("translation:translate", async (params: unknown) => {
     const p = params as Params;
     const segments = p?.segments;
     const source = str(p?.source);

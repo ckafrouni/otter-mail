@@ -18,6 +18,7 @@ import type { AsyncContext, Platform, SqlDatabase } from "@otter-mail/core";
 import { broadcast } from "./ipc.js";
 import { logger } from "./logger.js";
 import { googleAuth } from "./services/gmail-oauth.js";
+import { appleTranslator } from "./services/translator.js";
 import { refreshTray } from "./services/tray.js";
 import { focusMainWindow } from "./windows/main-window.js";
 
@@ -206,5 +207,6 @@ export function desktopPlatform(): Platform {
       return { run: (value, fn) => storage.run(value, fn), get: () => storage.getStore() };
     },
     offlineDownloads: true,
+    translator: appleTranslator,
   };
 }

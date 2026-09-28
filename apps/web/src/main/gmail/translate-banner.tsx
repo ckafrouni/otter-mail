@@ -87,8 +87,9 @@ function errorMessage(error: Error, from: string, to: string): string {
   if (error instanceof TranslationUnavailableError) {
     if (error.status === "notInstalled")
       return `Download ${from} and ${to} in System Settings to translate this message.`;
-    if (error.status === "unsupported")
-      return `Apple's translator can't translate ${from} to ${to}.`;
+    if (error.status === "needsDownload")
+      return `Chrome needs to download ${from} → ${to} first. Click Try Again to download it.`;
+    if (error.status === "unsupported") return `This device can't translate ${from} to ${to}.`;
     return "Translating needs macOS 26 or later.";
   }
   return "Couldn't translate this message.";

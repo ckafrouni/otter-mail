@@ -159,6 +159,11 @@ export async function webPlatform(page: Page): Promise<Platform> {
     // which is fine without the offline body download.
     asyncContext: noContext,
     offlineDownloads: false,
+    // Chrome's built-in translator, in the page (the UI only offers it where it exists).
+    translator: {
+      detect: (text) => page.request("detectLanguage", { text }),
+      translate: (texts, source, target) => page.request("translate", { texts, source, target }),
+    },
   };
   return platform;
 }

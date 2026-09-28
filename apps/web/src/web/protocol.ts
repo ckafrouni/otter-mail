@@ -5,7 +5,7 @@
  * page can do (file pickers, Google sign-in popups, downloads, notifications).
  */
 
-import type { PickedFile } from "@otter-mail/core";
+import type { LanguageDetection, PickedFile, TranslationResult } from "@otter-mail/core";
 
 /** The Gmail sign-in the relay's popup hands back (see infra/relay, /v1/gmail/callback). */
 export type GoogleSignInResult = {
@@ -25,6 +25,11 @@ export { GMAIL_SIGN_IN_CANCELLED as SIGN_IN_CANCELLED } from "@otter-mail/contra
 export type PageRequests = {
   pickFiles: { params: undefined; result: PickedFile[] };
   googleSignIn: { params: { loginHint?: string }; result: GoogleSignInResult };
+  detectLanguage: { params: { text: string }; result: LanguageDetection };
+  translate: {
+    params: { texts: string[]; source: string; target: string };
+    result: TranslationResult;
+  };
 };
 
 export type PageEffect =

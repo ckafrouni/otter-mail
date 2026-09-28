@@ -361,7 +361,12 @@ export type TranslationSettings = {
   autoTranslate: boolean;
 };
 
-export type TranslationStatus = "ok" | "notInstalled" | "unsupported" | "unavailable";
+export type TranslationStatus =
+  | "ok"
+  | "notInstalled"
+  | "needsDownload"
+  | "unsupported"
+  | "unavailable";
 
 export type SaveViewParams = { id?: string; name: string; rules: ViewRule[]; mailbox?: string };
 

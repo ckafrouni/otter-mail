@@ -29,6 +29,8 @@ const ORIGIN_CHANNELS: Record<keyof PageRequests | "download" | "open", string[]
   googleSignIn: ["gmail:addAccount"],
   download: ["gmail:getAttachment"],
   open: ["gmail:openAttachment", "gmail:openComposeAttachment"],
+  detectLanguage: ["translation:detect"],
+  translate: ["translation:translate"],
 };
 
 type TabMessage =

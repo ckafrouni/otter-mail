@@ -25,7 +25,6 @@ import { createTray, destroyTray } from "../services/tray.js";
 import { focusMainWindow } from "../windows/main-window.js";
 import { setSettingsTarget, takeSettingsTarget } from "../windows/settings-window.js";
 import { registerAssistantHandlers } from "./assistant.js";
-import { registerTranslationHandlers } from "./translation.js";
 import { registerTrayPopoverHandlers } from "./tray-popover.js";
 
 /** Watches keybindings.json (editors replace files) so hand edits apply live. */
@@ -148,7 +147,6 @@ export function registerHandlers(): void {
   });
 
   registerAssistantHandlers();
-  registerTranslationHandlers();
   registerTrayPopoverHandlers();
 
   logger.info("handlers", "✓ IPC handlers registered");
