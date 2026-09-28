@@ -1,13 +1,13 @@
 /**
  * `window.desktopBridge` in a browser: the same API the desktop's preload
- * gives the renderer, backed by the mail backend running in a Web Worker
- * (worker.ts). The renderer can't tell the difference, except through
- * `features`, which switch off what only the Mac app has.
+ * gives the renderer, backed by the mail backend (backend.ts: a Web Worker
+ * shared by every open tab). The renderer can't tell the difference, except
+ * through `features`, which switch off what only the Mac app has.
  *
  * A few things belong to the page itself: window-level channels (settings
  * navigation, ⌘W), and whatever needs the user's click to be allowed (file
  * pickers, Google's sign-in popup). Those start right when the renderer
- * invokes the channel, and the worker's request picks up what they return.
+ * invokes the channel, and the backend's request picks up what they return.
  */
 
 import type {
@@ -17,13 +17,12 @@ import type {
   UpdateState,
 } from "@otter-mail/contracts";
 
+import { connectBackend } from "./backend";
 import {
   SIGN_IN_CANCELLED,
-  type FromWorker,
   type GoogleSignInResult,
   type PageEffect,
   type PageRequests,
-  type ToWorker,
 } from "./protocol";
 
 const RELAY_URL = import.meta.env.VITE_RELAY_URL || "https://relay.mail.otterware.dev";
@@ -131,66 +130,22 @@ function applyEffect(effect: PageEffect): void {
   }
 }
 
-// ── The worker ─────────────────────────────────────────────────────────────
+// ── The backend ────────────────────────────────────────────────────────────
 
-const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
-const post = (message: ToWorker) => worker.postMessage(message, []);
-let nextId = 1;
-const results = new Map<
-  number,
-  { resolve: (value: unknown) => void; reject: (error: Error) => void }
->();
-
-async function answer<K extends keyof PageRequests>(
-  id: number,
-  kind: K,
-  params: PageRequests[K]["params"],
-) {
-  const action =
-    started[kind] ??
-    (kind === "pickFiles"
-      ? pickFiles()
-      : googleSignIn((params as { loginHint?: string })?.loginHint));
-  delete started[kind];
-  try {
-    post({ type: "reply", id, result: await action });
-  } catch (err) {
-    post({ type: "reply", id, error: err instanceof Error ? err.message : String(err) });
-  }
-}
-
-worker.addEventListener("message", (event: MessageEvent<FromWorker>) => {
-  const message = event.data;
-  switch (message.type) {
-    case "result": {
-      const pending = results.get(message.id);
-      results.delete(message.id);
-      if (message.error !== undefined) pending?.reject(new Error(message.error));
-      else pending?.resolve(message.result);
-      break;
-    }
-    case "event":
-      emit(message.channel, message.params);
-      break;
-    case "request":
-      void answer(message.id, message.kind, message.params);
-      break;
-    case "effect":
-      applyEffect(message);
-      break;
-    case "failed":
-      console.error("The mail backend failed to start:", message.error);
-      break;
-  }
+const backend = connectBackend({
+  onEvent: emit,
+  async onRequest(kind, params) {
+    const action =
+      started[kind] ??
+      (kind === "pickFiles"
+        ? pickFiles()
+        : googleSignIn((params as { loginHint?: string } | undefined)?.loginHint));
+    delete started[kind];
+    return action as never;
+  },
+  onEffect: applyEffect,
+  onFailed: (error) => console.error("The mail backend failed to start:", error),
 });
-
-function invokeWorker<T>(channel: string, params?: unknown): Promise<T> {
-  const id = nextId++;
-  post({ type: "invoke", id, channel, params });
-  return new Promise<T>((resolve, reject) => {
-    results.set(id, { resolve: resolve as (value: unknown) => void, reject });
-  });
-}
 
 // ── Channels the page answers itself ───────────────────────────────────────
 
@@ -224,14 +179,14 @@ async function invoke<T>(channel: string, params?: unknown): Promise<T> {
   if (channel === "gmail:cancelAddAccount") signInPopup?.close();
 
   if (channel === "otter:signIn") {
-    const result = await invokeWorker<{ redirectTo?: string } | null>(channel, {
+    const result = await backend.invoke<{ redirectTo?: string } | null>(channel, {
       ...(params as object),
       callbackURL: `${location.origin}/`,
     });
     if (result?.redirectTo) location.assign(result.redirectTo);
     return result as T;
   }
-  const result = await invokeWorker<T>(channel, params);
+  const result = await backend.invoke<T>(channel, params);
   // Signed out (or the account deleted): back to the landing page.
   if (channel === "otter:signOut" || channel === "otter:deleteAccount") location.assign("/");
   return result;
@@ -305,7 +260,7 @@ export const webBridge: DesktopBridge = {
 };
 
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") post({ type: "resume" });
+  if (document.visibilityState === "visible") backend.resume();
 });
 
 // Notifications need permission, which browsers only ask for after a click.

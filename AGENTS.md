@@ -20,14 +20,15 @@ auto-update.
   - `src/updates.ts`: electron-updater against GitHub Releases.
 - `apps/web`: the React renderer, one build for both apps. `index.html` is the main window,
   `tray-popover.html` the menu-bar mini inbox. UI primitives live in `src/components/ui/`.
-  `src/web/` is the browser shell: core in a Web Worker (SQLite WASM on OPFS), and the bridge
-  that stands in for the preload. What only the Mac app has is off in `desktopBridge.features`.
+  `src/web/` is the browser shell: core in a Web Worker (SQLite WASM on OPFS) hosted by one
+  tab for every open tab (`backend.ts`), and the bridge that stands in for the preload. What only the Mac app has is off in `desktopBridge.features`.
 - `packages/contracts`: types shared by both sides, including `DesktopBridge`, the
   `window.desktopBridge` API the preload exposes, and the relay's API (`src/relay.ts`).
 - `infra/relay`: https://relay.mail.otterware.dev, a Cloudflare Worker (Hono, better-auth,
   Drizzle on D1, a Durable Object per user). Otter accounts, the Gmail accounts linked to them,
-  and realtime mail: Gmail → Pub/Sub → relay → WebSocket to each signed-in Mac. It never sees mail
-  or Gmail tokens. See its README.
+  and realtime mail: Gmail → Pub/Sub → relay → WebSocket to each signed-in device. It never sees
+  mail; the web app's Gmail tokens pass through it (never stored), the Mac app's never do. See its
+  README.
 - `native/translator`: a Swift command-line helper for Apple's on-device Translation. It reads a
   JSON request on stdin and prints JSON. Building it needs full Xcode (macOS 26 SDK).
 - `scripts/`: dev runner, desktop packaging (`build-desktop-artifact.ts`), release helpers.

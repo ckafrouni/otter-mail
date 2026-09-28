@@ -117,9 +117,37 @@ function applyLocalLabelChange(
   };
 }
 
+/** Each message's latest Gmail write (settled either way), for the next one to wait on. */
+const lastWrites = new Map<string, Promise<void>>();
+
+/**
+ * Runs `write` once the earlier writes to any of these messages are done, so
+ * Gmail gets them in the order the user made them: trash then undo must not
+ * land as untrash then trash (the mail would stay trashed, and "Undone" lie).
+ */
+function afterEarlierWrites(
+  accountId: string,
+  messageIds: string[],
+  write: () => Promise<unknown>,
+): Promise<unknown> {
+  const keys = messageIds.map((id) => `${accountId}:${id}`);
+  const earlier = keys.flatMap((key) => lastWrites.get(key) ?? []);
+  const running = Promise.all(earlier).then(write);
+  const done = running.then(
+    () => {},
+    () => {},
+  );
+  for (const key of keys) lastWrites.set(key, done);
+  void done.then(() => {
+    for (const key of keys) if (lastWrites.get(key) === done) lastWrites.delete(key);
+  });
+  return running;
+}
+
 /** Mirrors a label change locally, then settles its Gmail write within the IPC
  *  budget. While the write is pending, reads from Gmail keep the change (see
- *  pending-label-writes); if it fails, the local change is reverted. */
+ *  pending-label-writes); if it fails, the local change is reverted. Writes to
+ *  the same messages reach Gmail in order. */
 function settleLabelWrite(
   channel: string,
   accountId: string,
@@ -130,7 +158,7 @@ function settleLabelWrite(
 ): Promise<{ ok: true; pending?: boolean }> {
   const revert = applyLocalLabelChange(accountId, messageIds, add, remove);
   const tracked = trackLabelWrite(accountId, messageIds, add, remove);
-  const running = write();
+  const running = afterEarlierWrites(accountId, messageIds, write);
   running.then(tracked.settled, tracked.dropped);
   return settleGmailWrite(channel, running, revert);
 }

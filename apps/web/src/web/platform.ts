@@ -21,7 +21,10 @@ export type Page = {
   onResume(listener: () => void): () => void;
 };
 
-/** The mail cache. OPFS "SAH pool" storage needs no cross-origin isolation, but one tab at a time. */
+/**
+ * The mail cache. OPFS "SAH pool" storage needs no cross-origin isolation;
+ * one tab at a time can open it, so only the hosting tab runs this (backend.ts).
+ */
 async function openDatabase(): Promise<SqlDatabase> {
   const sqlite3 = await sqlite3InitModule();
   const pool = await sqlite3.installOpfsSAHPoolVfs({ name: "otter-mail" });
