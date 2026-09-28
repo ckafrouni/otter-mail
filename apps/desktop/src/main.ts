@@ -11,6 +11,7 @@ import { broadcast } from "./ipc.js";
 import { logger } from "./logger.js";
 import { configureAppPaths } from "./paths.js";
 import { loadSignIns } from "./services/gmail-oauth.js";
+import { loadOtterAccount } from "./services/otter-account.js";
 import { parseMailtoUrl, setPendingMailto } from "./services/mailto-target.js";
 import { syncAllAccounts } from "./services/mail-sync.js";
 import { pruneAttachmentCache } from "./services/attachment-cache.js";
@@ -297,6 +298,7 @@ void app.whenReady().then(async () => {
   });
 
   await loadSignIns();
+  await loadOtterAccount();
   registerHandlers();
   setupApplicationMenu();
   initUpdates();

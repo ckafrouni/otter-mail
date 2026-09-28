@@ -8,6 +8,7 @@
 import { app, ipcMain, nativeImage, shell } from "electron";
 import { broadcast } from "../ipc.js";
 import {
+  getAccount,
   listAccounts,
   removeAccount as storeRemoveAccount,
   updateAccount as storeUpdateAccount,
@@ -61,6 +62,7 @@ import {
   takeSessionDraft,
 } from "./draft-sessions.js";
 import * as mailSync from "../services/mail-sync.js";
+import { accountAdded, accountEdited, accountRemoved } from "../services/linked-accounts.js";
 import { getSenderAvatar } from "../services/avatar-store.js";
 import { updateDockBadge } from "../services/notifier.js";
 import { refreshTray, createTray, destroyTray } from "../services/tray.js";
@@ -70,6 +72,16 @@ import { ALL_MAIL_LABEL_ID } from "../gmail/types.js";
 import type { ComposeAttachment, MailView, ViewRule } from "../gmail/types.js";
 
 const LOCAL_PAGE_SIZE = 50;
+
+/** Removes an account from this Mac: its sync, sign-in, and cached mail. */
+export async function removeLocalAccount(accountId: string): Promise<void> {
+  mailSync.forgetAccount(accountId);
+  forgetLiveCursors(accountId);
+  await removeAccountTokens(accountId);
+  await storeRemoveAccount(accountId);
+  mailStore.removeAccountData(accountId);
+  updateDockBadge();
+}
 
 /** Re-reads every label from Gmail (names, colors, counts) into the cache. */
 async function refreshLabels(accountId: string): Promise<void> {
@@ -212,6 +224,7 @@ export function registerGmailHandlers(): void {
     try {
       const account = await oauthAddAccount(email);
       mailSync.syncAccount(account.id, { force: true });
+      void accountAdded(account);
       // The browser sign-in outlasts the renderer's IPC timeout, so the caller
       // usually never sees this return — tell every window to reload accounts.
       broadcast("gmail:accounts-changed");
@@ -234,12 +247,9 @@ export function registerGmailHandlers(): void {
     console.log("[gmail:removeAccount]", { accountId: p?.accountId });
     try {
       const accountId = assertString(p?.accountId, "accountId");
-      mailSync.forgetAccount(accountId);
-      forgetLiveCursors(accountId);
-      await removeAccountTokens(accountId);
-      await storeRemoveAccount(accountId);
-      mailStore.removeAccountData(accountId);
-      updateDockBadge();
+      const account = await getAccount(accountId);
+      await removeLocalAccount(accountId);
+      if (account) void accountRemoved(account.email);
       return { ok: true as const };
     } catch (err) {
       console.log("[gmail:removeAccount] error", { error: String(err) });
@@ -259,6 +269,7 @@ export function registerGmailHandlers(): void {
       const signature = asString(p?.signature);
       const updated = await storeUpdateAccount(accountId, { displayName, color, signature });
       broadcast("gmail:accounts-changed");
+      if (displayName !== undefined || color !== undefined) void accountEdited(updated);
       void refreshTray();
       return updated;
     } catch (err) {

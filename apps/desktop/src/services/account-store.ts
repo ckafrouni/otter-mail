@@ -71,7 +71,7 @@ export async function updateAccount(
     ...current,
     displayName:
       patch.displayName !== undefined ? patch.displayName || undefined : current.displayName,
-    color: patch.color !== undefined ? patch.color : current.color,
+    color: patch.color !== undefined ? patch.color || undefined : current.color,
     signature: patch.signature !== undefined ? patch.signature || undefined : current.signature,
   };
   accounts[index] = updated;

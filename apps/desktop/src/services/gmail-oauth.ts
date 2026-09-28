@@ -8,6 +8,9 @@
  * Tokens live in userData/google-tokens.json, each account's entry encrypted
  * with Electron's safeStorage (Keychain-backed). Access tokens are served from
  * memory and refreshed a little before they expire.
+ *
+ * The same flow, with identity scopes only, signs in to the Otter account
+ * (otter-account.ts): it needs a Google ID token, not Gmail access.
  */
 
 import { app, safeStorage, shell } from "electron";
@@ -48,6 +51,9 @@ const SCOPES = [
   // then falls back to an email reply; re-adding the account upgrades it.
   "https://www.googleapis.com/auth/calendar.events",
 ];
+
+/** Who the user is, for the Otter account: no access to their data. */
+const IDENTITY_SCOPES = ["openid", "email", "profile"];
 
 // ── Token storage ────────────────────────────────────────────────────────────
 
@@ -127,6 +133,8 @@ class SignInExpiredError extends Error {
 
 type TokenResponse = {
   access_token: string;
+  /** Present when the grant includes `openid`, on refreshes too. */
+  id_token?: string;
   refresh_token?: string;
   expires_in?: number;
   scope?: string;
@@ -189,8 +197,15 @@ export function cancelSignIn(): void {
   pendingSignIn?.cancel();
 }
 
-/** Runs the browser half of the flow and resolves with the authorization code. */
-async function authorizeInBrowser(loginHint?: string): Promise<{
+/**
+ * Runs the browser half of the flow and resolves with the authorization code.
+ * Mail sign-ins ask for consent every time, so Google always returns a
+ * refresh token; identity sign-ins only ask which account.
+ */
+async function authorizeInBrowser(opts: {
+  purpose: "mail" | "identity";
+  loginHint?: string;
+}): Promise<{
   code: string;
   redirectUri: string;
   verifier: string;
@@ -261,13 +276,14 @@ async function authorizeInBrowser(loginHint?: string): Promise<{
       client_id: clientId,
       redirect_uri: redirectUri,
       response_type: "code",
-      scope: SCOPES.join(" "),
+      scope: (opts.purpose === "mail" ? SCOPES : IDENTITY_SCOPES).join(" "),
       state,
       code_challenge: challenge,
       code_challenge_method: "S256",
-      access_type: "offline",
-      prompt: "consent",
-      ...(loginHint ? { login_hint: loginHint } : {}),
+      ...(opts.purpose === "mail"
+        ? { access_type: "offline", prompt: "consent" }
+        : { prompt: "select_account" }),
+      ...(opts.loginHint ? { login_hint: opts.loginHint } : {}),
     }).toString();
     shell.openExternal(authorizeUrl.toString()).catch((err: unknown) => {
       clearTimeout(timer);
@@ -296,7 +312,10 @@ async function authorizeInBrowser(loginHint?: string): Promise<{
 export async function addAccount(loginHint?: string): Promise<GmailAccount> {
   let tokens: StoredTokens;
   try {
-    const { code, redirectUri, verifier } = await authorizeInBrowser(loginHint);
+    const { code, redirectUri, verifier } = await authorizeInBrowser({
+      purpose: "mail",
+      loginHint,
+    });
     tokens = toStored(
       (await getCredentials()).clientId,
       await tokenRequest({
@@ -345,6 +364,19 @@ export async function addAccount(loginHint?: string): Promise<GmailAccount> {
   return account;
 }
 
+/** Signs in to Google in the browser for identity only; resolves with the ID token. */
+export async function signInForIdToken(): Promise<string> {
+  const { code, redirectUri, verifier } = await authorizeInBrowser({ purpose: "identity" });
+  const response = await tokenRequest({
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: redirectUri,
+    code_verifier: verifier,
+  });
+  if (!response.id_token) throw new Error("Google did not return an ID token.");
+  return response.id_token;
+}
+
 // ── Sign-in state ────────────────────────────────────────────────────────────
 
 export const SIGNED_OUT_MESSAGE = "Signed out of Google. Sign in to this account again.";
@@ -369,14 +401,11 @@ type CachedToken = { accessToken: string; expiresAt: number };
 const tokenCache = new Map<string, CachedToken>();
 const tokenLoads = new Map<string, Promise<string>>();
 
-async function loadAccessToken(accountId: string, forceRefresh: boolean): Promise<string> {
+/** Refreshes the account's tokens with Google and stores the new access token. */
+async function refreshTokens(accountId: string): Promise<TokenResponse> {
   const store = await loadStore();
   const stored = store.get(accountId);
   if (!stored) throw new Error(SIGNED_OUT_MESSAGE);
-  if (!forceRefresh && stored.expiresAt - REFRESH_AHEAD_MS > Date.now()) {
-    tokenCache.set(accountId, { accessToken: stored.accessToken, expiresAt: stored.expiresAt });
-    return stored.accessToken;
-  }
   let response: TokenResponse;
   try {
     response = await tokenRequest({
@@ -399,7 +428,28 @@ async function loadAccessToken(accountId: string, forceRefresh: boolean): Promis
     await saveStore();
   }
   tokenCache.set(accountId, { accessToken: refreshed.accessToken, expiresAt: refreshed.expiresAt });
-  return refreshed.accessToken;
+  return response;
+}
+
+async function loadAccessToken(accountId: string, forceRefresh: boolean): Promise<string> {
+  const stored = (await loadStore()).get(accountId);
+  if (!stored) throw new Error(SIGNED_OUT_MESSAGE);
+  if (!forceRefresh && stored.expiresAt - REFRESH_AHEAD_MS > Date.now()) {
+    tokenCache.set(accountId, { accessToken: stored.accessToken, expiresAt: stored.expiresAt });
+    return stored.accessToken;
+  }
+  return (await refreshTokens(accountId)).access_token;
+}
+
+/**
+ * A fresh Google ID token for a signed-in account, proving to the relay that
+ * this device signed in to it. Google returns one with every refresh.
+ */
+export async function getIdToken(accountId: string): Promise<string> {
+  const { id_token } = await refreshTokens(accountId);
+  if (!id_token)
+    throw new Error("Google did not return an ID token. Sign in to this account again.");
+  return id_token;
 }
 
 /**

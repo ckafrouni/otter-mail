@@ -545,6 +545,21 @@ export async function listHistory(
   return (await gmailFetch(accountId, `/history?${query.toString()}`)) as GmailHistoryPage;
 }
 
+/**
+ * Asks Gmail to publish this mailbox's changes to a Pub/Sub topic (the
+ * relay's). A watch lasts 7 days; Gmail recommends renewing it daily.
+ */
+export async function watchMailbox(
+  accountId: string,
+  topicName: string,
+): Promise<{ historyId: string; expiration: number }> {
+  const data = (await gmailFetch(accountId, "/watch", {
+    method: "POST",
+    body: JSON.stringify({ topicName }),
+  })) as { historyId?: string; expiration?: string };
+  return { historyId: data.historyId ?? "", expiration: Number(data.expiration ?? 0) };
+}
+
 /** Distinguish an expired-history-cursor (HTTP 404) from other failures. */
 export function isHistoryExpiredError(err: unknown): boolean {
   return err instanceof GmailApiError && err.status === 404;

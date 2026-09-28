@@ -164,6 +164,7 @@ export function quotaCost(method: string, path: string): number {
   if (p === "/profile") return 1;
   if (p.startsWith("/labels")) return write ? 5 : 1;
   if (p.startsWith("/history")) return 2;
+  if (p === "/watch" || p === "/stop") return 100;
   if (p === "/messages/send" || /^\/drafts\/send/.test(p)) return 100;
   if (/^\/messages\/batch(Delete|Modify)/.test(p)) return 50;
   if (p.startsWith("/threads")) return method === "DELETE" ? 20 : 10;

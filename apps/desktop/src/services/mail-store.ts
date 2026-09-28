@@ -1440,11 +1440,16 @@ export function removeAccountData(accountId: string): void {
     d.prepare("DELETE FROM message_labels WHERE accountId = ?").run(accountId);
     d.prepare("DELETE FROM labels WHERE accountId = ?").run(accountId);
     d.prepare("DELETE FROM sync_state WHERE accountId = ?").run(accountId);
-    // Per-account sync bookkeeping (resume cursor, history seed, backfill flag):
+    // Per-account sync bookkeeping (resume cursor, history seed, backfill flag,
+    // push watch):
     // a re-added account must start its first sync from scratch.
-    const kvKeys = ["fullSyncCursor", "fullSyncSeed", "fullSyncRefresh", "spamTrashBackfilled"].map(
-      (prefix) => `${prefix}:${accountId}`,
-    );
+    const kvKeys = [
+      "fullSyncCursor",
+      "fullSyncSeed",
+      "fullSyncRefresh",
+      "spamTrashBackfilled",
+      "gmailWatch",
+    ].map((prefix) => `${prefix}:${accountId}`);
     d.prepare(`DELETE FROM kv WHERE key IN (${kvKeys.map(() => "?").join(", ")})`).run(...kvKeys);
     d.exec("COMMIT");
   } catch (err) {

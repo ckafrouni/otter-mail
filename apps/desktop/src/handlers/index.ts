@@ -9,6 +9,7 @@ import { registerAssistantHandlers } from "./assistant.js";
 import { registerSearchHandlers } from "./search.js";
 import { registerCalendarHandlers } from "./calendar.js";
 import { registerTranslationHandlers } from "./translation.js";
+import { registerOtterAccountHandlers } from "./otter-account.js";
 import { takePendingOpenMessage } from "../services/open-message-target.js";
 import { focusMainWindow } from "../windows/main-window.js";
 import { listMailApps, setDefaultMailHandler } from "../services/default-mail.js";
@@ -39,7 +40,8 @@ export function registerHandlers(): void {
       p?.pane === "accounts" ||
       p?.pane === "views" ||
       p?.pane === "keybindings" ||
-      p?.pane === "assistant"
+      p?.pane === "assistant" ||
+      p?.pane === "otter"
         ? p.pane
         : "general";
     setSettingsTarget({
@@ -108,6 +110,9 @@ export function registerHandlers(): void {
 
   // Tray popover (mini inbox) handlers
   registerTrayPopoverHandlers();
+
+  // Otter account: sign-in, linked accounts, and push (realtime) mail
+  registerOtterAccountHandlers();
 
   logger.info("handlers", "✓ IPC handlers registered");
 

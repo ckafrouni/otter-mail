@@ -13,8 +13,11 @@
  *    quota priority. It can take a long time on a big mailbox and never holds
  *    up the sync lane or the "Syncing…" status.
  *
- * Sync is fire-and-forget; the renderer polls getSyncStatus() to show
- * progress and refreshes its views when `revision` says the cache changed.
+ * Syncs run when Gmail pushes a change (realtime.ts, via the relay), on a
+ * timer, and when the user asks. The timer is only a fallback for accounts
+ * that get pushes. Sync is fire-and-forget; the renderer polls
+ * getSyncStatus() to show progress and refreshes its views when `revision`
+ * says the cache changed.
  */
 
 import { logger } from "../logger.js";
@@ -104,19 +107,32 @@ function recordFailure(accountId: string): void {
   failures.set(accountId, { count, retryAt: Date.now() + delay });
 }
 
+// ── Push ─────────────────────────────────────────────────────────────────
+// Accounts whose changes Gmail pushes (realtime.ts keeps this current) sync
+// on each push; the timer only checks on them every few minutes, in case a
+// push got lost.
+
+const PUSHED_POLL_MS = 5 * 60_000;
+let pushedAccounts: ReadonlySet<string> = new Set();
+
+export function setPushedAccounts(accountIds: Iterable<string>): void {
+  pushedAccounts = new Set(accountIds);
+}
+
 /**
  * Kick off a background sync for one account (no-op if one is already running).
- * `force` skips the post-sync cooldown (launch, timer, user); non-forced calls
- * are read-path triggers. `trigger: "timer"` still respects failure backoff,
- * which only an explicit request (`force` without a trigger) skips.
+ * `force` skips the post-sync cooldown (launch, timer, push, user); non-forced
+ * calls are read-path triggers. `trigger: "timer" | "push"` still respects
+ * failure backoff, which only an explicit request (`force` without a trigger)
+ * skips. A push or explicit request arriving mid-run runs once more after it.
  */
 export function syncAccount(
   accountId: string,
-  opts?: { force?: boolean; trigger?: "timer" },
+  opts?: { force?: boolean; trigger?: "timer" | "push" },
 ): void {
-  const explicit = opts?.force === true && opts.trigger !== "timer";
+  const explicit = opts?.force === true && opts.trigger === undefined;
   if (running.has(accountId)) {
-    if (explicit) rerun.add(accountId);
+    if (explicit || opts?.trigger === "push") rerun.add(accountId);
     return;
   }
   // Re-added after removal: the old run has ended (not running), start fresh.
@@ -127,6 +143,13 @@ export function syncAccount(
     return;
   }
   if (!explicit && Date.now() < (failures.get(accountId)?.retryAt ?? 0)) return;
+  if (
+    opts?.trigger === "timer" &&
+    pushedAccounts.has(accountId) &&
+    Date.now() - (lastFinishedAt.get(accountId) ?? 0) < PUSHED_POLL_MS
+  ) {
+    return;
+  }
   if (
     !opts?.force &&
     Date.now() - (lastFinishedAt.get(accountId) ?? 0) < READ_TRIGGER_COOLDOWN_MS
@@ -148,7 +171,7 @@ export function syncAccount(
 /** Sync every connected account — launch, menu, and the auto timer force it. */
 export async function syncAllAccounts(opts?: {
   force?: boolean;
-  trigger?: "timer";
+  trigger?: "timer" | "push";
 }): Promise<void> {
   try {
     const accounts = await listAccounts();
