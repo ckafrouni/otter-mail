@@ -4,15 +4,16 @@
  * stored on this Mac and shared live between Settings and the composer.
  */
 
+import { setSyncedPreference, type SyncedKey } from "../synced-preferences";
 import { useSyncExternalStore } from "react";
 import type { ProviderKind } from "./api";
 
 type Prefs = { favorites: string[]; hidden: string[] };
 
-const KEYS: Record<keyof Prefs, string> = {
+const KEYS = {
   favorites: "assistant:favorite-models",
   hidden: "assistant:hidden-models",
-};
+} as const satisfies Record<keyof Prefs, SyncedKey>;
 
 const listeners = new Set<() => void>();
 
@@ -28,10 +29,17 @@ function read(key: string): string[] {
 let snapshot: Prefs = { favorites: read(KEYS.favorites), hidden: read(KEYS.hidden) };
 
 function write(name: keyof Prefs, values: string[]): void {
-  localStorage.setItem(KEYS[name], JSON.stringify(values));
+  setSyncedPreference(KEYS[name], JSON.stringify(values));
   snapshot = { ...snapshot, [name]: values };
   for (const listener of listeners) listener();
 }
+
+// Picked on another device (or in another window).
+window.addEventListener("storage", (event) => {
+  if (event.key !== KEYS.favorites && event.key !== KEYS.hidden) return;
+  snapshot = { favorites: read(KEYS.favorites), hidden: read(KEYS.hidden) };
+  for (const listener of listeners) listener();
+});
 
 export const modelKey = (kind: ProviderKind, slug: string) => `${kind}:${slug}`;
 

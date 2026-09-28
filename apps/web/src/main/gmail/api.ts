@@ -394,6 +394,8 @@ export const gmailApi = {
   /** Resolves null when the sign-in was cancelled. */
   addAccount: (email?: string): Promise<GmailAccount | null> =>
     ipc("gmail:addAccount", email ? { email } : undefined),
+  /** Re-reads every account's signature from Gmail (answers at once; accounts-changed follows). */
+  refreshSignatures: (): Promise<void> => ipc("gmail:refreshSignatures"),
   /** Stops waiting for the browser sign-in; the pending addAccount resolves null. */
   cancelAddAccount: (): Promise<void> => ipc("gmail:cancelAddAccount"),
 

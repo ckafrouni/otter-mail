@@ -1,3 +1,4 @@
+import { setSyncedPreference } from "../synced-preferences";
 import { useEffect, useState } from "react";
 import {
   BUILT_IN_THEMES,
@@ -31,7 +32,7 @@ export const OTTER_THEME: ThemeDefinition = {
 
 export const APP_THEMES: ReadonlyArray<ThemeDefinition> = [OTTER_THEME, ...BUILT_IN_THEMES];
 
-const STORAGE_KEY: Record<ThemeAppearance, string> = {
+const STORAGE_KEY: Record<ThemeAppearance, "otter:theme:light" | "otter:theme:dark"> = {
   light: "otter:theme:light",
   dark: "otter:theme:dark",
 };
@@ -50,7 +51,7 @@ export function getThemeChoice(): ThemeChoice {
 /** Assigns a theme to one appearance and re-themes this and every other window. */
 export function setThemeForAppearance(mode: ThemeAppearance, themeId: string): void {
   console.log("[AppTheme:set]", { mode, themeId });
-  localStorage.setItem(STORAGE_KEY[mode], themeId);
+  setSyncedPreference(STORAGE_KEY[mode], themeId);
   window.dispatchEvent(new Event(CHANGE_EVENT));
 }
 

@@ -110,6 +110,10 @@ export const OTTER_ACCOUNT_STATE_CHANNEL = "otter:state";
  * What Otter Mail asks Google for when a Gmail account signs in (the desktop
  * app, and the relay for the web app).
  */
+/** Saving a signature failed: this sign-in predates the Gmail settings scope. */
+export const GMAIL_SETTINGS_PERMISSION =
+  "Otter Mail needs permission to change this account's Gmail settings. Sign in to it again to allow it.";
+
 export const GMAIL_SCOPES = [
   "https://mail.google.com/",
   "openid",
@@ -123,4 +127,7 @@ export const GMAIL_SCOPES = [
   // Calendar, for answering invitations in place. Older tokens lack it: RSVP
   // then falls back to an email reply; re-adding the account upgrades it.
   "https://www.googleapis.com/auth/calendar.events",
+  // Gmail settings, for editing signatures (they live in Gmail). Older tokens
+  // can read them but not save them; re-adding the account upgrades it.
+  "https://www.googleapis.com/auth/gmail.settings.basic",
 ];

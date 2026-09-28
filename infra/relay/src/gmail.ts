@@ -14,6 +14,7 @@ import { GMAIL_SCOPES } from "@otter-mail/contracts";
 import { EncryptJWT, jwtDecrypt, jwtVerify, SignJWT } from "jose";
 
 import { googleKeys } from "./auth.ts";
+import { derivedKey } from "./keys.ts";
 import { verifyGoogleJwt } from "./google-jwt.ts";
 import type { Env } from "./worker.ts";
 
@@ -23,27 +24,9 @@ const tokenUrl = (env: Env) => env.GOOGLE_TOKEN_URL || TOKEN_URL;
 
 export const callbackUrl = (env: Env) => `${env.BETTER_AUTH_URL}/v1/gmail/callback`;
 
-/** Keys derived from the auth secret: one signs sign-in states, one seals refresh tokens. */
-async function key(env: Env, purpose: "state" | "seal"): Promise<Uint8Array> {
-  const secret = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(env.BETTER_AUTH_SECRET),
-    "HKDF",
-    false,
-    ["deriveBits"],
-  );
-  const bits = await crypto.subtle.deriveBits(
-    {
-      name: "HKDF",
-      hash: "SHA-256",
-      salt: new Uint8Array(),
-      info: new TextEncoder().encode(`otter-mail gmail ${purpose}`),
-    },
-    secret,
-    256,
-  );
-  return new Uint8Array(bits);
-}
+/** One key signs sign-in states, one seals refresh tokens. */
+const key = (env: Env, purpose: "state" | "seal") =>
+  derivedKey(env.BETTER_AUTH_SECRET, `otter-mail gmail ${purpose}`);
 
 /** Google's consent screen for the web client, for the signed-in user. */
 export async function authorizeUrl(env: Env, userId: string, loginHint?: string): Promise<string> {

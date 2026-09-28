@@ -17,6 +17,7 @@ import {
   GMAIL_SIGN_IN_CANCELLED,
   type ListAccountsResponse,
   type MeResponse,
+  type PreferencesResponse,
   type RelayEvent,
   type RelayUser,
 } from "@otter-mail/contracts/relay";
@@ -24,6 +25,7 @@ import {
 import { createAuth, googleClientIds, googleKeys, type Auth } from "./auth.ts";
 import * as gmail from "./gmail.ts";
 import { InvalidTokenError, verifyGoogleJwt } from "./google-jwt.ts";
+import * as preferences from "./preferences.ts";
 import * as store from "./store.ts";
 import { SESSION_HEADER, type UserHub } from "./user-hub.ts";
 
@@ -223,6 +225,38 @@ authed.delete(
     if (await store.deleteAccount(c.var.db, userId, c.req.valid("param").email)) {
       await hub(c.env, userId).publish({ type: "accounts" });
     }
+    return c.body(null, 204);
+  },
+);
+
+authed.get("/preferences", async (c) =>
+  c.json(
+    (await preferences.read(
+      c.var.db,
+      c.env.BETTER_AUTH_SECRET,
+      c.var.session.user.id,
+    )) satisfies PreferencesResponse,
+  ),
+);
+
+authed.put(
+  "/preferences",
+  zValidator(
+    "json",
+    z.object({
+      preferences: z.record(z.string().max(64), z.unknown()).optional(),
+      hermesKey: z.string().max(4096).nullable().optional(),
+    }),
+    rejectInvalid,
+  ),
+  async (c) => {
+    const userId = c.var.session.user.id;
+    if (
+      !(await preferences.write(c.var.db, c.env.BETTER_AUTH_SECRET, userId, c.req.valid("json")))
+    ) {
+      throw new HTTPException(413, { message: "Preferences too large." });
+    }
+    await hub(c.env, userId).publish({ type: "preferences" });
     return c.body(null, 204);
   },
 );

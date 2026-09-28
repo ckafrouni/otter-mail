@@ -263,6 +263,37 @@ export async function createLabel(accountId: string, name: string): Promise<Gmai
   return { id: data.id, name: data.name, type: "user" };
 }
 
+// ── Signatures ───────────────────────────────────────────────────────────────
+
+type SendAs = { sendAsEmail: string; isPrimary?: boolean; signature?: string };
+
+/**
+ * The signature Gmail keeps for `email` (Settings › Signature on the web).
+ * The API has one per send-as address; Gmail's named signatures aren't in it.
+ */
+export async function getSignature(accountId: string, email: string): Promise<string> {
+  const { sendAs = [] } = (await gmailFetch(accountId, "/settings/sendAs")) as {
+    sendAs?: SendAs[];
+  };
+  const own =
+    sendAs.find((s) => s.sendAsEmail.toLowerCase() === email.toLowerCase()) ??
+    sendAs.find((s) => s.isPrimary);
+  return own?.signature ?? "";
+}
+
+/** Saves `email`'s signature in Gmail; answers it as Gmail stored it (sanitized). */
+export async function setSignature(
+  accountId: string,
+  email: string,
+  html: string,
+): Promise<string> {
+  const saved = (await gmailFetch(accountId, `/settings/sendAs/${encodeURIComponent(email)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ signature: html }),
+  })) as SendAs;
+  return saved.signature ?? "";
+}
+
 // ── updateLabel / deleteLabel ────────────────────────────────────────────────
 
 /**

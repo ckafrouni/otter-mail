@@ -1,0 +1,63 @@
+/**
+ * The account's preferences (contracts' `Preferences`): sections of JSON
+ * each device replaces whole, merged here, and the Hermes API key, which is
+ * full control of the user's agent: sealed with a key only the relay holds,
+ * so the database alone can't reveal it.
+ */
+
+import type { Preferences, PreferencesResponse } from "@otter-mail/contracts/relay";
+import { EncryptJWT, jwtDecrypt } from "jose";
+
+import { derivedKey } from "./keys.ts";
+import * as store from "./store.ts";
+
+const sealKey = (secret: string) => derivedKey(secret, "otter-mail preferences seal");
+
+async function seal(secret: string, userId: string, hermesKey: string): Promise<string> {
+  return new EncryptJWT({ hermesKey })
+    .setProtectedHeader({ alg: "dir", enc: "A256GCM" })
+    .setSubject(userId)
+    .encrypt(await sealKey(secret));
+}
+
+async function open(secret: string, userId: string, sealed: string): Promise<string> {
+  const { payload } = await jwtDecrypt<{ hermesKey: string }>(sealed, await sealKey(secret), {
+    subject: userId,
+  });
+  return payload.hermesKey;
+}
+
+export async function read(
+  db: store.Db,
+  secret: string,
+  userId: string,
+): Promise<PreferencesResponse> {
+  const { data, hermesKey } = await store.getPreferences(db, userId);
+  return {
+    preferences: data,
+    hermesKey: hermesKey ? await open(secret, userId, hermesKey) : null,
+  };
+}
+
+/** Sections the app syncs are small; this keeps a runaway client from filling D1. */
+const MAX_BYTES = 256 * 1024;
+
+/** Merges the change in; false (nothing written) when the result would be too large. */
+export async function write(
+  db: store.Db,
+  secret: string,
+  userId: string,
+  change: { preferences?: Preferences; hermesKey?: string | null },
+): Promise<boolean> {
+  const current = await store.getPreferences(db, userId);
+  const data = { ...current.data, ...change.preferences };
+  if (JSON.stringify(data).length > MAX_BYTES) return false;
+  await store.putPreferences(db, userId, {
+    data,
+    hermesKey:
+      change.hermesKey === undefined
+        ? current.hermesKey
+        : change.hermesKey && (await seal(secret, userId, change.hermesKey)),
+  });
+  return true;
+}

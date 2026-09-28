@@ -137,6 +137,8 @@ function GeneralPane() {
   useEffect(() => {
     void loadSyncSettings();
     void loadMailApps();
+    // Changed on another device.
+    return window.desktopBridge.on("settings:changed", () => void loadSyncSettings());
   }, []);
 
   const handleSyncIntervalChange = async (value: string) => {

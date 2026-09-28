@@ -7,6 +7,7 @@
 import { handle } from "../ipc.js";
 import { ATTACHMENTS_DIR, stageAttachment } from "../services/assistant/attachments.js";
 import * as assistant from "../services/assistant/service.js";
+import { preferenceChanged } from "../services/preferences.js";
 import {
   PROVIDER_KINDS,
   RUNTIME_MODES,
@@ -104,16 +105,21 @@ export function registerAssistantHandlers(): void {
     return { ok: true };
   });
 
-  handle("assistant:updateSettings", async (params: unknown) =>
-    assistant.updateProviderSettings(settingsPatch(params as Params)),
-  );
+  handle("assistant:updateSettings", async (params: unknown) => {
+    const state = await assistant.updateProviderSettings(settingsPatch(params as Params));
+    preferenceChanged("assistant");
+    return state;
+  });
 
   handle("assistant:connectHermes", async (params: unknown) => {
     const p = params as Params;
     const baseUrl = str(p?.baseUrl);
     const apiKey = str(p?.apiKey);
     if (!baseUrl || !apiKey) throw new Error("Base URL and API key are both required.");
-    return assistant.connectHermes(baseUrl, apiKey);
+    const state = await assistant.connectHermes(baseUrl, apiKey);
+    preferenceChanged("assistant");
+    preferenceChanged("hermesKey");
+    return state;
   });
 
   handle("assistant:send", async (params: unknown) => {

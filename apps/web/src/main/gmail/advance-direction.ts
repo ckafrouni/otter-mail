@@ -1,8 +1,10 @@
 /** After archiving, deleting, or moving the selected message, which row (if
     any) the list should select next. */
+
+import { setSyncedPreference } from "../synced-preferences";
 export type AdvanceDirection = "next" | "previous" | "none";
 
-const KEY = "gmail:advance-direction";
+const KEY = "gmail:advance-direction" as const;
 
 export function getAdvanceDirection(): AdvanceDirection {
   const value = localStorage.getItem(KEY);
@@ -10,7 +12,7 @@ export function getAdvanceDirection(): AdvanceDirection {
 }
 
 export function setAdvanceDirection(direction: AdvanceDirection): void {
-  localStorage.setItem(KEY, direction);
+  setSyncedPreference(KEY, direction);
 }
 
 /** Picks the row to select after `rows[idx]` leaves the list, honoring the

@@ -30,6 +30,7 @@ import {
   signOut,
   signOutDevice,
 } from "../services/otter-account.js";
+import { forgetSyncedPreferences, pullPreferences } from "../services/preferences.js";
 import { getRealtimeState, startRealtime, stopRealtime } from "../services/realtime.js";
 import { removeLocalAccount } from "./gmail.js";
 
@@ -87,9 +88,19 @@ async function refreshOnce(): Promise<void> {
   }
 }
 
+async function syncPreferences(): Promise<void> {
+  await pullPreferences().catch((err: unknown) =>
+    logger.info("otter-account", `Preferences sync failed: ${String(err)}`),
+  );
+}
+
 async function onEvent(event: RelayEvent): Promise<void> {
   if (event.type === "accounts") {
     await refresh();
+    return;
+  }
+  if (event.type === "preferences") {
+    await syncPreferences();
     return;
   }
   const account = (await listAccounts()).find(
@@ -104,6 +115,7 @@ function start(): void {
   startRealtime({
     onConnected: () => {
       void refresh();
+      void syncPreferences();
       // Catch up on whatever changed while disconnected.
       void syncAllAccounts({ force: true, trigger: "push" });
     },
@@ -126,6 +138,7 @@ function stop(): void {
   refreshTimer = null;
   setPushedAccounts([]);
   clearLinkedSnapshot();
+  forgetSyncedPreferences();
 }
 
 export function registerOtterAccountHandlers(): void {

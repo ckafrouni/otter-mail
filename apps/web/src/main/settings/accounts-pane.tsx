@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { GMAIL_SETTINGS_PERMISSION } from "@otter-mail/contracts";
 import { Popover } from "radix-ui";
 import { useQuery } from "@tanstack/react-query";
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
@@ -276,6 +277,7 @@ function AccountListRow({
 function AccountEditor({ account }: { account: GmailAccount }) {
   const updateAccount = useUpdateAccount();
   const removeAccount = useRemoveAccount();
+  const signIn = useAddAccount();
   const sync = useSyncStatusOnly(account.id);
   const displayName = getAccountDisplayName(account);
   const status = accountStatus(account, sync.data);
@@ -297,9 +299,23 @@ function AccountEditor({ account }: { account: GmailAccount }) {
     const html = editor.getText().trim().length === 0 ? "" : editor.getHTML();
     if (html === (account.signature ?? "")) return;
     console.log("[Settings:updateSignature]", { accountId: account.id });
-    void updateAccount
-      .mutateAsync({ accountId: account.id, signature: html })
-      .then(() => toast.success("Signature saved"));
+    void updateAccount.mutateAsync({ accountId: account.id, signature: html }).then(
+      () => toast.success("Signature saved in Gmail"),
+      (err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes(GMAIL_SETTINGS_PERMISSION)) {
+          toast.error("Gmail needs your permission first", {
+            description: `Sign in to ${account.email} again to let Otter Mail save its signature in Gmail.`,
+            action: {
+              label: "Sign in",
+              onClick: () => void signIn.mutateAsync(account.email).then(saveSignature, () => {}),
+            },
+          });
+        } else {
+          toast.error("Couldn't save the signature", { description: message });
+        }
+      },
+    );
   };
 
   return (
@@ -369,11 +385,13 @@ function AccountEditor({ account }: { account: GmailAccount }) {
       >
         <div className="p-3 sm:p-4">
           <p className="mb-2 text-xs text-muted-foreground">
-            Added to new messages, replies and forwards from this account.
+            Added to new messages, replies and forwards from this account. Saved in Gmail, so it's
+            the same there and on every device.
           </p>
           <div className="rounded-lg border border-input bg-canvas dark:bg-input/32">
             <RichTextArea
-              key={account.id}
+              // Starts over when Gmail's copy changes (refreshed, or saved and sanitized).
+              key={`${account.id}:${account.signature ?? ""}`}
               ref={signatureRef}
               placeholder="Your signature…"
               ariaLabel={`Signature for ${account.email}`}
@@ -425,6 +443,8 @@ export function AccountsPane() {
   const accounts = accountsQuery.data ?? [];
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const current = accounts.find((a) => a.id === selectedId) ?? accounts[0];
+  // Signatures live in Gmail: pick up edits made there.
+  useEffect(() => void gmailApi.refreshSignatures().catch(() => {}), []);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">

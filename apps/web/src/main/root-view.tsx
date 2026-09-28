@@ -1,5 +1,6 @@
 import { Outlet } from "@tanstack/react-router";
 import * as React from "react";
+import { startSyncedPreferences } from "./synced-preferences";
 import { applyAppTheme, startAppTheme } from "./theme/apply-theme";
 import { UpdateNotifier } from "./updates";
 
@@ -10,6 +11,7 @@ applyAppTheme();
 export function RootView() {
   // Re-theme live on appearance switches and theme picks from any window.
   React.useEffect(() => startAppTheme(), []);
+  React.useEffect(() => startSyncedPreferences(), []);
 
   return (
     <div className="h-full relative [&:not(:has([data-toolbar]))_.drag-region]:z-50 [&:has([data-toolbar])>.drag-region]:[-webkit-app-region:none]">

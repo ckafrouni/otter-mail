@@ -14,7 +14,12 @@ import * as path from "node:path";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 import { unstable_startWorker } from "wrangler";
-import type { ListAccountsResponse, MeResponse, RelayEvent } from "@otter-mail/contracts/relay";
+import type {
+  ListAccountsResponse,
+  MeResponse,
+  PreferencesResponse,
+  RelayEvent,
+} from "@otter-mail/contracts/relay";
 
 const CLIENT_ID = "test-client.apps.googleusercontent.com";
 const WEB_CLIENT_ID = "test-web-client.apps.googleusercontent.com";
@@ -377,6 +382,77 @@ describe("linked accounts", () => {
     await link(token, "new@example.com");
     await until(() => device.events.length > 0, "the accounts event");
     expect(device.events).toEqual([{ type: "accounts" }]);
+    device.socket.close();
+  });
+});
+
+describe("preferences", () => {
+  async function preferences(token: string) {
+    const response = await call("GET", "/v1/preferences", token);
+    expect(response.status).toBe(200);
+    return (await response.json()) as PreferencesResponse;
+  }
+
+  it("starts empty, replaces the sections given, and keeps the rest", async () => {
+    const { token } = await signIn("prefs@example.com");
+    expect(await preferences(token)).toEqual({ preferences: {}, hermesKey: null });
+
+    const put = (body: unknown) => call("PUT", "/v1/preferences", token, body);
+    expect((await put({ preferences: { views: [1], ui: { a: "1" } } })).status).toBe(204);
+    expect((await put({ preferences: { ui: { b: "2" } } })).status).toBe(204);
+    expect((await preferences(token)).preferences).toEqual({ views: [1], ui: { b: "2" } });
+  });
+
+  it("keeps the Hermes key sealed, and gives it back only to its owner", async () => {
+    const { token } = await signIn("hermes@example.com");
+    await call("PUT", "/v1/preferences", token, { hermesKey: "sk-secret" });
+    expect((await preferences(token)).hermesKey).toBe("sk-secret");
+
+    // What the database holds is sealed.
+    const stored = execFileSync(
+      "pnpm",
+      [
+        "exec",
+        "wrangler",
+        "d1",
+        "execute",
+        "otter-mail-relay",
+        "--local",
+        "--persist-to",
+        persistDir,
+        "--json",
+        "--command",
+        "SELECT hermes_key FROM preferences WHERE hermes_key IS NOT NULL",
+      ],
+      { cwd: root, encoding: "utf8", env: { ...process.env, CI: "1" } },
+    );
+    expect(stored).toContain("hermes_key");
+    expect(stored).not.toContain("sk-secret");
+
+    // Other sections leave the key alone; null clears it.
+    await call("PUT", "/v1/preferences", token, { preferences: { ui: {} } });
+    expect((await preferences(token)).hermesKey).toBe("sk-secret");
+    await call("PUT", "/v1/preferences", token, { hermesKey: null });
+    expect((await preferences(token)).hermesKey).toBeNull();
+
+    const { token: other } = await signIn("someone-else@example.com");
+    expect(await preferences(other)).toEqual({ preferences: {}, hermesKey: null });
+  });
+
+  it("refuses preferences that are too large", async () => {
+    const { token } = await signIn("big@example.com");
+    const big = "x".repeat(300 * 1024);
+    const response = await call("PUT", "/v1/preferences", token, { preferences: { ui: big } });
+    expect(response.status).toBe(413);
+  });
+
+  it("tells every device when the preferences change", async () => {
+    const { token } = await signIn("prefs-multi@example.com", "prefs-multi-sub");
+    const other = await signIn("prefs-multi@example.com", "prefs-multi-sub");
+    const device = await connect(other.token);
+    await call("PUT", "/v1/preferences", token, { preferences: { ui: {} } });
+    await until(() => device.events.length > 0, "the preferences event");
+    expect(device.events).toEqual([{ type: "preferences" }]);
     device.socket.close();
   });
 });

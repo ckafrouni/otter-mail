@@ -12,8 +12,10 @@ export interface GmailAccount {
   displayName?: string;
   /** User-set accent color (hex) for this account, edited in Settings. */
   color?: string;
-  /** Rich-text HTML signature appended to new/reply/forward compose bodies. */
+  /** Rich-text HTML signature appended to new/reply/forward compose bodies: Gmail's, cached. */
   signature?: string;
+  /** The signature has been read from (or moved to) Gmail, which now has the last word. */
+  signatureInGmail?: boolean;
   /** No usable Google sign-in; set by gmail:listAccounts, never stored. */
   signedOut?: boolean;
 }

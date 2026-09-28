@@ -318,3 +318,57 @@ export async function deleteSession(kind: ProviderKind, sessionId: string): Prom
 export function shutdownProviders(): void {
   for (const found of Object.values(available())) found.shutdown();
 }
+
+// ── Preferences sync (services/preferences.ts) ──────────────────────────────
+
+/** Where the CLIs live is this device's business; everything else follows the account. */
+const DEVICE_KEYS = ["binaryPath", "homePath", "launchArgs"] as const;
+
+type Synced<T> = Omit<T, (typeof DEVICE_KEYS)[number]>;
+export type SyncedProviderSettings = {
+  selected: ProviderKind;
+  hermes: ProviderSettings["hermes"];
+  codex: Synced<ProviderSettings["codex"]>;
+  claude: Synced<ProviderSettings["claude"]>;
+};
+
+const withoutDeviceKeys = <T extends object>(settings: T) =>
+  Object.fromEntries(
+    Object.entries(settings).filter(([key]) => !(DEVICE_KEYS as readonly string[]).includes(key)),
+  ) as Synced<T>;
+
+export async function syncedProviderSettings(): Promise<SyncedProviderSettings> {
+  const { selected, hermes, codex, claude } = await getProviderSettings();
+  return { selected, hermes, codex: withoutDeviceKeys(codex), claude: withoutDeviceKeys(claude) };
+}
+
+/** Takes the account's provider settings, keeping this device's CLI paths. */
+export async function applySyncedProviderSettings(
+  synced: Partial<SyncedProviderSettings>,
+): Promise<void> {
+  const current = await getProviderSettings();
+  const next: ProviderSettings = {
+    selected:
+      synced.selected && PROVIDER_KINDS.includes(synced.selected)
+        ? synced.selected
+        : current.selected,
+    hermes: { ...current.hermes, ...synced.hermes },
+    codex: { ...current.codex, ...(synced.codex && withoutDeviceKeys(synced.codex)) },
+    claude: { ...current.claude, ...(synced.claude && withoutDeviceKeys(synced.claude)) },
+  };
+  await saveProviderSettings(next);
+  if (next.hermes.baseUrl !== current.hermes.baseUrl) {
+    provider("hermes").shutdown();
+    checked.delete("hermes");
+  }
+  void check("hermes");
+  await broadcastState();
+}
+
+/** Takes the account's Hermes key. */
+export async function applySyncedHermesKey(key: string): Promise<void> {
+  if (key === (await getHermesKey())) return;
+  await setHermesKey(key);
+  checked.delete("hermes");
+  void check("hermes");
+}

@@ -4,7 +4,7 @@
  *
  * `user`, `session`, `account` and `verification` are better-auth's tables
  * (its core schema, https://www.better-auth.com/docs/concepts/database);
- * `linked_accounts` is the relay's own.
+ * `linked_accounts` and `preferences` are the relay's own.
  */
 
 import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
@@ -101,3 +101,15 @@ export const linkedAccounts = sqliteTable(
     index("linked_accounts_email").on(t.email),
   ],
 );
+
+/** Each Otter account's preferences (contracts' `Preferences`), synced to its devices. */
+export const preferences = sqliteTable("preferences", {
+  userId: text()
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  /** JSON: section name → value. */
+  data: text().notNull(),
+  /** The Hermes API key, encrypted (only the relay can open it). */
+  hermesKey: text(),
+  updatedAt: updatedAt(),
+});

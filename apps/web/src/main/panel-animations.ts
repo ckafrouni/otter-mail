@@ -4,13 +4,14 @@
  * motion off. Lives in localStorage like the other per-device UI choices.
  */
 
+import { setSyncedPreference } from "./synced-preferences";
 import { useEffect, useState, useSyncExternalStore } from "react";
 
 export const MIN_PANEL_ANIMATION_DURATION_MS = 0;
 export const MAX_PANEL_ANIMATION_DURATION_MS = 400;
 export const DEFAULT_PANEL_ANIMATION_DURATION_MS = 150;
 
-const KEY = "gmail:panel-animation-duration";
+const KEY = "gmail:panel-animation-duration" as const;
 const CHANGE_EVENT = "gmail:panel-animation-duration-change";
 
 function isValidDuration(value: number): boolean {
@@ -29,7 +30,7 @@ export function getPanelAnimationDurationMs(): number {
 
 export function setPanelAnimationDurationMs(durationMs: number): void {
   if (!isValidDuration(durationMs)) return;
-  localStorage.setItem(KEY, String(durationMs));
+  setSyncedPreference(KEY, String(durationMs));
   window.dispatchEvent(new Event(CHANGE_EVENT));
 }
 

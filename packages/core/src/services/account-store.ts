@@ -44,7 +44,7 @@ export async function getAccount(accountId: string): Promise<GmailAccount | null
 
 export async function updateAccount(
   accountId: string,
-  patch: { displayName?: string; color?: string; signature?: string },
+  patch: { displayName?: string; color?: string; signature?: string; signatureInGmail?: boolean },
 ): Promise<GmailAccount> {
   const accounts = await readAccounts();
   const index = accounts.findIndex((a) => a.id === accountId);
@@ -58,6 +58,7 @@ export async function updateAccount(
       patch.displayName !== undefined ? patch.displayName || undefined : current.displayName,
     color: patch.color !== undefined ? patch.color || undefined : current.color,
     signature: patch.signature !== undefined ? patch.signature || undefined : current.signature,
+    signatureInGmail: patch.signatureInGmail ?? current.signatureInGmail,
   };
   accounts[index] = updated;
   await writeAccounts(accounts);

@@ -4,6 +4,7 @@
  * the queue banner above the composer, and the intent marker on messages.
  */
 
+import { setSyncedPreference } from "../synced-preferences";
 import { useId, useRef, useState, useSyncExternalStore } from "react";
 import {
   ChevronDownIcon,
@@ -19,7 +20,7 @@ import { useShortcutLabel } from "../keybindings/store";
 
 export type FollowUpBehavior = "queue" | "steer";
 
-const FOLLOW_UP_KEY = "assistant:follow-up-behavior";
+const FOLLOW_UP_KEY = "assistant:follow-up-behavior" as const;
 const listeners = new Set<() => void>();
 
 export function getFollowUpBehavior(): FollowUpBehavior {
@@ -27,9 +28,14 @@ export function getFollowUpBehavior(): FollowUpBehavior {
 }
 
 export function setFollowUpBehavior(value: FollowUpBehavior): void {
-  localStorage.setItem(FOLLOW_UP_KEY, value);
+  setSyncedPreference(FOLLOW_UP_KEY, value);
   for (const listener of listeners) listener();
 }
+
+// Picked on another device (or in another window).
+window.addEventListener("storage", (event) => {
+  if (event.key === FOLLOW_UP_KEY) for (const listener of listeners) listener();
+});
 
 export function useFollowUpBehavior(): FollowUpBehavior {
   return useSyncExternalStore((listener) => {

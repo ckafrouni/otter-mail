@@ -60,7 +60,7 @@ async function readViews(): Promise<MailView[]> {
   return withDefaults(Array.isArray(parsed) ? (parsed as MailView[]) : []);
 }
 
-async function writeViews(views: MailView[]): Promise<void> {
+export async function writeViews(views: MailView[]): Promise<void> {
   await writeJson("views.json", withDefaults(views));
 }
 

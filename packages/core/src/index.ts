@@ -16,7 +16,9 @@ import { pruneAttachmentCache } from "./services/attachment-cache.js";
 import { readKeybindings, writeKeybindings } from "./services/keybindings-store.js";
 import { configureAutoSync, syncAllAccounts } from "./services/mail-sync.js";
 import { loadOtterAccount } from "./services/otter-account.js";
-import { getSettings } from "./services/settings-store.js";
+import { getUiPreferences, preferenceChanged, setUiPreference } from "./services/preferences.js";
+import { getSettings, onSettingsChanged } from "./services/settings-store.js";
+import { refreshSignatures } from "./services/signatures.js";
 
 /** Starts the backend: restores sign-ins, registers every handler, and syncs. */
 export async function startCore(platform: Platform): Promise<void> {
@@ -31,9 +33,18 @@ export async function startCore(platform: Platform): Promise<void> {
   registerTranslationHandlers();
   registerAssistantHandlers();
   handle("keybindings:read", async () => readKeybindings());
+  handle("preferences:getUi", async () => getUiPreferences());
+  handle("preferences:setUi", async (params: unknown) => {
+    const { key, value } = (params ?? {}) as { key?: unknown; value?: unknown };
+    if (typeof key !== "string" || typeof value !== "string")
+      throw new Error("key and value are required.");
+    await setUiPreference(key, value);
+  });
+  onSettingsChanged(() => preferenceChanged("settings"));
   handle("keybindings:write", async (params: unknown) => {
     const result = await writeKeybindings((params as { rules?: unknown } | undefined)?.rules);
     broadcast("keybindings:updated");
+    preferenceChanged("keybindings");
     return result;
   });
 
@@ -41,6 +52,7 @@ export async function startCore(platform: Platform): Promise<void> {
   void syncAllAccounts({ force: true });
   configureAutoSync((await getSettings()).syncIntervalSeconds);
   void pruneAttachmentCache();
+  void refreshSignatures();
 }
 
 export { broadcast, handle, registeredHandlers, type Handler } from "./ipc.js";

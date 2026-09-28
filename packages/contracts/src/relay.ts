@@ -1,8 +1,8 @@
 /**
  * The Otter Mail relay's HTTP API (infra/relay), shared by the Worker and the
- * desktop app. The relay knows who an Otter account is, which Gmail addresses
- * it has linked, and when Gmail says one of them changed. It never sees mail
- * or Gmail tokens.
+ * apps. The relay knows who an Otter account is, which Gmail addresses it has
+ * linked, the account's preferences, and when Gmail says one of them changed.
+ * It never sees mail or keeps Gmail tokens.
  *
  * Otter accounts are better-auth's, under `/v1/auth` (the app uses
  * better-auth's client): `sign-in/social` with `{ provider: "google",
@@ -65,6 +65,28 @@ export interface PutAccountRequest {
 }
 
 /**
+ * The account's preferences, which follow it to every device: sections of
+ * JSON (`settings`, `views`, `keybindings`, `assistant`, `ui`), each replaced
+ * whole when a device changes it, plus the Hermes API key, kept encrypted.
+ */
+export type Preferences = Record<string, unknown>;
+
+/** `GET /v1/preferences` */
+export interface PreferencesResponse {
+  preferences: Preferences;
+  hermesKey: string | null;
+}
+
+/**
+ * `PUT /v1/preferences`: replaces the sections given (the others stay), and
+ * sets or clears the Hermes key when `hermesKey` is present.
+ */
+export interface PutPreferencesRequest {
+  preferences?: Preferences;
+  hermesKey?: string | null;
+}
+
+/**
  * Messages on the `GET /v1/events` WebSocket. Clients may send the text
  * `ping`; the relay answers `pong`.
  */
@@ -72,4 +94,6 @@ export type RelayEvent =
   /** Gmail changed this mailbox: sync it (`historyId` is Gmail's new cursor). */
   | { type: "mail"; email: string; historyId: string }
   /** The linked accounts changed (another device linked, unlinked or edited one). */
-  | { type: "accounts" };
+  | { type: "accounts" }
+  /** The preferences changed on another device. */
+  | { type: "preferences" };

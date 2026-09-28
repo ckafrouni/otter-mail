@@ -1,3 +1,4 @@
+import { setSyncedPreference } from "../synced-preferences";
 import { useEffect, useState, type CSSProperties } from "react";
 import { toast } from "../gmail/toast";
 import type { NativeThemeInfo } from "@otter-mail/contracts";
@@ -287,6 +288,7 @@ export function AppearancePane() {
     console.log("[Settings:setColorScheme]", { scheme: next });
     try {
       await window.desktopBridge.nativeTheme.setThemeSource(next);
+      setSyncedPreference("otter:theme-source", next);
       await refreshThemeInfo();
     } catch (error) {
       toast.error(`Failed to set color scheme: ${error}`);

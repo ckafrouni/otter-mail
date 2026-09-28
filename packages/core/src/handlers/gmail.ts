@@ -60,6 +60,8 @@ import { accountAdded, accountEdited, accountRemoved } from "../services/linked-
 import { getSenderAvatar } from "../services/avatar-store.js";
 import { updateDockBadge } from "../services/notifier.js";
 import { getSettings, updateSettings, type AppSettings } from "../services/settings-store.js";
+import { preferenceChanged } from "../services/preferences.js";
+import { refreshSignatures, saveSignature } from "../services/signatures.js";
 import * as viewsStore from "../services/views-store.js";
 import { ALL_MAIL_LABEL_ID } from "../types.js";
 import type { ComposeAttachment, MailView, ViewRule } from "../types.js";
@@ -246,6 +248,7 @@ export function registerGmailHandlers(): void {
       const account = await platform().google.addAccount(email);
       mailSync.syncAccount(account.id, { force: true });
       void accountAdded(account);
+      void refreshSignatures();
       // The browser sign-in outlasts the renderer's IPC timeout, so the caller
       // usually never sees this return — tell every window to reload accounts.
       broadcast("gmail:accounts-changed");
@@ -256,6 +259,10 @@ export function registerGmailHandlers(): void {
       console.log("[gmail:addAccount] error", { error: String(err) });
       throw err;
     }
+  });
+
+  handle("gmail:refreshSignatures", async () => {
+    void refreshSignatures();
   });
 
   handle("gmail:cancelAddAccount", async () => {
@@ -288,7 +295,8 @@ export function registerGmailHandlers(): void {
       const displayName = asString(p?.displayName);
       const color = asString(p?.color);
       const signature = asString(p?.signature);
-      const updated = await storeUpdateAccount(accountId, { displayName, color, signature });
+      let updated = await storeUpdateAccount(accountId, { displayName, color });
+      if (signature !== undefined) updated = await saveSignature(updated, signature);
       broadcast("gmail:accounts-changed");
       if (displayName !== undefined || color !== undefined) void accountEdited(updated);
       updateDockBadge();
@@ -542,6 +550,7 @@ export function registerGmailHandlers(): void {
         mailbox: asString(p?.mailbox),
       });
       broadcast("gmail:views-changed");
+      preferenceChanged("views");
       return view;
     } catch (err) {
       console.log("[gmail:saveView] error", { error: String(err) });
@@ -555,6 +564,7 @@ export function registerGmailHandlers(): void {
     try {
       await viewsStore.deleteView(assertString(p?.viewId, "viewId"));
       broadcast("gmail:views-changed");
+      preferenceChanged("views");
       return { ok: true };
     } catch (err) {
       console.log("[gmail:deleteView] error", { error: String(err) });
@@ -568,6 +578,7 @@ export function registerGmailHandlers(): void {
     try {
       await viewsStore.resetView(assertString(p?.viewId, "viewId"));
       broadcast("gmail:views-changed");
+      preferenceChanged("views");
       return { ok: true };
     } catch (err) {
       console.log("[gmail:resetView] error", { error: String(err) });
@@ -604,6 +615,7 @@ export function registerGmailHandlers(): void {
         }));
       await viewsStore.importViews(views);
       broadcast("gmail:views-changed");
+      preferenceChanged("views");
       return await viewsStore.listViews();
     } catch (err) {
       console.log("[gmail:importViews] error", { error: String(err) });
