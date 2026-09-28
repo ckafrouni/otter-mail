@@ -1,0 +1,22 @@
+{
+  "name": "@otter-mail/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The mail backend shared by the desktop app (Electron main process) and the web app (a Web Worker).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vp test run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@otter-mail/contracts": "workspace:*",
+    "better-auth": "^1.7.6"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

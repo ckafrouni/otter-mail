@@ -1,34 +1,30 @@
-import React from "react";
-import ReactDOM from "react-dom/client";
-import { RouterProvider } from "@tanstack/react-router";
-import { router, queryClient } from "./router";
+/**
+ * The main window's entry. The desktop's preload provides window.desktopBridge;
+ * in a browser the web app brings its own, with the mail backend in a Web
+ * Worker (src/web). Then the app loads: everything in it may use the bridge.
+ */
+
 import "../styles.css";
-import { QueryClientProvider } from "@tanstack/react-query";
-import { ToastProvider } from "./gmail/toast";
 
-declare const __APP_DISPLAY_NAME__: string | undefined;
-
-document.title = __APP_DISPLAY_NAME__ || document.title;
-
-// Get the root element
-const rootElement = document.getElementById("root");
-if (!rootElement) {
-  throw new Error("Root element not found");
+if (!window.desktopBridge) {
+  const { webBridge, requireOtterAccount } = await import("../web/bridge");
+  window.desktopBridge = webBridge;
+  document.documentElement.dataset.platform = "web";
+  try {
+    await requireOtterAccount();
+  } catch (err) {
+    // Signing in needs the relay; without it there is nothing to show yet.
+    const reason = err instanceof Error ? err.message : String(err);
+    const main = document.createElement("main");
+    main.style.cssText =
+      "font:14px system-ui;display:grid;place-items:center;height:100vh;text-align:center;color:#71717a";
+    main.innerHTML = `<div><p style="font-size:18px">Couldn't sign you in to Otter Mail.</p>
+      <p>Try again in a moment: <a href="" style="color:inherit">reload</a>.</p>
+      <p style="font-size:12px;opacity:.7"></p></div>`;
+    main.querySelector("p:last-child")!.textContent = reason;
+    document.body.replaceChildren(main);
+    throw err;
+  }
 }
 
-// Create React root and render
-const root = ReactDOM.createRoot(rootElement);
-root.render(
-  <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        <RouterProvider router={router} />
-      </ToastProvider>
-    </QueryClientProvider>
-  </React.StrictMode>,
-);
-
-// Hot Module Replacement (HMR) support
-if (import.meta.hot) {
-  import.meta.hot.accept();
-}
+await import("./app");

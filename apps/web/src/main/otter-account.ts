@@ -15,9 +15,8 @@ const invoke = <T>(channel: string, params?: unknown) =>
 
 export const otterApi = {
   getState: () => invoke<OtterAccountState>("otter:getState"),
-  /** As a Gmail account on this Mac (no browser), or with Google in the browser. Null: cancelled. */
-  signIn: (accountId?: string) =>
-    invoke<OtterAccountState | null>("otter:signIn", accountId ? { accountId } : undefined),
+  /** "Sign in with Google" (the desktop opens the browser; the web redirects). Null: cancelled. */
+  signIn: () => invoke<OtterAccountState | null>("otter:signIn"),
   cancelSignIn: () => invoke<void>("otter:cancelSignIn"),
   signOut: () => invoke<OtterAccountState>("otter:signOut"),
   listDevices: () => invoke<OtterDevice[]>("otter:listDevices"),

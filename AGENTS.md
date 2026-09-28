@@ -1,21 +1,27 @@
 # Otter Mail
 
-Otter Mail is a calm, fast Gmail client for macOS. It is an Electron app laid out like Otter Code
-(our fork of T3 Code): a pnpm monorepo built with Vite+ (`vp`), released through GitHub
-Releases with auto-update.
+Otter Mail is a calm, fast Gmail client: an Electron app for macOS, and the same app in the
+browser at https://mail.otterware.dev. It is laid out like Otter Code (our fork of T3 Code): a
+pnpm monorepo built with Vite+ (`vp`); the Mac app ships through GitHub Releases with
+auto-update.
 
 ## Where code lives
 
-- `apps/desktop`: the Electron main process (`src/main.ts`) and the preload (`src/preload.ts`).
-  - `src/handlers/`: `ipcMain.handle` handlers, one file per area (gmail, assistant, search, …).
-  - `src/services/`: Gmail API client, OAuth, the SQLite mail cache (`node:sqlite`), sync,
-    notifications, tray, translator, assistant providers (Claude, Codex, Hermes), and the Otter
-    account: `otter-account.ts` (better-auth client), `linked-accounts.ts`, `realtime.ts`,
-    `gmail-watch.ts`.
+- `packages/core`: the mail backend, shared by both apps: Gmail API client, quota, the SQLite
+  mail cache, sync, the JSON stores, the Otter account (better-auth client), mailboxes synced
+  across devices, realtime push, and the handlers the UI calls. It is plain TypeScript: anything
+  platform-specific goes through the `Platform` interface (`src/platform.ts`).
+- `apps/desktop`: the Electron main process (`src/main.ts`), which runs core with the desktop
+  platform (`src/platform.ts`: node:sqlite, safeStorage, dialogs, the Dock), and the preload.
+  - `src/handlers/`: the Mac-only handlers (tray, translation, assistant, default mail app, …).
+  - `src/services/`: Google sign-in (loopback OAuth), tray, translator, assistant providers
+    (Claude, Codex, Hermes), default mail app.
   - `src/windows/`: the main window, the menu-bar popover, and where their pages load from.
   - `src/updates.ts`: electron-updater against GitHub Releases.
-- `apps/web`: the React renderer. `index.html` is the main window, `tray-popover.html` the
-  menu-bar mini inbox. UI primitives live in `src/components/ui/`.
+- `apps/web`: the React renderer, one build for both apps. `index.html` is the main window,
+  `tray-popover.html` the menu-bar mini inbox. UI primitives live in `src/components/ui/`.
+  `src/web/` is the browser shell: core in a Web Worker (SQLite WASM on OPFS), and the bridge
+  that stands in for the preload. What only the Mac app has is off in `desktopBridge.features`.
 - `packages/contracts`: types shared by both sides, including `DesktopBridge`, the
   `window.desktopBridge` API the preload exposes, and the relay's API (`src/relay.ts`).
 - `infra/relay`: https://relay.mail.otterware.dev, a Cloudflare Worker (Hono, better-auth,
@@ -27,24 +33,31 @@ Releases with auto-update.
 - `scripts/`: dev runner, desktop packaging (`build-desktop-artifact.ts`), release helpers.
 - `assets/`: app icons like T3 Code's: `prod/` for releases, `dev/` for the blueprint variant that
   unpackaged runs wear. `pnpm icons:export` regenerates the dev icon and both `.icns` files.
-- `site/`: https://mail.otterware.dev (home, privacy policy, terms), a Cloudflare Worker.
+- `site/`: https://mail.otterware.dev, a Cloudflare Worker: the landing page, privacy policy and
+  terms, and the web app (`/` shows the app when signed in, `/app` always).
 - Deploys: Cloudflare Workers Builds deploys `infra/relay` and `site/` on pushes to `main` that
   touch them; GitHub Actions smoke-tests the relay every 6 hours (keyless Google Cloud access).
 
 ## How the pieces talk
 
-The app is local-first: it talks to Gmail directly and works without the relay. Signing in to an
-Otter account (Settings, the user button by Back) adds account sync across Macs and push.
+The app is local-first: it talks to Gmail directly and renders from its SQLite cache. The Otter
+account (the user button by Back in Settings) is who you are; mailboxes are the Gmail accounts
+it holds, which follow you to every device, with push from the relay. The Mac app works without
+it; the web app needs it (the relay keeps its Gmail sign-ins alive).
 
-- Renderer → main: `window.desktopBridge.invoke(channel, params)` → `ipcMain.handle(channel, …)`.
-- Main → renderer: `broadcast(channel, params)` (`apps/desktop/src/ipc.ts`) →
-  `window.desktopBridge.on(channel, listener)`.
+- Renderer → backend: `window.desktopBridge.invoke(channel, params)` → a handler registered with
+  core's `handle(channel, …)` (served over Electron IPC, or Worker messages on the web), or an
+  `ipcMain.handle` for the Mac-only ones.
+- Backend → renderer: `broadcast(channel, params)` → `window.desktopBridge.on(channel, listener)`.
 - Keep channel names stable; both sides refer to them by string.
-- Renderer code never touches Electron or Node directly. Anything new goes through a handler.
+- Renderer code never touches Electron, Node or the backend directly. Anything new goes through a
+  handler; anything platform-specific in core goes through the Platform.
 
 ## Dev
 
 - `pnpm install`, then `pnpm dev` (Vite dev server + main-process watcher + Electron with reload).
+- The web app: `pnpm --filter @otter-mail/relay dev` (the relay on :8787) and
+  `VITE_RELAY_URL=http://localhost:8787 pnpm dev:web` (on :5833); see docs/development.md.
 - `pnpm start` runs the built app unpackaged; `pnpm dist:desktop:dmg` builds a DMG in `release/`.
 - Data homes (`apps/desktop/src/paths.ts`, as in T3 Code): the installed app uses
   `~/.otter-mail/userdata`; dev runs use `~/.otter-mail/dev`, or `<worktree>/.otter-mail` in a
@@ -73,4 +86,5 @@ For UI or behavior changes, run the app and check the change in it.
 - Match the surrounding code: its naming, comment density and idioms.
 - The mail cache is local-first: the UI renders from SQLite and sync catches up. Keep IPC
   payloads small and never block the renderer on Gmail.
-- macOS is the only target for now (Apple Translation, the Dock badge, the menu-bar popover).
+- The Mac app targets macOS only (Apple Translation, the Dock badge, the menu-bar popover); the
+  web app runs in current browsers. Gate Mac-only UI with `features`, never with ad-hoc checks.

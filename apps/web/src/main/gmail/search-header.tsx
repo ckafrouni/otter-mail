@@ -850,7 +850,7 @@ export function SearchHeader({
       {query ? (
         <div className="flex h-7 items-center gap-2 border-b border-border px-4 text-xs text-muted-foreground">
           {offline ? (
-            <span className="text-warning">Offline — showing matches saved on this Mac</span>
+            <span className="text-warning">Offline — showing matches saved on this device</span>
           ) : loading ? (
             <span>Searching Gmail…</span>
           ) : estimate !== null ? (

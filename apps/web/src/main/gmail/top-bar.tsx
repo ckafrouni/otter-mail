@@ -15,6 +15,7 @@ import { gmailApi } from "./api";
 import type { GmailAccount } from "./types";
 import type { KeybindingCommand } from "../keybindings/commands";
 import { shortcutLabelFor, useKeybindingsState } from "../keybindings/store";
+import { features } from "../features";
 
 /**
  * Every column owns the slice of the title band above it, so the pane
@@ -273,7 +274,7 @@ function DefaultMailButton() {
 export function TitleTrailing({ showPanelToggle }: { showPanelToggle: boolean }) {
   return (
     <>
-      <DefaultMailButton />
+      {features.defaultMailApp ? <DefaultMailButton /> : null}
       {showPanelToggle ? <PanelControlSlot /> : null}
     </>
   );

@@ -51,6 +51,7 @@ import {
 import { useCommandHandlers } from "../keybindings/dispatch";
 import { useAccounts, useAllAccountLabels } from "../gmail/hooks";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settings-ui";
+import { features } from "../features";
 
 /**
  * Settings › Keybindings, after Otter Code's panel: every binding as a row
@@ -692,19 +693,21 @@ export function KeybindingsPane() {
           <PlusIcon className="size-3.5" />
         </IconBtn>
       </HintTooltip>
-      <HintTooltip label="Open keybindings.json">
-        <IconBtn
-          label="Open keybindings.json"
-          className="size-6"
-          onClick={() =>
-            void openKeybindingsFile().catch((error) =>
-              toast.error(`Couldn't open keybindings.json: ${String(error)}`),
-            )
-          }
-        >
-          <FileJsonIcon className="size-3.5" />
-        </IconBtn>
-      </HintTooltip>
+      {features.keybindingsFile ? (
+        <HintTooltip label="Open keybindings.json">
+          <IconBtn
+            label="Open keybindings.json"
+            className="size-6"
+            onClick={() =>
+              void openKeybindingsFile().catch((error) =>
+                toast.error(`Couldn't open keybindings.json: ${String(error)}`),
+              )
+            }
+          >
+            <FileJsonIcon className="size-3.5" />
+          </IconBtn>
+        </HintTooltip>
+      ) : null}
     </div>
   );
 

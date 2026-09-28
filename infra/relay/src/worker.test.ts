@@ -1,8 +1,8 @@
 /**
  * The relay end to end, as a device and Pub/Sub see it: the real Worker in
  * workerd (wrangler's local runtime) with a local D1 and Durable Object.
- * Google is played by a local JWKS server whose key signs the ID tokens and
- * push tokens.
+ * Google is played by a local server: its key signs the ID tokens and push
+ * tokens, and its token endpoint serves the web app's Gmail sign-ins.
  */
 
 import { execFileSync } from "node:child_process";
@@ -17,6 +17,8 @@ import { unstable_startWorker } from "wrangler";
 import type { ListAccountsResponse, MeResponse, RelayEvent } from "@otter-mail/contracts/relay";
 
 const CLIENT_ID = "test-client.apps.googleusercontent.com";
+const WEB_CLIENT_ID = "test-web-client.apps.googleusercontent.com";
+const APP_ORIGIN = "http://app.test";
 const PUSH_AUDIENCE = "https://relay.test/push/gmail";
 const PUSH_SERVICE_ACCOUNT = "push@test.iam.gserviceaccount.com";
 const root = path.resolve(import.meta.dirname, "..");
@@ -31,8 +33,22 @@ beforeAll(async () => {
   const pair = await generateKeyPair("RS256");
   signingKey = pair.privateKey;
   const publicJwk = { ...(await exportJWK(pair.publicKey)), kid: "test", alg: "RS256" };
-  jwks = http.createServer((_req, res) => {
-    res.writeHead(200, { "content-type": "application/json" });
+  jwks = http.createServer((req, res) => {
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/token") {
+      let body = "";
+      req.on("data", (chunk) => (body += chunk));
+      req.on(
+        "end",
+        () =>
+          void googleToken(new URLSearchParams(body)).then(([status, json]) => {
+            res.writeHead(status);
+            res.end(JSON.stringify(json));
+          }),
+      );
+      return;
+    }
+    res.writeHead(200);
     res.end(JSON.stringify({ keys: [publicJwk] }));
   });
   await new Promise<void>((resolve) => jwks.listen(0, "127.0.0.1", resolve));
@@ -60,6 +76,11 @@ beforeAll(async () => {
     bindings: {
       GOOGLE_CLIENT_ID: { type: "plain_text", value: CLIENT_ID },
       GOOGLE_JWKS_URL: { type: "plain_text", value: `http://127.0.0.1:${port}/certs` },
+      GOOGLE_TOKEN_URL: { type: "plain_text", value: `http://127.0.0.1:${port}/token` },
+      GOOGLE_WEB_CLIENT_ID: { type: "plain_text", value: WEB_CLIENT_ID },
+      GOOGLE_WEB_CLIENT_SECRET: { type: "plain_text", value: "web-secret" },
+      APP_ORIGIN: { type: "plain_text", value: APP_ORIGIN },
+      COOKIE_DOMAIN: { type: "plain_text", value: "" },
       PUSH_AUDIENCE: { type: "plain_text", value: PUSH_AUDIENCE },
       PUSH_SERVICE_ACCOUNT: { type: "plain_text", value: PUSH_SERVICE_ACCOUNT },
       BETTER_AUTH_SECRET: {
@@ -116,6 +137,33 @@ function signInRequest(token: string) {
     provider: "google",
     idToken: { token },
   });
+}
+
+/**
+ * Google's token endpoint for the web client: codes are "code:<email>",
+ * refresh tokens "rt:<email>", and anything for revoked@ is invalid_grant.
+ */
+async function googleToken(form: URLSearchParams): Promise<[number, unknown]> {
+  if (form.get("client_id") !== WEB_CLIENT_ID || form.get("client_secret") !== "web-secret") {
+    return [401, { error: "invalid_client" }];
+  }
+  const grant = form.get("grant_type");
+  const email =
+    grant === "authorization_code"
+      ? form.get("code")?.replace(/^code:/, "")
+      : form.get("refresh_token")?.replace(/^rt:/, "");
+  if (!email || (grant === "refresh_token" && email.startsWith("revoked@"))) {
+    return [400, { error: "invalid_grant" }];
+  }
+  return [
+    200,
+    {
+      access_token: `at:${email}:${Date.now()}`,
+      expires_in: 3599,
+      id_token: await idToken(email, { aud: WEB_CLIENT_ID }),
+      ...(grant === "authorization_code" ? { refresh_token: `rt:${email}` } : {}),
+    },
+  ];
 }
 
 /** Signs in as the desktop app does; returns the bearer token better-auth hands out. */
@@ -330,6 +378,112 @@ describe("linked accounts", () => {
     await until(() => device.events.length > 0, "the accounts event");
     expect(device.events).toEqual([{ type: "accounts" }]);
     device.socket.close();
+  });
+});
+
+describe("web app", () => {
+  it("lets the web app's origin call with credentials, and nobody else", async () => {
+    const preflight = (origin: string) =>
+      fetch(`${base}/v1/me`, {
+        method: "OPTIONS",
+        headers: { origin, "access-control-request-method": "GET" },
+      });
+    const allowed = await preflight(APP_ORIGIN);
+    expect(allowed.headers.get("access-control-allow-origin")).toBe(APP_ORIGIN);
+    expect(allowed.headers.get("access-control-allow-credentials")).toBe("true");
+    const other = await preflight("https://evil.example");
+    expect(other.headers.get("access-control-allow-origin")).not.toBe("https://evil.example");
+  });
+
+  it("accepts ID tokens from the web client too", async () => {
+    const response = await signInRequest(
+      await idToken("webber@example.com", { aud: WEB_CLIENT_ID }),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  /** The popup's HTML posts `{ type, result | error }` to the app: pull it out. */
+  async function popupMessage(response: Response) {
+    const html = await response.text();
+    const json = /postMessage\((\{.*?\}), "http:\/\/app\.test"\)/s.exec(html)?.[1];
+    expect(json).toBeTruthy();
+    return JSON.parse(json!) as {
+      type: string;
+      result?: { email: string; sealed: string; accessToken: string };
+      error?: string;
+    };
+  }
+
+  async function authorize(token: string) {
+    const response = await fetch(`${base}/v1/gmail/authorize?login_hint=x%40example.com`, {
+      headers: { authorization: `Bearer ${token}` },
+      redirect: "manual",
+    });
+    expect(response.status).toBe(302);
+    const url = new URL(response.headers.get("location")!);
+    expect(url.origin).toBe("https://accounts.google.com");
+    expect(url.searchParams.get("client_id")).toBe(WEB_CLIENT_ID);
+    expect(url.searchParams.get("access_type")).toBe("offline");
+    expect(url.searchParams.get("login_hint")).toBe("x@example.com");
+    return url.searchParams.get("state")!;
+  }
+
+  const callback = (token: string, query: string) =>
+    fetch(`${base}/v1/gmail/callback?${query}`, { headers: { authorization: `Bearer ${token}` } });
+
+  it("signs in to Gmail by popup, seals the refresh token, and refreshes it for its owner only", async () => {
+    const owner = await signIn("popup-owner@example.com");
+    const state = await authorize(owner.token);
+    const message = await popupMessage(
+      await callback(owner.token, `code=code:mail%40example.com&state=${state}`),
+    );
+    expect(message.type).toBe("otter:gmail-sign-in");
+    expect(message.result).toMatchObject({ email: "mail@example.com" });
+    expect(message.result!.sealed).not.toContain("rt:"); // sealed, not readable
+
+    const refreshed = await call("POST", "/v1/gmail/token", owner.token, {
+      sealed: message.result!.sealed,
+    });
+    expect(refreshed.status).toBe(200);
+    const body = (await refreshed.json()) as { accessToken: string; idToken: string };
+    expect(body.accessToken).toMatch(/^at:mail@example.com:/);
+    expect(body.idToken).toBeTruthy();
+
+    // The ID token links the account like the desktop's does.
+    const link = await call("PUT", "/v1/accounts/mail%40example.com", owner.token, {
+      idToken: body.idToken,
+    });
+    expect(link.status).toBe(204);
+
+    const stranger = await signIn("stranger@example.com");
+    const stolen = await call("POST", "/v1/gmail/token", stranger.token, {
+      sealed: message.result!.sealed,
+    });
+    expect(stolen.status).toBe(400);
+  });
+
+  it("says when Google revoked the sign-in", async () => {
+    const owner = await signIn("revoker-owner@example.com");
+    const state = await authorize(owner.token);
+    const { result } = await popupMessage(
+      await callback(owner.token, `code=code:revoked%40example.com&state=${state}`),
+    );
+    expect(
+      (await call("POST", "/v1/gmail/token", owner.token, { sealed: result!.sealed })).status,
+    ).toBe(410);
+  });
+
+  it("refuses a sign-in state issued to someone else, and reports declined consent", async () => {
+    const alice = await signIn("state-alice@example.com");
+    const bob = await signIn("state-bob@example.com");
+    const state = await authorize(alice.token);
+    const hijacked = await popupMessage(
+      await callback(bob.token, `code=code:x%40example.com&state=${state}`),
+    );
+    expect(hijacked.result).toBeUndefined();
+    expect(hijacked.error).toBeTruthy();
+    const declined = await popupMessage(await callback(alice.token, "error=access_denied"));
+    expect(declined.error).toBe("sign-in-cancelled");
   });
 });
 

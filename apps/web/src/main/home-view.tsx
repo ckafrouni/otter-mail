@@ -28,7 +28,7 @@ import {
 } from "./gmail/top-bar";
 import { SettingsPage, type SettingsRoute } from "./settings/settings-page";
 import { SettingsNav, settingsSectionLabel } from "./settings/settings-nav";
-import { OtterSignInOnboardingButton } from "./settings/otter-account-pane";
+import { OtterSignInOnboardingLink } from "./settings/otter-account-pane";
 import { isTypingTarget } from "./gmail/keyboard";
 import { cn } from "./gmail/ui";
 import { usePanelAnimationSettings, usePanelPresence } from "./panel-animations";
@@ -77,6 +77,7 @@ import {
   ALL_MAIL_VIEW_ID,
 } from "./gmail/custom-views";
 import { ALL_MAIL_LABEL_ID } from "./gmail/label-names";
+import { features } from "./features";
 
 /** Narrowest the reader gets when the chat panel is dragged wider. */
 const READER_MIN_WIDTH = 360;
@@ -283,7 +284,10 @@ export function HomeView() {
     () =>
       window.innerWidth - (sidebarOpen ? sidebarPane.width : 0) - listPane.width - READER_MIN_WIDTH,
   );
-  const [chatOpen, setChatOpen] = useState(() => localStorage.getItem("gmail:chat-open") === "1");
+  // The assistant runs local CLIs: the desktop app only.
+  const [chatOpen, setChatOpen] = useState(
+    () => features.assistant && localStorage.getItem("gmail:chat-open") === "1",
+  );
   const [sidebarOpen, setSidebarOpen] = useState(
     () => localStorage.getItem("gmail:sidebar-open") !== "0",
   );
@@ -310,12 +314,14 @@ export function HomeView() {
   // Rows multi-selected in the list, surfaced to the chat panel's context chip.
   const [chatSelection, setChatSelection] = useState<GmailMessageSummary[]>([]);
   const toggleChat = () => {
+    if (!features.assistant) return;
     setChatOpen((open) => {
       localStorage.setItem("gmail:chat-open", open ? "0" : "1");
       return !open;
     });
   };
   const openChat = () => {
+    if (!features.assistant) return;
     localStorage.setItem("gmail:chat-open", "1");
     setChatOpen(true);
   };
@@ -949,23 +955,22 @@ export function HomeView() {
     return (
       <div className="h-full flex items-center justify-center bg-canvas">
         <EmptyState
-          title="Connect your Gmail account"
-          description="Sign in with Google to start reading your emails. Using Otter Mail on another Mac? Sign in to Otter Mail to bring your accounts."
+          title="Add your first mailbox"
+          description="Sign in to a Gmail account to start reading your mail."
           actions={
-            <>
-              {addAccount.isPending ? (
-                <Button variant="outline" onClick={() => void gmailApi.cancelAddAccount()}>
-                  Cancel sign-in
-                </Button>
-              ) : (
-                <Button variant="accent" onClick={() => void handleAddAccount()}>
-                  Add Gmail account
-                </Button>
-              )}
-              <OtterSignInOnboardingButton />
-            </>
+            addAccount.isPending ? (
+              <Button variant="outline" onClick={() => void gmailApi.cancelAddAccount()}>
+                Cancel sign-in
+              </Button>
+            ) : (
+              <Button variant="accent" onClick={() => void handleAddAccount()}>
+                Add a Gmail account
+              </Button>
+            )
           }
-        />
+        >
+          <OtterSignInOnboardingLink />
+        </EmptyState>
       </div>
     );
   }
@@ -980,7 +985,9 @@ export function HomeView() {
   // and the panel toggle in one row) instead of an empty band above it.
   const readerOwnsBand =
     !settingsRoute && !(composeOpen && composeAccountId) && !!readerAccount && !!selectedMessageId;
-  const titleTrailing = <TitleTrailing showPanelToggle={!chatOpen && !settingsRoute} />;
+  const titleTrailing = (
+    <TitleTrailing showPanelToggle={features.assistant && !chatOpen && !settingsRoute} />
+  );
   // With the sidebar hidden and no list pane, this band is the leftmost one: it
   // needs the traffic-light clearance and the toggle to bring the sidebar (and
   // Settings' Back button) back.
@@ -1009,7 +1016,7 @@ export function HomeView() {
       syncLabel={globalSync.label}
       // Room for the pinned panel toggle while the panel is closed; when
       // open, the panel's header keeps it. Settings has no panel.
-      showPanelToggle={!chatOpen && !settingsRoute}
+      showPanelToggle={features.assistant && !chatOpen && !settingsRoute}
     />
   );
   return (
@@ -1227,7 +1234,7 @@ export function HomeView() {
 
       {/* Pinned titlebar toggles (Otter Code): same window spot whatever the panes do. */}
       <SidebarControl sidebarOpen={sidebarOpen} onToggleSidebar={toggleSidebar} />
-      {!settingsRoute ? (
+      {features.assistant && !settingsRoute ? (
         <PanelControl
           open={chatOpen}
           onToggle={() => {

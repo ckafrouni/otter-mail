@@ -1,33 +1,61 @@
 /**
- * Registers every IPC handler the renderer windows call.
+ * Registers every IPC handler the renderer windows call: the mail backend's
+ * (@otter-mail/core, served over Electron IPC) and the desktop's own.
  */
 
-import { setSettingsTarget, takeSettingsTarget } from "../windows/settings-window.js";
-import { registerGmailHandlers } from "./gmail.js";
-import { registerTrayPopoverHandlers } from "./tray-popover.js";
-import { registerAssistantHandlers } from "./assistant.js";
-import { registerSearchHandlers } from "./search.js";
-import { registerCalendarHandlers } from "./calendar.js";
-import { registerTranslationHandlers } from "./translation.js";
-import { registerOtterAccountHandlers } from "./otter-account.js";
-import { takePendingOpenMessage } from "../services/open-message-target.js";
-import { focusMainWindow } from "../windows/main-window.js";
-import { listMailApps, setDefaultMailHandler } from "../services/default-mail.js";
-import { configureAutoSync, syncAllAccounts } from "../services/mail-sync.js";
-import { takePendingMailto } from "../services/mailto-target.js";
-import { getSettings } from "../services/settings-store.js";
-import {
-  readKeybindings,
-  watchKeybindings,
-  writeKeybindings,
-} from "../services/keybindings-store.js";
+import { app, ipcMain, nativeImage, shell } from "electron";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
-import { app, ipcMain, shell } from "electron";
+import {
+  broadcast,
+  getAttachmentBytes,
+  KEYBINDINGS_FILE,
+  onSettingsChanged,
+  registeredHandlers,
+  runAsTask,
+} from "@otter-mail/core";
+
 import { logger } from "../logger.js";
-import { broadcast } from "../ipc.js";
+import { tempFile } from "../platform.js";
+import { listMailApps, setDefaultMailHandler } from "../services/default-mail.js";
+import { takePendingMailto } from "../services/mailto-target.js";
+import { takePendingOpenMessage } from "../services/open-message-target.js";
+import { createTray, destroyTray } from "../services/tray.js";
+import { focusMainWindow } from "../windows/main-window.js";
+import { setSettingsTarget, takeSettingsTarget } from "../windows/settings-window.js";
+import { registerAssistantHandlers } from "./assistant.js";
+import { registerTranslationHandlers } from "./translation.js";
+import { registerTrayPopoverHandlers } from "./tray-popover.js";
+
+/** Watches keybindings.json (editors replace files) so hand edits apply live. */
+function watchKeybindings(): void {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    fs.watch(app.getPath("userData"), (_event, name) => {
+      if (name?.toString() !== KEYBINDINGS_FILE) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => broadcast("keybindings:updated"), 100);
+    });
+  } catch (err) {
+    logger.info("keybindings", `watch failed: ${String(err)}`);
+  }
+}
 
 export function registerHandlers(): void {
-  logger.info("handlers", "Registering IPC handlers...");
+  for (const [channel, handler] of registeredHandlers()) {
+    ipcMain.handle(channel, (_event, params: unknown) => handler(params));
+  }
+
+  onSettingsChanged((settings, patch) => {
+    if (patch.launchAtLogin !== undefined) {
+      app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin });
+    }
+    if (patch.trayEnabled !== undefined) {
+      if (settings.trayEnabled) void createTray();
+      else destroyTray();
+    }
+  });
 
   // Settings live in the main window. Any window can deep-link into a pane
   // (e.g. edit a view from the tray); the main window pulls the target on
@@ -55,17 +83,9 @@ export function registerHandlers(): void {
 
   ipcMain.handle("window:getSettingsTarget", async () => takeSettingsTarget());
 
-  // Keybindings: userData/keybindings.json, watched so hand edits apply live.
   watchKeybindings();
-  ipcMain.handle("keybindings:read", async () => readKeybindings());
-  ipcMain.handle("keybindings:write", async (_event, params: unknown) => {
-    const result = await writeKeybindings((params as { rules?: unknown } | undefined)?.rules);
-    broadcast("keybindings:updated");
-    return result;
-  });
   ipcMain.handle("keybindings:openFile", async () => {
-    const { path: filePath } = await readKeybindings();
-    const error = await shell.openPath(filePath);
+    const error = await shell.openPath(path.join(app.getPath("userData"), KEYBINDINGS_FILE));
     if (error) throw new Error(error);
     return { ok: true };
   });
@@ -100,24 +120,36 @@ export function registerHandlers(): void {
 
   ipcMain.handle("app:listMailApps", async () => listMailApps());
 
+  // gmail:dragAttachment — native drag-out to Finder (startDrag needs a real file on disk)
+  ipcMain.handle("gmail:dragAttachment", async (event, params: unknown) => {
+    const p = params as Record<string, unknown> | undefined;
+    const { accountId, messageId, attachmentId, filename, taskId } = p ?? {};
+    if (
+      typeof accountId !== "string" ||
+      typeof messageId !== "string" ||
+      typeof attachmentId !== "string" ||
+      typeof filename !== "string"
+    ) {
+      throw new Error("Invalid parameters for gmail:dragAttachment.");
+    }
+    return runAsTask(typeof taskId === "string" ? taskId : undefined, async () => {
+      const bytes = await getAttachmentBytes(accountId, messageId, attachmentId);
+      const file = await tempFile(filename, bytes);
+      const icon = await nativeImage
+        .createThumbnailFromPath(file, { width: 64, height: 64 })
+        .catch(() => nativeImage.createEmpty());
+      // Electron requires a non-empty drag image.
+      event.sender.startDrag({
+        file,
+        icon: icon.isEmpty() ? await app.getFileIcon(file, { size: "normal" }) : icon,
+      });
+      return { ok: true };
+    });
+  });
+
   registerAssistantHandlers();
-  registerSearchHandlers();
-  registerCalendarHandlers();
   registerTranslationHandlers();
-
-  // Register Gmail handlers
-  registerGmailHandlers();
-
-  // Tray popover (mini inbox) handlers
   registerTrayPopoverHandlers();
 
-  // Otter account: sign-in, linked accounts, and push (realtime) mail
-  registerOtterAccountHandlers();
-
   logger.info("handlers", "✓ IPC handlers registered");
-
-  // Warm the local cache for every connected account on launch.
-  void syncAllAccounts({ force: true });
-
-  void getSettings().then((settings) => configureAutoSync(settings.syncIntervalSeconds));
 }

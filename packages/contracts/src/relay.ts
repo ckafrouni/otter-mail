@@ -32,6 +32,13 @@ export interface RelayAccount {
   color: string | null;
 }
 
+/**
+ * The web app's Gmail sign-in popup (`/v1/gmail/authorize`) posts
+ * `{ type: "otter:gmail-sign-in", result }` or `{ …, error }` to the app;
+ * this error means the user said no on Google's consent screen.
+ */
+export const GMAIL_SIGN_IN_CANCELLED = "sign-in-cancelled";
+
 /** `GET /v1/me` */
 export interface MeResponse {
   user: RelayUser;

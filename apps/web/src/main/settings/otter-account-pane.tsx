@@ -1,20 +1,12 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { OtterAccountState, OtterDevice } from "@otter-mail/contracts";
-import { ChevronDownIcon, LaptopIcon } from "lucide-react";
+import { LaptopIcon } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
-import { Button } from "~/components/ui/button";
 import { Dialog } from "~/components/ui/dialog";
 import { Text } from "~/components/ui/text";
 import { useAccounts } from "../gmail/hooks";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "../gmail/menu";
 import { toast } from "../gmail/toast";
 import { Btn, cn } from "../gmail/ui";
 import { otterApi, useOtterAccount } from "../otter-account";
@@ -23,7 +15,7 @@ import { SettingsGroup, SettingsRow, SettingsSection } from "./settings-ui";
 /**
  * Settings › Otter account, opened from the user button at the bottom of the
  * settings sidebar (as in Otter Code): who is signed in, whether mail arrives
- * by push, the Macs signed in, sign-out and deletion. Signed out, it explains
+ * by push, the devices signed in, sign-out and deletion. Signed out, it explains
  * the account and signs in.
  */
 
@@ -53,53 +45,34 @@ export function OtterAvatar({
   );
 }
 
-/** Signs in as one of this Mac's accounts (no browser), or with Google in the browser. */
-function SignInControl() {
-  const accounts = (useAccounts().data ?? []).filter((account) => !account.signedOut);
-  const [waitingForBrowser, setWaitingForBrowser] = useState(false);
-
-  const signIn = (accountId?: string) => {
-    if (!accountId) setWaitingForBrowser(true);
+/**
+ * "Sign in with Google" for the Otter account (never a mailbox): Google in the
+ * browser on the desktop, a redirect on the web. Cancellable while it waits.
+ */
+function useOtterSignIn() {
+  const [pending, setPending] = useState(false);
+  const signIn = () => {
+    setPending(true);
     otterApi
-      .signIn(accountId)
+      .signIn()
       .catch((err: unknown) => {
         toast.error("Couldn't sign in to Otter Mail", { description: errorText(err) });
       })
-      .finally(() => setWaitingForBrowser(false));
+      .finally(() => setPending(false));
   };
+  return { pending, signIn, cancel: () => void otterApi.cancelSignIn() };
+}
 
-  if (waitingForBrowser) {
-    return (
-      <Btn size="sm" onClick={() => void otterApi.cancelSignIn()}>
-        Cancel sign-in
-      </Btn>
-    );
-  }
-  if (accounts.length === 0) {
-    return (
-      <Btn size="sm" variant="primary" onClick={() => signIn()}>
-        Sign in with Google
-      </Btn>
-    );
-  }
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Btn size="sm" variant="primary">
-          Sign in
-          <ChevronDownIcon className="size-3.5" />
-        </Btn>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        {accounts.map((account) => (
-          <DropdownMenuItem key={account.id} onSelect={() => signIn(account.id)}>
-            Continue as {account.email}
-          </DropdownMenuItem>
-        ))}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => signIn()}>Another Google account…</DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+function SignInControl() {
+  const { pending, signIn, cancel } = useOtterSignIn();
+  return pending ? (
+    <Btn size="sm" onClick={cancel}>
+      Cancel sign-in
+    </Btn>
+  ) : (
+    <Btn size="sm" variant="primary" onClick={signIn}>
+      Sign in with Google
+    </Btn>
   );
 }
 
@@ -115,7 +88,7 @@ function DevicesSection() {
   const signOutDevice = useMutation({
     mutationFn: (device: OtterDevice) => otterApi.signOutDevice(device.token),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["otter:devices"] }),
-    onError: (err) => toast.error("Couldn't sign that Mac out", { description: errorText(err) }),
+    onError: (err) => toast.error("Couldn't sign that device out", { description: errorText(err) }),
   });
 
   return (
@@ -135,7 +108,7 @@ function DevicesSection() {
               </span>
             }
             description={
-              device.current ? "This Mac" : `Last active ${timeAgo(device.lastActiveAt)}`
+              device.current ? "This device" : `Last active ${timeAgo(device.lastActiveAt)}`
             }
             control={
               device.current ? null : (
@@ -157,6 +130,7 @@ function DevicesSection() {
 
 function SignedInPane({ state }: { state: OtterAccountState }) {
   const user = state.user!;
+  const mailboxes = useAccounts().data?.length ?? 0;
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const status = REALTIME_STATUS[state.realtime];
@@ -178,7 +152,9 @@ function SignedInPane({ state }: { state: OtterAccountState }) {
               {user.name ?? user.email}
             </span>
           }
-          description={user.email}
+          description={`${user.email} · ${
+            mailboxes === 1 ? "Your mailbox follows" : `Your ${mailboxes} mailboxes follow`
+          } you to every device`}
           status={
             <span className="flex items-center gap-1.5">
               <span aria-hidden className={cn("size-1.5 rounded-full", status.dot)} />
@@ -202,7 +178,7 @@ function SignedInPane({ state }: { state: OtterAccountState }) {
       <SettingsSection title="Delete account">
         <SettingsRow
           title="Delete Otter account"
-          description="Removes your account and its list of linked accounts from Otter Mail's servers, and signs out every Mac. Your mail and the accounts on each Mac stay."
+          description="Removes your account and its list of mailboxes from Otter Mail's servers, and signs out every device. Your mail and the mailboxes on each device stay."
           control={
             <Btn size="sm" variant="destructive" onClick={() => setConfirmDelete(true)}>
               Delete…
@@ -225,8 +201,8 @@ function SignedInPane({ state }: { state: OtterAccountState }) {
         }
       >
         <Text variant="small">
-          Otter Mail's servers forget {user.email} and the accounts linked to it, and every Mac
-          signs out. Nothing is deleted from Gmail, and this Mac keeps its accounts and mail.
+          Otter Mail's servers forget {user.email} and its list of mailboxes, and every device signs
+          out. Nothing is deleted from Gmail, and this device keeps its mailboxes and mail.
         </Text>
       </Dialog>
     </>
@@ -244,7 +220,7 @@ export function OtterAccountPane() {
           <SettingsGroup>
             <SettingsRow
               title="Sign in to Otter Mail"
-              description="Your linked accounts on every Mac you use, and new mail the moment it arrives. Otter Mail's servers only learn your addresses, never your mail."
+              description="Your mailboxes on every device you use, and new mail the moment it arrives. Otter Mail's servers only learn your addresses, never your mail."
               control={<SignInControl />}
             />
           </SettingsGroup>
@@ -254,30 +230,29 @@ export function OtterAccountPane() {
   );
 }
 
-/** First-run alternative to adding a Gmail account: bring the accounts from another Mac. */
-export function OtterSignInOnboardingButton() {
-  const [pending, setPending] = useState(false);
-  if (pending) {
-    return (
-      <Button variant="outline" onClick={() => void otterApi.cancelSignIn()}>
-        Cancel sign-in
-      </Button>
-    );
-  }
+/** First run (on the desktop, signed out): for someone who already has an Otter account. */
+export function OtterSignInOnboardingLink() {
+  const state = useOtterAccount();
+  const { pending, signIn, cancel } = useOtterSignIn();
+  if (!state || state.user) return null;
   return (
-    <Button
-      variant="outline"
-      onClick={() => {
-        setPending(true);
-        otterApi
-          .signIn()
-          .catch((err: unknown) => {
-            toast.error("Couldn't sign in to Otter Mail", { description: errorText(err) });
-          })
-          .finally(() => setPending(false));
-      }}
-    >
-      Sign in to Otter Mail
-    </Button>
+    <p className="text-sm text-muted-foreground">
+      {pending ? (
+        <button type="button" className="cursor-pointer underline" onClick={cancel}>
+          Cancel sign-in
+        </button>
+      ) : (
+        <>
+          Already use Otter Mail?{" "}
+          <button
+            type="button"
+            className="cursor-pointer font-medium text-foreground underline-offset-2 hover:underline"
+            onClick={signIn}
+          >
+            Sign in
+          </button>
+        </>
+      )}
+    </p>
   );
 }

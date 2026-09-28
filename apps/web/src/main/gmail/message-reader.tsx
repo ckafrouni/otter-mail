@@ -113,6 +113,7 @@ import type {
   GmailMessageDetail,
   GmailMessageSummary,
 } from "./types";
+import { features } from "../features";
 
 type MessageReaderProps = {
   accountId: string;
@@ -1008,7 +1009,7 @@ function ImageAttachmentTile({
             role="button"
             aria-label={`Open ${attachment.filename}`}
             onClick={handleOpen}
-            {...dragProps}
+            {...(features.dragOut ? dragProps : {})}
             className={`h-28 w-36 cursor-pointer overflow-hidden rounded-lg border border-border bg-secondary${opening ? " opacity-60" : ""}`}
           >
             {url ? (

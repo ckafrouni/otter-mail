@@ -36,10 +36,15 @@ Features: **Email client**.
 > delete messages (users.messages.delete / batchDelete require https://mail.google.com/), and
 > gmail.readonly/send/compose each cover only part of what an email client does. Mail is fetched
 > directly from the Gmail API to the user's own Mac, cached locally for speed and offline reading,
-> and never sent to our servers. If the user signs in to an optional Otter account, Gmail push
+> and never sent to our servers. In the web app (https://mail.otterware.dev), mail is likewise
+> fetched by the user's browser directly from the Gmail API and cached in the browser; because a
+> browser can't hold a lasting Google sign-in, our relay performs the OAuth code exchange and
+> token refreshes for the web client: tokens pass through it but are not stored (the refresh token
+> is encrypted by the relay and kept only in the user's browser). If the user signs in to an
+> Otter account (optional in the Mac app, required for the web app), Gmail push
 > notifications (users.watch, delivered through Google Cloud Pub/Sub) reach our relay: they carry
-> only the mailbox address and a history id, which the relay forwards to the user's Macs so they
-> sync at once. The relay stores no Gmail data and holds no Gmail tokens. We do not sell data, use it for ads, or train AI
+> only the mailbox address and a history id, which the relay forwards to the user's devices so
+> they sync at once. The relay stores no Gmail data. We do not sell data, use it for ads, or train AI
 > models on it. Our use of Google data follows the Google API Services User Data Policy,
 > including the Limited Use requirements.
 
@@ -61,3 +66,10 @@ Record the installed app, signed in with a test account, narrating or captioning
 Google reviews the submission (usually a few weeks, by email to chris.kafrouni@gmail.com). For
 the restricted Gmail scope it then requires a CASA security assessment from an authorised lab,
 renewed yearly; follow the instructions in that email.
+
+## The web app
+
+The web app uses a second OAuth client in the same project ("Web application", used by the relay
+for Otter sign-in and Gmail sign-in). Because its Gmail tokens pass through the relay, Google
+treats the restricted Gmail scope as accessed through a server: expect the CASA security
+assessment to be required, whatever the Mac app alone would need.

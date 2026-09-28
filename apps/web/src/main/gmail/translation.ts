@@ -9,6 +9,7 @@ import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { gmailApi, type TranslationStatus } from "./api";
 import type { GmailMessageDetail } from "./types";
+import { features } from "../features";
 
 /** Languages Apple's translator offers (LanguageAvailability.supportedLanguages). */
 export const TRANSLATION_LANGUAGES = [
@@ -83,6 +84,7 @@ export function useTranslationSettings(): ResolvedTranslationSettings {
     queryKey: SETTINGS_KEY,
     queryFn: () => gmailApi.getTranslationSettings(),
     staleTime: Infinity,
+    enabled: features.translation,
   });
   // Settings may change in another window; the backend tells every one.
   useEffect(
@@ -138,7 +140,8 @@ export function useMessageLanguage(
       console.log("[translation:detect]", { messageId: detail!.id, ...detection });
       return detection.confidence >= MIN_CONFIDENCE ? detection.language : null;
     },
-    enabled: Boolean(detail),
+    // Without the translator there's nothing to offer, so no need to know.
+    enabled: Boolean(detail) && features.translation,
     staleTime: Infinity,
     retry: false,
   });

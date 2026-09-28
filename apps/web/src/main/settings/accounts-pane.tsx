@@ -25,7 +25,7 @@ import { Btn, HintTooltip, cn, restoreFocusForKeyboardOnly } from "../gmail/ui";
 import { DraftInput, SettingsGroup, SettingsRow, SettingsSection } from "./settings-ui";
 
 /**
- * Settings › Linked accounts, laid out like Settings › Assistant: one card split into
+ * Settings › Mailboxes, laid out like Settings › Assistant: one card split into
  * the account list (avatar, name, sync state) and the selected account's
  * editor (status, profile, signature, removal).
  */
@@ -139,12 +139,12 @@ function ColorPicker({
 
 /** Sync state for an account, with a signed-out account called out first. */
 function accountStatus(account: GmailAccount, status: SyncStatus | undefined): StatusLine {
-  // Never synced here: it came from another Mac through the Otter account.
+  // Never synced here: it was added on another device (through the Otter account).
   if (account.signedOut && status && !status.lastSyncAt) {
     return {
-      text: "Not signed in on this Mac",
+      text: "Not signed in on this device",
       tone: "muted",
-      detail: "Linked on another Mac. Sign in to use it here.",
+      detail: "Added on another device. Sign in to use it here.",
     };
   }
   if (account.signedOut) {
@@ -430,14 +430,14 @@ export function AccountsPane() {
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="@container/accounts mx-auto w-full max-w-5xl space-y-2.5 px-4 pb-16 pt-4 sm:px-6">
         <div className="flex min-h-11 min-w-0 items-center gap-2 px-3 sm:px-4">
-          <h2 className="text-sm font-normal text-foreground/70">Linked accounts</h2>
+          <h2 className="text-sm font-normal text-foreground/70">Mailboxes</h2>
           <div className="ml-auto flex min-w-0 shrink-0 items-center gap-2">
             {accounts.length > 0 ? (
               <span className="text-2xs text-muted-foreground">
-                {accounts.length} account{accounts.length === 1 ? "" : "s"}
+                {accounts.length} mailbox{accounts.length === 1 ? "" : "es"}
               </span>
             ) : null}
-            <SignInButton label="Add account" />
+            <SignInButton label="Add mailbox" />
           </div>
         </div>
 
@@ -470,7 +470,7 @@ export function AccountsPane() {
         ) : (
           <SettingsGroup>
             <SettingsRow
-              title={accountsQuery.isLoading ? "Loading accounts…" : "No accounts yet"}
+              title={accountsQuery.isLoading ? "Loading mailboxes…" : "No mailboxes yet"}
               description="Add a Gmail account to start syncing mail. You'll sign in with Google in your browser."
             />
           </SettingsGroup>

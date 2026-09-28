@@ -5,18 +5,15 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import type { NativeThemeInfo, ThemeSource } from "@otter-mail/contracts";
+import { getSettings, startCore, syncAllAccounts } from "@otter-mail/core";
 
 import { registerHandlers } from "./handlers/index.js";
 import { broadcast } from "./ipc.js";
 import { logger } from "./logger.js";
 import { configureAppPaths } from "./paths.js";
-import { loadSignIns } from "./services/gmail-oauth.js";
-import { loadOtterAccount } from "./services/otter-account.js";
+import { desktopPlatform } from "./platform.js";
 import { parseMailtoUrl, setPendingMailto } from "./services/mailto-target.js";
-import { syncAllAccounts } from "./services/mail-sync.js";
-import { pruneAttachmentCache } from "./services/attachment-cache.js";
 import { createTray, destroyTray } from "./services/tray.js";
-import { getSettings } from "./services/settings-store.js";
 import { shutdownProviders } from "./services/assistant/service.js";
 import { initUpdates } from "./updates.js";
 import { setSettingsTarget } from "./windows/settings-window.js";
@@ -297,8 +294,8 @@ void app.whenReady().then(async () => {
     applicationVersion: app.getVersion(),
   });
 
-  await loadSignIns();
-  await loadOtterAccount();
+  // The mail backend (@otter-mail/core) runs in this process.
+  await startCore(desktopPlatform());
   registerHandlers();
   setupApplicationMenu();
   initUpdates();
@@ -310,8 +307,6 @@ void app.whenReady().then(async () => {
   if (startupSettings.trayEnabled) {
     void createTray();
   }
-
-  void pruneAttachmentCache();
 
   try {
     await createMainWindow();

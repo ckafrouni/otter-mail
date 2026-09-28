@@ -6,8 +6,7 @@
 
 import { ipcMain } from "electron";
 import { broadcast } from "../ipc.js";
-import { runAsTask } from "./ipc-budget.js";
-import { getSettings, updateSettings, type AppSettings } from "../services/settings-store.js";
+import { getSettings, runAsTask, updateSettings, type AppSettings } from "@otter-mail/core";
 import { detectLanguage, translateSegments } from "../services/translator.js";
 
 type Params = Record<string, unknown> | undefined;

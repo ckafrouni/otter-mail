@@ -1,0 +1,173 @@
+/**
+ * Gmail sign-in for the web app. A browser can't keep a Google refresh token
+ * on its own (web OAuth clients need a secret), so the relay does the OAuth
+ * exchange with the web client and seals the refresh token: the browser
+ * keeps the sealed token, only the relay can open it, and the relay stores
+ * nothing. The desktop app signs in to Gmail itself and never comes here.
+ *
+ *   GET  /v1/gmail/authorize  (popup) → Google's consent
+ *   GET  /v1/gmail/callback   → posts the sealed token and a first access token to the page
+ *   POST /v1/gmail/token      `{ sealed }` → a fresh access token (410 once Google revoked it)
+ */
+
+import { GMAIL_SCOPES } from "@otter-mail/contracts";
+import { EncryptJWT, jwtDecrypt, jwtVerify, SignJWT } from "jose";
+
+import { googleKeys } from "./auth.ts";
+import { verifyGoogleJwt } from "./google-jwt.ts";
+import type { Env } from "./worker.ts";
+
+const AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+const TOKEN_URL = "https://oauth2.googleapis.com/token";
+const tokenUrl = (env: Env) => env.GOOGLE_TOKEN_URL || TOKEN_URL;
+
+export const callbackUrl = (env: Env) => `${env.BETTER_AUTH_URL}/v1/gmail/callback`;
+
+/** Keys derived from the auth secret: one signs sign-in states, one seals refresh tokens. */
+async function key(env: Env, purpose: "state" | "seal"): Promise<Uint8Array> {
+  const secret = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(env.BETTER_AUTH_SECRET),
+    "HKDF",
+    false,
+    ["deriveBits"],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: "HKDF",
+      hash: "SHA-256",
+      salt: new Uint8Array(),
+      info: new TextEncoder().encode(`otter-mail gmail ${purpose}`),
+    },
+    secret,
+    256,
+  );
+  return new Uint8Array(bits);
+}
+
+/** Google's consent screen for the web client, for the signed-in user. */
+export async function authorizeUrl(env: Env, userId: string, loginHint?: string): Promise<string> {
+  const state = await new SignJWT({})
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(userId)
+    .setExpirationTime("10m")
+    .sign(await key(env, "state"));
+  const url = new URL(AUTHORIZE_URL);
+  url.search = new URLSearchParams({
+    client_id: env.GOOGLE_WEB_CLIENT_ID,
+    redirect_uri: callbackUrl(env),
+    response_type: "code",
+    scope: GMAIL_SCOPES.join(" "),
+    access_type: "offline",
+    // Consent every time, so Google always returns a refresh token.
+    prompt: "consent",
+    state,
+    ...(loginHint ? { login_hint: loginHint } : {}),
+  }).toString();
+  return url.toString();
+}
+
+/** The Otter user a sign-in state was issued to; throws if forged or stale. */
+export async function stateUser(env: Env, state: string): Promise<string> {
+  const { payload } = await jwtVerify(state, await key(env, "state"), { algorithms: ["HS256"] });
+  return payload.sub!;
+}
+
+type GoogleTokens = {
+  access_token: string;
+  expires_in: number;
+  refresh_token?: string;
+  id_token?: string;
+  error?: string;
+};
+
+async function tokenRequest(env: Env, params: Record<string, string>): Promise<GoogleTokens> {
+  const response = await fetch(tokenUrl(env), {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: env.GOOGLE_WEB_CLIENT_ID,
+      client_secret: env.GOOGLE_WEB_CLIENT_SECRET,
+      ...params,
+    }),
+  });
+  const body = (await response.json().catch(() => ({}))) as GoogleTokens;
+  if (!response.ok || body.error)
+    throw new GoogleTokenError(body.error ?? `HTTP ${response.status}`);
+  return body;
+}
+
+export class GoogleTokenError extends Error {
+  get revoked() {
+    return this.message === "invalid_grant";
+  }
+}
+
+/** What the popup hands the page (apps/web/src/web/protocol.ts, GoogleSignInResult). */
+export type SignInResult = {
+  email: string;
+  name: string;
+  picture: string | null;
+  sealed: string;
+  accessToken: string;
+  expiresIn: number;
+};
+
+/** Exchanges the code, then seals the refresh token for this user. */
+export async function completeSignIn(
+  env: Env,
+  userId: string,
+  code: string,
+): Promise<SignInResult> {
+  const tokens = await tokenRequest(env, {
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: callbackUrl(env),
+  });
+  if (!tokens.refresh_token || !tokens.id_token) {
+    throw new GoogleTokenError("Google did not return a refresh token.");
+  }
+  const claims = await verifyGoogleJwt(tokens.id_token, env.GOOGLE_WEB_CLIENT_ID, googleKeys(env));
+  const sealed = await new EncryptJWT({ email: claims.email, refreshToken: tokens.refresh_token })
+    .setProtectedHeader({ alg: "dir", enc: "A256GCM" })
+    .setSubject(userId)
+    .setIssuedAt()
+    .encrypt(await key(env, "seal"));
+  return {
+    email: claims.email,
+    name: claims.name ?? claims.email,
+    picture: claims.picture ?? null,
+    sealed,
+    accessToken: tokens.access_token,
+    expiresIn: tokens.expires_in,
+  };
+}
+
+/** A fresh access token (and ID token) from a sealed refresh token, for its owner only. */
+export async function refresh(env: Env, userId: string, sealed: string) {
+  const { payload } = await jwtDecrypt<{ refreshToken: string }>(sealed, await key(env, "seal"), {
+    subject: userId,
+  });
+  const tokens = await tokenRequest(env, {
+    grant_type: "refresh_token",
+    refresh_token: payload.refreshToken,
+  });
+  return {
+    accessToken: tokens.access_token,
+    expiresIn: tokens.expires_in,
+    idToken: tokens.id_token ?? null,
+  };
+}
+
+/** The popup's last page: hands the result (or error) to the app and closes. */
+export function popupResponse(env: Env, message: { result?: SignInResult; error?: string }) {
+  const payload = JSON.stringify({ type: "otter:gmail-sign-in", ...message }).replace(
+    /</g,
+    "\\u003c",
+  );
+  const html = `<!doctype html><meta charset="utf-8"><title>Otter Mail</title>
+<body style="font:15px -apple-system,BlinkMacSystemFont,sans-serif;display:grid;place-items:center;height:90vh">
+<p>${message.error ? "Sign-in didn't work. You can close this window." : "Signed in. You can close this window."}</p>
+<script>window.opener?.postMessage(${payload}, ${JSON.stringify(env.APP_ORIGIN)}); window.close();</script>`;
+  return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+}

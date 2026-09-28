@@ -196,12 +196,10 @@ export function UpdatesSection() {
     <Btn variant="primary" size="sm" onClick={() => void updates.install()}>
       Restart to Update
     </Btn>
-  ) : (
+  ) : state.status === "disabled" ? null : (
     <Btn
       size="sm"
-      disabled={
-        state.status === "disabled" || state.status === "checking" || state.status === "downloading"
-      }
+      disabled={state.status === "checking" || state.status === "downloading"}
       onClick={() => void updates.check()}
     >
       Check for Updates

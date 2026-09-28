@@ -19,11 +19,16 @@
   ],
   "durable_objects": { "bindings": [{ "name": "USER_HUB", "class_name": "UserHub" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserHub"] }],
-  // Secrets (\`wrangler secret put\`): BETTER_AUTH_SECRET.
+  // Secrets (`wrangler secret put`): BETTER_AUTH_SECRET, GOOGLE_WEB_CLIENT_SECRET.
   "vars": {
     "BETTER_AUTH_URL": "https://relay.mail.otterware.dev",
-    // The desktop app's OAuth client ("Desktop app" client in the otter-mail project).
+    // The apps' OAuth clients in the otter-mail project: "Desktop app", and
+    // "Web application" (the web app's Otter and Gmail sign-in).
     "GOOGLE_CLIENT_ID": "187875144740-aspevse90oidb4ra3t2fcdfmbagm6jep.apps.googleusercontent.com",
+    "GOOGLE_WEB_CLIENT_ID": "187875144740-drhr59ablkv4ovonrjisd7fj5dv28d6o.apps.googleusercontent.com",
+    // The web app: trusted for CORS and sign-in redirects; shares the session cookie.
+    "APP_ORIGIN": "https://mail.otterware.dev",
+    "COOKIE_DOMAIN": "mail.otterware.dev",
     "PUSH_TOPIC": "projects/otter-mail/topics/gmail-push",
     "PUSH_AUDIENCE": "https://relay.mail.otterware.dev/push/gmail",
     "PUSH_SERVICE_ACCOUNT": "gmail-push-relay@otter-mail.iam.gserviceaccount.com",

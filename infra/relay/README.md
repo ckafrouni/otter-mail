@@ -1,11 +1,16 @@
 # Otter Mail relay
 
-https://relay.mail.otterware.dev, a Cloudflare Worker. It gives Otter Mail two things, both
-optional (the app works without it):
+https://relay.mail.otterware.dev, a Cloudflare Worker. It gives Otter Mail three things (the
+Mac app works without it; the web app needs it):
 
 - **Otter accounts.** Sign in with Google once per Mac, and the Gmail accounts you use come
   along to every Mac. The relay keeps the list of linked addresses and their display names and
   colors. Each Mac still signs in to Gmail itself; the relay never holds Gmail tokens.
+- **Gmail sign-in for the web app.** A browser can't keep a Google refresh token by itself, so
+  the relay does the OAuth exchange with the web client and seals the refresh token (only the
+  relay can open it, and only for the Otter user it was issued to). The browser keeps the sealed
+  token and asks `/v1/gmail/token` for fresh access tokens. Nothing is stored here. See
+  `src/gmail.ts`.
 - **Realtime mail.** Each Mac asks Gmail (`users.watch`) to publish its mailboxes' changes to the
   `gmail-push` Pub/Sub topic. Pub/Sub pushes each notification (`{ emailAddress, historyId }`,
   no content) to the relay, which forwards it over WebSocket to the Macs of whoever linked that
@@ -21,8 +26,11 @@ Mac ◀──── WebSocket /v1/events ◀── UserHub (Durable Object, one 
 
 - `src/worker.ts`: routes (Hono). `/v1/auth/*` is better-auth; `/v1/me`, `/v1/accounts` and
   `/v1/events` need a session; `/push/gmail` takes Pub/Sub pushes.
-- `src/auth.ts`: better-auth: Google ID-token sign-in, bearer sessions (one per Mac, 90 days,
-  renewed with use), device list, account deletion. Signing a session out closes its sockets.
+- `src/auth.ts`: better-auth: Google sign-in (ID tokens from the Mac app, the redirect flow for
+  the web app), sessions (bearer tokens for the Mac app, a cookie shared with mail.otterware.dev
+  for the web app; one per device, 90 days, renewed with use), device list, account deletion.
+  Signing a session out closes its sockets.
+- `src/gmail.ts`: the web app's Gmail sign-in popup, and token refreshes.
 - `src/google-jwt.ts`: verifies Google-signed JWTs (jose): ID tokens, and Pub/Sub's push tokens.
 - `src/user-hub.ts`: the Durable Object holding each user's sockets (hibernating).
 - `src/schema.ts`, `src/store.ts`: the D1 schema (Drizzle) and the linked-accounts queries.
@@ -74,4 +82,6 @@ credentials (`wrangler login`, or `CLOUDFLARE_API_TOKEN`).
   token with that URL as audience; 10 minutes retention (a missed notification only delays a
   sync: the app still polls every few minutes).
 
-Secrets: `BETTER_AUTH_SECRET` (`wrangler secret put BETTER_AUTH_SECRET`).
+Secrets (`wrangler secret put …`): `BETTER_AUTH_SECRET` (also keys the Gmail token sealing),
+`GOOGLE_WEB_CLIENT_SECRET` (the "Web application" OAuth client, whose ID is `GOOGLE_WEB_CLIENT_ID`
+in `wrangler.jsonc`). Locally, put them in `.dev.vars` (gitignored).

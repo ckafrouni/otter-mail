@@ -2,11 +2,15 @@
   "name": "@otter-mail/site",
   "version": "0.0.0",
   "private": true,
-  "description": "mail.otterware.dev: home page, privacy policy and terms.",
+  "description": "mail.otterware.dev: the landing page, privacy policy and terms, and the web app.",
   "scripts": {
-    "deploy": "wrangler deploy"
+    "build": "node scripts/build.ts",
+    "deploy": "node scripts/build.ts && wrangler deploy",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260901.0",
+    "typescript": "catalog:",
     "wrangler": "^4.141.0"
   }
 }

@@ -1,7 +1,8 @@
 /**
  * The Otter Mail relay: Otter accounts (better-auth, auth.ts), the Gmail
- * accounts linked to them, and realtime mail notifications. Gmail publishes mailbox changes to a
- * Pub/Sub topic, Pub/Sub pushes them here, and the relay forwards them to the
+ * accounts linked to them, realtime mail notifications, and the web app's
+ * Gmail sign-in (gmail.ts). Gmail publishes mailbox changes to a Pub/Sub
+ * topic, Pub/Sub pushes them here, and the relay forwards them to the
  * signed-in devices over WebSocket. The API is described in
  * packages/contracts/src/relay.ts.
  */
@@ -9,16 +10,19 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { bearerAuth } from "hono/bearer-auth";
+import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
-import type {
-  ListAccountsResponse,
-  MeResponse,
-  RelayEvent,
-  RelayUser,
+import {
+  GMAIL_SIGN_IN_CANCELLED,
+  type ListAccountsResponse,
+  type MeResponse,
+  type RelayEvent,
+  type RelayUser,
 } from "@otter-mail/contracts/relay";
 
-import { createAuth, googleKeys, type Auth } from "./auth.ts";
+import { createAuth, googleClientIds, googleKeys, type Auth } from "./auth.ts";
+import * as gmail from "./gmail.ts";
 import { InvalidTokenError, verifyGoogleJwt } from "./google-jwt.ts";
 import * as store from "./store.ts";
 import { SESSION_HEADER, type UserHub } from "./user-hub.ts";
@@ -28,8 +32,16 @@ export { UserHub } from "./user-hub.ts";
 export interface Env {
   DB: D1Database;
   USER_HUB: DurableObjectNamespace<UserHub>;
-  /** The desktop app's Google OAuth client: the audience of its ID tokens. */
+  /** The desktop app's Google OAuth client ("Desktop app" type). */
   GOOGLE_CLIENT_ID: string;
+  /** The web app's Google OAuth client ("Web application"): Otter and Gmail sign-in. */
+  GOOGLE_WEB_CLIENT_ID: string;
+  /** Its secret (a Worker secret). */
+  GOOGLE_WEB_CLIENT_SECRET: string;
+  /** Where the web app runs (https://mail.otterware.dev): trusted for CORS and redirects. */
+  APP_ORIGIN: string;
+  /** The session cookie's domain, shared with the web app ("mail.otterware.dev"); unset locally. */
+  COOKIE_DOMAIN?: string;
   /** Pub/Sub topic Gmail publishes to (`projects/…/topics/…`). */
   PUSH_TOPIC: string;
   /** Audience of the OIDC token on Pub/Sub push requests (the push route's URL). */
@@ -42,16 +54,18 @@ export interface Env {
   BETTER_AUTH_SECRET: string;
   /** Where Google's signing keys are published; only tests change it. */
   GOOGLE_JWKS_URL?: string;
+  /** Google's OAuth token endpoint; only tests change it. */
+  GOOGLE_TOKEN_URL?: string;
 }
 
 type Session = { id: string; user: RelayUser };
 
 type App = { Bindings: Env; Variables: { db: store.Db; auth: Auth; session: Session } };
 
-/** Verifies a Google ID token issued to the desktop app. */
+/** Verifies a Google ID token issued to one of the apps. */
 async function verifyIdToken(env: Env, idToken: string) {
   try {
-    return await verifyGoogleJwt(idToken, env.GOOGLE_CLIENT_ID, googleKeys(env));
+    return await verifyGoogleJwt(idToken, googleClientIds(env), googleKeys(env));
   } catch (err) {
     if (err instanceof InvalidTokenError) {
       throw new HTTPException(401, { message: `Invalid ID token (${err.message}).` });
@@ -74,6 +88,11 @@ const mailbox = z
   .pipe(z.email());
 
 const app = new Hono<App>();
+
+// The web app calls the relay from its own origin, with its session cookie.
+app.use("/v1/*", (c, next) =>
+  cors({ origin: c.env.APP_ORIGIN, credentials: true, maxAge: 86_400 })(c, next),
+);
 
 app.use(async (c, next) => {
   const db = store.openDb(c.env.DB);
@@ -109,6 +128,49 @@ authed.use(async (c, next) => {
   });
   await next();
 });
+
+// ── Gmail sign-in for the web app (gmail.ts) ────────────────────────────────
+
+authed.get("/gmail/authorize", (c) =>
+  gmail
+    .authorizeUrl(c.env, c.var.session.user.id, c.req.query("login_hint"))
+    .then((url) => c.redirect(url)),
+);
+
+authed.get("/gmail/callback", async (c) => {
+  const { code, state, error } = c.req.query();
+  try {
+    if (error === "access_denied")
+      return gmail.popupResponse(c.env, { error: GMAIL_SIGN_IN_CANCELLED });
+    if (error || !code || !state) throw new Error(error ?? "missing code");
+    if ((await gmail.stateUser(c.env, state)) !== c.var.session.user.id) {
+      throw new Error("signed in as someone else");
+    }
+    return gmail.popupResponse(c.env, {
+      result: await gmail.completeSignIn(c.env, c.var.session.user.id, code),
+    });
+  } catch (err) {
+    console.warn("Gmail sign-in failed", String(err));
+    return gmail.popupResponse(c.env, { error: String(err) });
+  }
+});
+
+authed.post(
+  "/gmail/token",
+  zValidator("json", z.object({ sealed: z.string() }), rejectInvalid),
+  async (c) => {
+    try {
+      return c.json(await gmail.refresh(c.env, c.var.session.user.id, c.req.valid("json").sealed));
+    } catch (err) {
+      if (err instanceof gmail.GoogleTokenError && err.revoked) {
+        throw new HTTPException(410, { message: "Google revoked this sign-in." });
+      }
+      if (err instanceof gmail.GoogleTokenError)
+        throw new HTTPException(502, { message: err.message });
+      throw new HTTPException(400, { message: "Invalid sealed token." });
+    }
+  },
+);
 
 authed.get("/me", (c) =>
   c.json({ user: c.var.session.user, pushTopic: c.env.PUSH_TOPIC } satisfies MeResponse),

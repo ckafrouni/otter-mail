@@ -13,12 +13,12 @@
       <p class="updated">Last updated: September 28, 2026</p>
 
       <p>
-        Otter Mail is a desktop email app for macOS, made by Christophe Kafrouni under the Otterware
-        name. This policy explains what data Otter Mail accesses, where it goes, and what control
-        you have. In short: Otter Mail runs on your Mac and talks to Google directly. We never
-        receive your mail, your contacts or your Google sign-in. If you choose to sign in to an
-        Otter account, our server learns which Gmail addresses you use and when they change, and
-        nothing else.
+        Otter Mail is an email app for macOS and the web, made by Christophe Kafrouni under the
+        Otterware name. This policy explains what data Otter Mail accesses, where it goes, and what
+        control you have. In short: Otter Mail runs on your device (your Mac, or your browser) and
+        fetches your mail from Google directly; your mail never passes through our server. If you
+        sign in to an Otter account, our server learns which Gmail addresses you use and when they
+        change. In the web app, it also handles your Gmail sign-in (see below).
       </p>
 
       <h2>Data Otter Mail accesses from your Google Account</h2>
@@ -48,30 +48,31 @@
       <ul>
         <li>
           Data from Google is used only to provide Otter Mail's features to you, in the app on your
-          Mac. It is never sold, never used for advertising, and never used to train artificial
+          device. It is never sold, never used for advertising, and never used to train artificial
           intelligence models.
         </li>
         <li>
-          Your mail, labels and contact details are stored in a local database on your Mac, so the
-          app is fast and works offline. It stays in the Otter Mail folder in your home directory
-          (<code>~/.otter-mail</code>) until you remove the account or delete the app's data.
+          Your mail, labels and contact details are stored in a local database on your device, so
+          the app is fast. On a Mac it stays in the Otter Mail folder in your home directory
+          (<code>~/.otter-mail</code>); in the web app, in your browser's storage for this site. It
+          stays until you remove the account or delete the app's data.
         </li>
         <li>
-          Google sign-in tokens are stored on your Mac, encrypted with a key kept in your macOS
-          Keychain.
+          In the Mac app, Google sign-in tokens are stored on your Mac, encrypted with a key kept in
+          your macOS Keychain. In the web app, see "The web app" above.
         </li>
         <li>
-          Translation of foreign-language mail uses Apple's on-device translator. The text does not
-          leave your Mac.
+          Translation of foreign-language mail (Mac app) uses Apple's on-device translator. The text
+          does not leave your Mac.
         </li>
         <li>No analytics, tracking or crash reports are collected.</li>
       </ul>
 
       <h2>The Otter account (optional)</h2>
       <p>
-        Signing in to an Otter account (Settings → Accounts) brings your accounts to every Mac you
-        use and delivers new mail the moment it arrives. For this, Otter Mail's server at
-        <code>relay.mail.otterware.dev</code> (run on Cloudflare) stores:
+        An Otter account (optional in the Mac app, required for the web app) brings your mailboxes
+        to every device you use and delivers new mail the moment it arrives. For this, Otter Mail's
+        server at <code>relay.mail.otterware.dev</code> (run on Cloudflare) stores:
       </p>
       <ul>
         <li>your Google account's ID, address, name and picture, to know who is signed in;</li>
@@ -79,18 +80,32 @@
           the address, name and picture of each Gmail account you use in Otter Mail, and the display
           name and color you gave it;
         </li>
-        <li>a hash of each device's sign-in token.</li>
+        <li>
+          for each signed-in device, its session (a random sign-in token), when it was last used,
+          its browser or Mac name and its IP address, so you can see and sign out your devices.
+        </li>
       </ul>
       <p>
         To deliver new mail instantly, Gmail sends a notification through Google Cloud Pub/Sub to
         this server whenever one of your mailboxes changes. The notification contains only the
         address and a change number, never the content of your mail; the server passes it on to your
-        Macs, which then fetch the change from Gmail themselves. Notifications are not stored. Your
-        mail, contacts and Google tokens never reach our server.
+        devices, which then fetch the change from Gmail themselves. Notifications are not stored.
+        Your mail and contacts never reach our server.
       </p>
 
-      <h2>When data leaves your Mac</h2>
-      <p>Otter Mail connects directly from your Mac to:</p>
+      <h2>The web app</h2>
+      <p>
+        In a browser, your mail is fetched from Gmail by your browser and cached in the browser's
+        own storage for this site, which you can clear at any time (it is also removed when you
+        delete your browsing data). A browser can't keep a lasting Google sign-in on its own, so
+        when you add a Gmail account in the web app, our server completes Google's sign-in and
+        refreshes it when needed: your Google tokens pass through our server, but it does not store
+        them. The long-lived token is encrypted by our server and kept only in your browser. In the
+        Mac app, Google tokens never reach our server.
+      </p>
+
+      <h2>When data leaves your device</h2>
+      <p>Otter Mail connects directly from your device to:</p>
       <ul>
         <li>
           <strong>Google</strong> (Gmail, People, Calendar and sign-in services), to do what you ask
@@ -136,14 +151,17 @@
       <h2>Your control</h2>
       <ul>
         <li>
-          Removing an account in Otter Mail (Settings → Accounts) deletes its local copy of your
-          mail and its sign-in from your Mac. Nothing is deleted from Gmail.
+          Removing a mailbox in Otter Mail (Settings → Mailboxes) deletes its local copy of your
+          mail and its sign-in from your device. Nothing is deleted from Gmail.
         </li>
         <li>
           You can revoke Otter Mail's access at any time at
           <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.
         </li>
-        <li>Deleting the <code>~/.otter-mail</code> folder removes all of the app's data.</li>
+        <li>
+          Deleting the <code>~/.otter-mail</code> folder (Mac), or this site's data in your browser
+          (web), removes all of the app's data on that device.
+        </li>
         <li>
           Signing out of your Otter account ends that device's session. To delete your Otter account
           and everything our server stores about it, email us at the address below.

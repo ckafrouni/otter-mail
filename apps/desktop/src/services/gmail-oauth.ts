@@ -19,11 +19,18 @@ import * as fs from "node:fs/promises";
 import * as http from "node:http";
 import * as path from "node:path";
 
+import { GMAIL_SCOPES } from "@otter-mail/contracts";
+import {
+  accountStore,
+  SIGNED_OUT_MESSAGE,
+  SignInCancelledError,
+  type GmailAccount,
+  type GoogleAuth,
+} from "@otter-mail/core";
+
 import { broadcast } from "../ipc.js";
 import { logger } from "../logger.js";
 import { getCredentials } from "./credentials-store.js";
-import { addAccount as storeAddAccount } from "./account-store.js";
-import type { GmailAccount } from "../gmail/types.js";
 
 const AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -37,20 +44,7 @@ const USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo";
 const LOOPBACK_PORT = 42813;
 const AUTHORIZE_TIMEOUT_MS = 5 * 60_000;
 
-const SCOPES = [
-  "https://mail.google.com/",
-  "openid",
-  "email",
-  "profile",
-  // People API, for sender avatars. Tokens issued before these scopes were
-  // added simply 403 on People calls (the avatar cascade skips to Gravatar);
-  // re-adding the account upgrades its consent in place.
-  "https://www.googleapis.com/auth/contacts.readonly",
-  "https://www.googleapis.com/auth/contacts.other.readonly",
-  // Calendar, for answering invitations in place. Older tokens lack it: RSVP
-  // then falls back to an email reply; re-adding the account upgrades it.
-  "https://www.googleapis.com/auth/calendar.events",
-];
+const SCOPES = GMAIL_SCOPES;
 
 /** Who the user is, for the Otter account: no access to their data. */
 const IDENTITY_SCOPES = ["openid", "email", "profile"];
@@ -182,18 +176,11 @@ const CALLBACK_PAGE = (message: string) => `<!doctype html>
 @media (prefers-color-scheme:dark){body{background:#18181b;color:#e4e4e7}}</style></head>
 <body><p>${message}</p></body></html>`;
 
-/** The user gave up on a sign-in (or started another one). */
-export class SignInCancelledError extends Error {
-  constructor() {
-    super("Google sign-in was cancelled.");
-  }
-}
-
 /** The sign-in waiting on the browser, if any. Only one runs at a time: they share the port. */
 let pendingSignIn: { cancel: () => void; done: Promise<unknown> } | null = null;
 
 /** Stops waiting for the browser, e.g. after Google showed an error page instead of redirecting. */
-export function cancelSignIn(): void {
+function cancelSignIn(): void {
   pendingSignIn?.cancel();
 }
 
@@ -309,7 +296,7 @@ async function authorizeInBrowser(opts: {
  * email/name/picture, then tokens and metadata are stored under the email.
  * `loginHint` preselects that Google account when signing an account back in.
  */
-export async function addAccount(loginHint?: string): Promise<GmailAccount> {
+async function addAccount(loginHint?: string): Promise<GmailAccount> {
   let tokens: StoredTokens;
   try {
     const { code, redirectUri, verifier } = await authorizeInBrowser({
@@ -360,12 +347,12 @@ export async function addAccount(loginHint?: string): Promise<GmailAccount> {
     name: userInfo.name ?? email,
     picture: userInfo.picture,
   };
-  await storeAddAccount(account);
+  await accountStore.addAccount(account);
   return account;
 }
 
 /** Signs in to Google in the browser for identity only; resolves with the ID token. */
-export async function signInForIdToken(): Promise<string> {
+async function signInForIdToken(): Promise<string> {
   const { code, redirectUri, verifier } = await authorizeInBrowser({ purpose: "identity" });
   const response = await tokenRequest({
     grant_type: "authorization_code",
@@ -379,15 +366,13 @@ export async function signInForIdToken(): Promise<string> {
 
 // ── Sign-in state ────────────────────────────────────────────────────────────
 
-export const SIGNED_OUT_MESSAGE = "Signed out of Google. Sign in to this account again.";
-
 /** Reads the token store; call once at startup so `isSignedIn` answers right away. */
-export async function loadSignIns(): Promise<void> {
+async function loadSignIns(): Promise<void> {
   await loadStore();
 }
 
 /** Whether the account has a stored Google sign-in (false once Google revokes it). */
-export function isSignedIn(accountId: string): boolean {
+function isSignedIn(accountId: string): boolean {
   return storeCache?.has(accountId) ?? true;
 }
 
@@ -445,7 +430,7 @@ async function loadAccessToken(accountId: string, forceRefresh: boolean): Promis
  * A fresh Google ID token for a signed-in account, proving to the relay that
  * this device signed in to it. Google returns one with every refresh.
  */
-export async function getIdToken(accountId: string): Promise<string> {
+async function getIdToken(accountId: string): Promise<string> {
   const { id_token } = await refreshTokens(accountId);
   if (!id_token)
     throw new Error("Google did not return an ID token. Sign in to this account again.");
@@ -458,7 +443,7 @@ export async function getIdToken(accountId: string): Promise<string> {
  * one load/refresh. `forceRefresh` discards the current token (Gmail answered
  * 401 with it).
  */
-export async function getAccessToken(
+async function getAccessToken(
   accountId: string,
   opts?: { forceRefresh?: boolean },
 ): Promise<string> {
@@ -478,8 +463,20 @@ export async function getAccessToken(
 }
 
 /** Removes stored OAuth tokens for an account. */
-export async function removeAccountTokens(accountId: string): Promise<void> {
+async function removeAccountTokens(accountId: string): Promise<void> {
   tokenCache.delete(accountId);
   const store = await loadStore();
   if (store.delete(accountId)) await saveStore();
 }
+
+/** The desktop's Google sign-in: the loopback flow, tokens in safeStorage. */
+export const googleAuth: GoogleAuth = {
+  load: loadSignIns,
+  addAccount,
+  cancelSignIn,
+  isSignedIn,
+  getAccessToken,
+  getIdToken,
+  removeTokens: removeAccountTokens,
+  signInForIdToken,
+};

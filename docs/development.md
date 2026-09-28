@@ -68,3 +68,23 @@ The consent screen is published but not yet verified by Google, so sign-in shows
 app" warning and is capped at 100 users. The home page, privacy policy and terms it links to live
 in `site/` and are served at https://mail.otterware.dev; Cloudflare Workers Builds deploys them on
 every push to `main` that touches `site/` (as it does the relay, see `infra/relay/README.md`).
+
+## The web app
+
+The same renderer runs in a browser, with the mail backend (`packages/core`) in a Web Worker
+(`apps/web/src/web`). It needs an Otter account, so run the relay too:
+
+```sh
+echo "BETTER_AUTH_SECRET=any-long-local-secret" > infra/relay/.dev.vars   # once (gitignored)
+pnpm --filter @otter-mail/relay exec wrangler d1 migrations apply otter-mail-relay --local  # once
+pnpm --filter @otter-mail/relay dev                  # the relay on http://localhost:8787
+VITE_RELAY_URL=http://localhost:8787 pnpm dev:web    # the app on http://localhost:5833
+```
+
+Signing in with Google locally uses the web OAuth client (its redirect URIs include
+`http://localhost:8787/...`); put `GOOGLE_WEB_CLIENT_SECRET=...` in `.dev.vars` and pass
+`--var GOOGLE_WEB_CLIENT_ID:...` (or set it in `wrangler.jsonc`). The browser's data (the mail
+cache and files) lives in the site's OPFS storage: clear site data to start fresh.
+
+`pnpm --filter @otter-mail/site build` assembles the deployable site (landing pages plus the
+app) in `site/dist`.

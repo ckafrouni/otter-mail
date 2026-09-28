@@ -20,6 +20,10 @@ const DAY_S = 24 * 60 * 60;
 
 export const googleKeys = (env: Env) => remoteKeys(env.GOOGLE_JWKS_URL || GOOGLE_JWKS_URL);
 
+/** The audiences of ID tokens from Otter Mail's own Google sign-ins (desktop and web). */
+export const googleClientIds = (env: Env) =>
+  [env.GOOGLE_WEB_CLIENT_ID, env.GOOGLE_CLIENT_ID].filter(Boolean);
+
 const hub = (env: Env, userId: string) => env.USER_HUB.get(env.USER_HUB.idFromName(userId));
 
 export function createAuth(env: Env, db: Db) {
@@ -29,14 +33,16 @@ export function createAuth(env: Env, db: Db) {
     basePath: "/v1/auth",
     secret: env.BETTER_AUTH_SECRET,
     database: drizzleAdapter(db, { provider: "sqlite", schema }),
+    // The web app signs in with Google by redirect, and comes back to its origin.
+    trustedOrigins: [env.APP_ORIGIN],
     socialProviders: {
       google: {
-        clientId: env.GOOGLE_CLIENT_ID,
-        // Only the ID-token flow is used, which needs no secret.
-        clientSecret: "",
+        // The web client does the redirect sign-in; ID tokens may come from either app.
+        clientId: googleClientIds(env),
+        clientSecret: env.GOOGLE_WEB_CLIENT_SECRET ?? "",
         verifyIdToken: async (token) => {
           try {
-            await verifyGoogleJwt(token, env.GOOGLE_CLIENT_ID, googleKeys(env));
+            await verifyGoogleJwt(token, googleClientIds(env), googleKeys(env));
             return true;
           } catch {
             return false;
@@ -70,6 +76,10 @@ export function createAuth(env: Env, db: Db) {
         },
       },
     },
+    advanced: env.COOKIE_DOMAIN
+      ? // The web app at mail.otterware.dev sees the session cookie (and knows you're signed in).
+        { crossSubDomainCookies: { enabled: true, domain: env.COOKIE_DOMAIN } }
+      : {},
     telemetry: { enabled: false },
   });
 }

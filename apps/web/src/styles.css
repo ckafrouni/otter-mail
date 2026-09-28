@@ -104,6 +104,11 @@
   --chat-composer-outline: rgb(0 0 0 / 8%);
   --chat-composer-highlight: transparent;
 }
+
+/* A browser tab has no traffic lights to clear. */
+html[data-platform="web"] {
+  --workspace-controls-left: 1rem;
+}
 .dark {
   --app-scrollbar-thumb: rgb(255 255 255 / 8%);
   --app-scrollbar-thumb-hover: rgb(255 255 255 / 12%);

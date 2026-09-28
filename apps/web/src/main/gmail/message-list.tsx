@@ -69,6 +69,7 @@ import type { GmailAccount, GmailLabel, GmailMessageSummary, ViewRule } from "./
 import { pickAdvanceTarget } from "./advance-direction";
 import { beginUndoGroup, clearUndo } from "./undo";
 import { isMoveSourceLabel, setThreadDragImage, writeThreadDrag } from "./thread-drag";
+import { features } from "../features";
 
 type ResolveLabel = (accountId: string | undefined, labelId: string) => GmailLabel | undefined;
 
@@ -551,10 +552,14 @@ function MessageRow({
             {message.starred ? "Unflag" : "Flag"}
           </ContextMenuItem>
           <ContextMenuSeparator />
-          <ContextMenuItem icon="bubble.left" onSelect={onChatAssistant}>
-            Open in assistant chat
-          </ContextMenuItem>
-          <ContextMenuSeparator />
+          {features.assistant ? (
+            <>
+              <ContextMenuItem icon="bubble.left" onSelect={onChatAssistant}>
+                Open in assistant chat
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+            </>
+          ) : null}
           <ContextMenuSub label="Label">
             {labelTree.length === 0 ? (
               <ContextMenuItem disabled>No labels</ContextMenuItem>
@@ -687,7 +692,7 @@ export function MessageList({
   search,
 }: MessageListProps) {
   const isCombined = combined != null;
-  // This Mac isn't signed in to the account (e.g. it came from another Mac).
+  // This device isn't signed in to the mailbox (e.g. it was added on another device).
   const signedOutAccount = useAccounts().data?.find(
     (account) => account.id === accountId && account.signedOut,
   );

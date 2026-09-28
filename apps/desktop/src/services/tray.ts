@@ -15,7 +15,7 @@
 import { Tray } from "electron";
 import { logger } from "../logger.js";
 import { broadcast } from "../ipc.js";
-import { countInboxUnreadAll } from "./mail-store.js";
+import { mailStore } from "@otter-mail/core";
 import {
   toggleTrayPopover,
   destroyTrayPopover,
@@ -29,7 +29,7 @@ let tray: Tray | null = null;
 export async function refreshTray(): Promise<void> {
   if (!tray) return;
   try {
-    const unread = countInboxUnreadAll();
+    const unread = mailStore.countInboxUnreadAll();
     tray.setToolTip(unread > 0 ? `Otter Mail — ${unread} unread` : "Otter Mail");
     broadcast("tray:refresh");
   } catch (err) {

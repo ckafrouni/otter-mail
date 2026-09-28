@@ -18,6 +18,7 @@ import { ProvidersPane } from "./providers-pane";
 import { TranslationSection } from "./translation-section";
 import { UpdatesSection } from "../updates";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settings-ui";
+import { features } from "../features";
 
 /** Where the settings page is. */
 export type SettingsRoute = {
@@ -116,6 +117,7 @@ function GeneralPane() {
   };
 
   const loadMailApps = async () => {
+    if (!features.defaultMailApp) return;
     try {
       const result = await gmailApi.listMailApps();
       setMailApps(result.apps);
@@ -198,30 +200,36 @@ function GeneralPane() {
 
   return (
     <SettingsPageContainer>
-      <SettingsSection title="Startup & menu bar">
-        <SettingsRow
-          title="Launch at login"
-          description="Open Otter Mail automatically when you log in to your Mac."
-          control={
-            <Switch
-              id="launchAtLogin"
-              checked={launchAtLogin}
-              onCheckedChange={(checked) => void handleLaunchAtLoginChange(checked)}
+      {features.launchAtLogin || features.menuBar ? (
+        <SettingsSection title="Startup & menu bar">
+          {features.launchAtLogin ? (
+            <SettingsRow
+              title="Launch at login"
+              description="Open Otter Mail automatically when you log in to your Mac."
+              control={
+                <Switch
+                  id="launchAtLogin"
+                  checked={launchAtLogin}
+                  onCheckedChange={(checked) => void handleLaunchAtLoginChange(checked)}
+                />
+              }
             />
-          }
-        />
-        <SettingsRow
-          title="Show menu-bar icon"
-          description="An Otter Mail icon in the menu bar with a quick unread inbox view."
-          control={
-            <Switch
-              id="trayEnabled"
-              checked={trayEnabled}
-              onCheckedChange={(checked) => void handleTrayEnabledChange(checked)}
+          ) : null}
+          {features.menuBar ? (
+            <SettingsRow
+              title="Show menu-bar icon"
+              description="An Otter Mail icon in the menu bar with a quick unread inbox view."
+              control={
+                <Switch
+                  id="trayEnabled"
+                  checked={trayEnabled}
+                  onCheckedChange={(checked) => void handleTrayEnabledChange(checked)}
+                />
+              }
             />
-          }
-        />
-      </SettingsSection>
+          ) : null}
+        </SettingsSection>
+      ) : null}
 
       <SettingsSection title="Mail">
         <SettingsRow
@@ -266,22 +274,24 @@ function GeneralPane() {
         />
       </SettingsSection>
 
-      <TranslationSection />
+      {features.translation ? <TranslationSection /> : null}
 
-      <SettingsSection title="System">
-        <SettingsRow
-          title="Default email app"
-          description="Which app opens mailto: links across macOS."
-          control={
-            <RowSelect
-              value={defaultMailBundleId ?? undefined}
-              onValueChange={(v) => void handleDefaultMailChange(v)}
-              options={mailApps.map((app) => ({ value: app.bundleId, label: app.name }))}
-              ariaLabel="Default email app"
-            />
-          }
-        />
-      </SettingsSection>
+      {features.defaultMailApp ? (
+        <SettingsSection title="System">
+          <SettingsRow
+            title="Default email app"
+            description="Which app opens mailto: links across macOS."
+            control={
+              <RowSelect
+                value={defaultMailBundleId ?? undefined}
+                onValueChange={(v) => void handleDefaultMailChange(v)}
+                options={mailApps.map((app) => ({ value: app.bundleId, label: app.name }))}
+                ariaLabel="Default email app"
+              />
+            }
+          />
+        </SettingsSection>
+      ) : null}
 
       <UpdatesSection />
     </SettingsPageContainer>

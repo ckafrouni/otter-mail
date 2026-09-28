@@ -11,17 +11,16 @@ import { app, ipcMain } from "electron";
 import { logger } from "../logger.js";
 import { broadcast } from "../ipc.js";
 import { setPendingMailto } from "../services/mailto-target.js";
-import { listAccounts } from "../services/account-store.js";
-import {
-  countInboxUnreadAll,
-  countInboxUnreadForAccount,
-  listInboxPreview,
-} from "../services/mail-store.js";
-import { syncAllAccounts } from "../services/mail-sync.js";
 import { focusMainWindow } from "../windows/main-window.js";
 import { hideTrayPopover } from "../windows/tray-popover-window.js";
 import { setPendingOpenMessage } from "../services/open-message-target.js";
-import type { GmailAccount, GmailMessageSummary } from "../gmail/types.js";
+import {
+  accountStore,
+  mailStore,
+  syncAllAccounts,
+  type GmailAccount,
+  type GmailMessageSummary,
+} from "@otter-mail/core";
 
 const PREVIEW_LIMIT = 15;
 
@@ -45,14 +44,14 @@ export function registerTrayPopoverHandlers(): void {
   ipcMain.handle("tray:getSnapshot", async (_event, params: unknown): Promise<TraySnapshot> => {
     const p = params as Record<string, unknown> | undefined;
     const unreadOnly = p?.unreadOnly !== false;
-    const accounts = await listAccounts();
+    const accounts = await accountStore.listAccounts();
     return {
       accounts: accounts.map((account) => ({
         account,
-        unreadCount: countInboxUnreadForAccount(account.id),
-        messages: listInboxPreview(account.id, PREVIEW_LIMIT, unreadOnly),
+        unreadCount: mailStore.countInboxUnreadForAccount(account.id),
+        messages: mailStore.listInboxPreview(account.id, PREVIEW_LIMIT, unreadOnly),
       })),
-      totalUnread: countInboxUnreadAll(),
+      totalUnread: mailStore.countInboxUnreadAll(),
     };
   });
 

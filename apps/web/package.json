@@ -13,8 +13,10 @@
   "dependencies": {
     "@base-ui/react": "^1.8.0",
     "@otter-mail/contracts": "workspace:*",
+    "@otter-mail/core": "workspace:*",
     "@radix-ui/colors": "^3.0.0",
     "@shadcn/react": "^0.2.0",
+    "@sqlite.org/sqlite-wasm": "3.53.4-build1",
     "@tanstack/react-query": "^5.87.4",
     "@tanstack/react-router": "^1.131.36",
     "class-variance-authority": "^0.7.1",

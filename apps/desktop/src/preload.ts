@@ -24,6 +24,16 @@ function subscribe(channel: string, listener: (params: unknown) => void): () => 
 
 const bridge: DesktopBridge = {
   platform: process.platform,
+  features: {
+    trafficLights: true,
+    menuBar: true,
+    launchAtLogin: true,
+    defaultMailApp: true,
+    translation: true,
+    assistant: true,
+    keybindingsFile: true,
+    dragOut: true,
+  },
   invoke: <T>(channel: string, params?: unknown) =>
     ipcRenderer.invoke(channel, params) as Promise<T>,
   on: subscribe,

@@ -1,13 +1,17 @@
-// mail.otterware.dev: Otter Mail's home page, privacy policy and terms.
-// Static files only. Cloudflare Workers Builds deploys it on pushes to main
-// that touch site/ (`pnpm --filter @otter-mail/site run deploy`).
+// mail.otterware.dev: Otter Mail's landing page, privacy policy and terms, and
+// the web app (apps/web), assembled in dist/ by scripts/build.ts. The Worker
+// only picks, at /, the landing page or the app. Cloudflare Workers Builds
+// deploys it on pushes to main (`pnpm --filter @otter-mail/site run deploy`).
 {
   "name": "otter-mail-site",
+  "main": "src/worker.ts",
   "compatibility_date": "2026-09-01",
   "assets": {
-    "directory": "./public",
+    "directory": "./dist",
+    "binding": "ASSETS",
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "404-page",
+    "run_worker_first": ["/"],
   },
   "routes": [{ "pattern": "mail.otterware.dev", "custom_domain": true }],
 }

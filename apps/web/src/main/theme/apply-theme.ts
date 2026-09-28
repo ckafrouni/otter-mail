@@ -127,11 +127,19 @@ function cssVariables(c: ThemeColors): string {
 
 const STYLE_ID = "otter-app-theme";
 
+/**
+ * Light or dark. The desktop app's appearance setting flips the media query
+ * itself; the web app stores an explicit choice instead (src/web/bridge.ts).
+ */
+function appearance(): ThemeAppearance {
+  const chosen = localStorage.getItem("otter:theme-source");
+  if (chosen === "light" || chosen === "dark") return chosen;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
 /** Applies the theme for the current system/app appearance to this window. */
 export function applyAppTheme(): void {
-  const mode: ThemeAppearance = window.matchMedia("(prefers-color-scheme: dark)").matches
-    ? "dark"
-    : "light";
+  const mode = appearance();
   const themeId = getThemeChoice()[mode];
   const colors = themeColors(themeId, mode);
 

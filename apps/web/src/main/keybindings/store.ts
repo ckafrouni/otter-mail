@@ -34,7 +34,6 @@ export type ResolvedKeybinding = {
 type FileResult = {
   rules: { key: string; command: string; when?: string }[] | null;
   issues: { kind: string; index?: number }[];
-  path: string;
 };
 
 type State = {
@@ -43,7 +42,6 @@ type State = {
   resolved: ResolvedKeybinding[];
   /** Entries dropped on load: unknown command, bad key, or bad `when`. */
   issueCount: number;
-  path: string | null;
   loaded: boolean;
 };
 
@@ -89,7 +87,7 @@ function stateFor(file: FileResult | null): State {
     rules,
     resolved: resolve(rules),
     issueCount,
-    path: file?.path ?? null,
+
     loaded: file !== null,
   };
 }
@@ -157,7 +155,7 @@ const sameRule = (a: KeybindingRule, b: KeybindingRule) =>
 async function write(rules: KeybindingRule[]): Promise<void> {
   lastOwnWrite = Date.now();
   // Optimistic: the settings list updates now; the broadcast re-read confirms.
-  state = { ...stateFor({ rules, issues: [], path: state.path ?? "" }), loaded: true };
+  state = { ...stateFor({ rules, issues: [] }), loaded: true };
   emit();
   await ipc("keybindings:write", { rules });
 }

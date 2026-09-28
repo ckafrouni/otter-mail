@@ -7,25 +7,30 @@ import {
   LogInIcon,
   PaletteIcon,
   Settings2Icon,
-  UsersIcon,
+  MailIcon,
 } from "lucide-react";
 import type { SettingsPane } from "../gmail/api";
 import { cn, HintTooltip } from "../gmail/ui";
 import { useOtterAccount } from "../otter-account";
 import { OtterAvatar } from "./otter-account-pane";
+import { features } from "../features";
 
-export const SETTINGS_SECTIONS: ReadonlyArray<{
+type SettingsSection = {
   id: SettingsPane;
   label: string;
   icon: ComponentType<{ className?: string }>;
-}> = [
-  { id: "general", label: "General", icon: Settings2Icon },
-  { id: "appearance", label: "Appearance", icon: PaletteIcon },
-  { id: "keybindings", label: "Keybindings", icon: KeyboardIcon },
-  { id: "accounts", label: "Linked accounts", icon: UsersIcon },
-  { id: "views", label: "Views", icon: LayersIcon },
-  { id: "assistant", label: "Assistant", icon: BotIcon },
-];
+};
+
+export const SETTINGS_SECTIONS: ReadonlyArray<SettingsSection> = (
+  [
+    { id: "general", label: "General", icon: Settings2Icon },
+    { id: "appearance", label: "Appearance", icon: PaletteIcon },
+    { id: "keybindings", label: "Keybindings", icon: KeyboardIcon },
+    { id: "accounts", label: "Mailboxes", icon: MailIcon },
+    { id: "views", label: "Views", icon: LayersIcon },
+    { id: "assistant", label: "Assistant", icon: BotIcon },
+  ] satisfies SettingsSection[]
+).filter((section) => section.id !== "assistant" || features.assistant);
 
 export function settingsSectionLabel(pane: SettingsPane): string {
   if (pane === "otter") return "Otter account";

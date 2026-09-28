@@ -36,7 +36,7 @@ export class InvalidTokenError extends Error {}
  */
 export async function verifyGoogleJwt(
   token: string,
-  audience: string,
+  audience: string | string[],
   keys: JWTVerifyGetKey,
 ): Promise<GoogleClaims & { email: string }> {
   let claims: GoogleClaims;
