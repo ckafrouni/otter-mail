@@ -40,6 +40,9 @@ its own, and Mac-only features (`features` in the web bridge).
 ## Use the Browser panel
 
 Call `preview_status`, then `preview_open` if the Browser panel is closed.
+Always test at a 1600x1000 viewport: `preview_resize` with
+`{mode:"freeform",width:1600,height:1000}` before looking at anything (a
+headless browser from the shell uses the same size).
 Navigate to the dev server URL with `preview_navigate`, then use
 `preview_snapshot` and T3's interaction tools. `preview_evaluate` can call the
 backend directly, e.g.

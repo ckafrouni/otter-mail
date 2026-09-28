@@ -83,7 +83,7 @@ Before handing work back, run and fix:
 - `pnpm lint`
 - `pnpm fmt`
 
-For UI or behavior changes, run the app and check the change in it.
+For UI or behavior changes, run the app and check the change in it, at a 1600x1000 viewport.
 
 ## Taste
 
