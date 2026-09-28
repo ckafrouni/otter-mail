@@ -9,31 +9,36 @@
 
 ## Commands
 
-| Command                  | What it does                                                                   |
-| ------------------------ | ------------------------------------------------------------------------------ |
-| `pnpm install`           | Installs dependencies and the git pre-commit hook (formats staged files).      |
-| `pnpm dev`               | Vite dev server + main-process watcher + Electron, restarting on main changes. |
-| `pnpm start`             | Runs the built app unpackaged (`pnpm build` first).                            |
-| `pnpm build`             | Builds `apps/web/dist` and `apps/desktop/dist-electron`.                       |
-| `pnpm build:translator`  | Builds the Swift translator helper.                                            |
-| `pnpm typecheck`         | TypeScript across the workspace.                                               |
-| `pnpm lint` / `pnpm fmt` | Oxlint and Oxfmt through Vite+.                                                |
-| `pnpm dist:desktop:dmg`  | Unsigned DMG + ZIP for this Mac's architecture in `release/`.                  |
+| Command                  | What it does                                                                       |
+| ------------------------ | ---------------------------------------------------------------------------------- |
+| `pnpm install`           | Installs dependencies and the git pre-commit hook (formats staged files).          |
+| `pnpm dev`               | The web app and a local relay (see [The web app](#the-web-app)).                   |
+| `pnpm dev:desktop`       | Vite dev server + main-process watcher + Electron, restarting on main changes.     |
+| `pnpm dev:web`           | The web app alone, against `VITE_RELAY_URL`.                                       |
+| `pnpm dev:demo`          | The web app on a made-up mailbox, no accounts (see [Demo mailbox](#demo-mailbox)). |
+| `pnpm start`             | Runs the built app unpackaged (`pnpm build` first).                                |
+| `pnpm build`             | Builds `apps/web/dist` and `apps/desktop/dist-electron`.                           |
+| `pnpm build:translator`  | Builds the Swift translator helper.                                                |
+| `pnpm typecheck`         | TypeScript across the workspace.                                                   |
+| `pnpm lint` / `pnpm fmt` | Oxlint and Oxfmt through Vite+.                                                    |
+| `pnpm dist:desktop:dmg`  | Unsigned DMG + ZIP for this Mac's architecture in `release/`.                      |
 
-`pnpm dev` picks a port from the worktree path, so several checkouts can run at once. Set
-`OTTER_MAIL_PORT_OFFSET` to choose one yourself.
+The dev commands pick ports from the worktree path, so several checkouts can run at once. Set
+`OTTER_MAIL_PORT_OFFSET` to choose one yourself. `t3.json` sets up new T3 Code worktrees (install,
+then symlinks to the main checkout's `.env.local` and `infra/relay/.dev.vars`) and offers both dev
+commands as scripts.
 
 ## Data homes
 
 Like T3 Code, data lives under a home, `~/.otter-mail` (or `OTTER_MAIL_HOME`), with one state
 directory per kind of run, so development never shares a database with the installed app:
 
-| Run                                            | State directory                                |
-| ---------------------------------------------- | ---------------------------------------------- |
-| Installed app                                  | `~/.otter-mail/userdata`                       |
-| `pnpm dev` / `pnpm start` in the main checkout | `~/.otter-mail/dev`                            |
-| `pnpm dev` / `pnpm start` in a linked worktree | `<worktree>/.otter-mail/userdata` (gitignored) |
-| `pnpm dev --home <dir>`                        | `<dir>/userdata`                               |
+| Run                                                    | State directory                                |
+| ------------------------------------------------------ | ---------------------------------------------- |
+| Installed app                                          | `~/.otter-mail/userdata`                       |
+| `pnpm dev:desktop` / `pnpm start` in the main checkout | `~/.otter-mail/dev`                            |
+| `pnpm dev:desktop` / `pnpm start` in a linked worktree | `<worktree>/.otter-mail/userdata` (gitignored) |
+| `pnpm dev:desktop --home <dir>`                        | `<dir>/userdata`                               |
 
 `--home` wins over the worktree default, which wins over an ambient `OTTER_MAIL_HOME`: an
 inherited variable pointing at `~/.otter-mail` would otherwise put a branch on the installed
@@ -72,19 +77,38 @@ every push to `main` that touches `site/` (as it does the relay, see `infra/rela
 ## The web app
 
 The same renderer runs in a browser, with the mail backend (`packages/core`) in a Web Worker
-(`apps/web/src/web`). It needs an Otter account, so run the relay too:
+(`apps/web/src/web`). It needs an Otter account, so `pnpm dev` runs a local relay next to it
+(applying the relay's local D1 migrations first) and points the app at it:
 
 ```sh
-echo "BETTER_AUTH_SECRET=any-long-local-secret" > infra/relay/.dev.vars   # once (gitignored)
-pnpm --filter @otter-mail/relay exec wrangler d1 migrations apply otter-mail-relay --local  # once
-pnpm --filter @otter-mail/relay dev                  # the relay on http://localhost:8787
-VITE_RELAY_URL=http://localhost:8787 pnpm dev:web    # the app on http://localhost:5833
+# once (gitignored): the relay's secrets
+printf 'BETTER_AUTH_SECRET=any-long-local-secret\nGOOGLE_WEB_CLIENT_SECRET=...\n' > infra/relay/.dev.vars
+pnpm dev    # the app on http://localhost:5833, the relay on http://localhost:8787
 ```
 
-Signing in with Google locally uses the web OAuth client (its redirect URIs include
-`http://localhost:8787/...`); put `GOOGLE_WEB_CLIENT_SECRET=...` in `.dev.vars` and pass
-`--var GOOGLE_WEB_CLIENT_ID:...` (or set it in `wrangler.jsonc`). The browser's data (the mail
+Signing in with Google locally uses the web OAuth client from `wrangler.jsonc`, whose redirect
+URIs include `http://localhost:8787/...`, so it works in the main checkout (worktrees' relays sit
+on another port). The production relay only accepts its own origin, so `pnpm dev:web` alone is
+for pointing `VITE_RELAY_URL` at a relay you run yourself. The browser's data (the mail
 cache and files) lives in the site's OPFS storage: clear site data to start fresh.
+
+## Demo mailbox
+
+`pnpm dev:demo` runs the web app alone with `VITE_DEMO=1`: no relay, no Google or Otter account.
+The backend's Worker puts a pretend Gmail in front of `fetch` (`apps/web/src/web/demo`), seeded
+with two mailboxes, "Personal" (`demo@otter.example`) and "Work" (`sam@acme.example`): a few weeks
+of threads, newsletters with unsubscribe links, attachments, calendar invitations, drafts, spam
+and trash, and plenty of non-ASCII names. Use it to build and test without your own accounts.
+
+- Archiving, labels, stars, trash, sending and drafts change the pretend mailbox and go into its
+  history feed, so sync behaves as it does against Gmail. Search knows the common operators
+  (`in:`, `is:`, `label:`, `category:`, `from:`, `has:attachment`, …) plus free text.
+- Calendar RSVPs go out as email replies (no calendar); avatars fall back to initials; the Otter
+  account (signing in, devices, synced preferences) is unavailable.
+- The demo keeps its own storage (OPFS `.otter-mail-demo` and `demo-files/`, lock and channel
+  `otter-mail-demo`), apart from real mail on the same origin. Add `?reset-demo` to the address
+  to start over (close other demo tabs first).
+- Real builds leave all of it out: `__DEMO__` is `false` unless `VITE_DEMO=1`.
 
 `pnpm --filter @otter-mail/site build` assembles the deployable site (landing pages plus the
 app) in `site/dist`.

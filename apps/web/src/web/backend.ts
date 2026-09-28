@@ -48,10 +48,12 @@ type TabMessage =
   | { type: "hello" };
 
 const ALL_TABS = "*";
+/** The demo (VITE_DEMO) runs its own backend, apart from real mail on the same origin. */
+const NAME = __DEMO__ ? "otter-mail-demo" : "otter-mail";
 
 export function connectBackend(page: PageHandlers) {
   const tab = crypto.randomUUID();
-  const channel = new BroadcastChannel("otter-mail");
+  const channel = new BroadcastChannel(NAME);
   const toTabs = (message: TabMessage) =>
     // oxlint-disable-next-line unicorn/require-post-message-target-origin -- a BroadcastChannel has none
     channel.postMessage(message);
@@ -219,7 +221,16 @@ export function connectBackend(page: PageHandlers) {
   }
 
   // The lock is held until this tab closes; the next waiting tab then hosts.
-  void navigator.locks.request("otter-mail:backend", () => {
+  const resetDemo = __DEMO__ && new URLSearchParams(location.search).has("reset-demo");
+  if (resetDemo) history.replaceState(null, "", location.pathname + location.hash);
+  void navigator.locks.request(`${NAME}:backend`, async () => {
+    // Holding the lock, no tab has the demo's cache open: start it over.
+    if (resetDemo) {
+      const root = await navigator.storage.getDirectory();
+      for (const name of [".otter-mail-demo", "demo-files"]) {
+        await root.removeEntry(name, { recursive: true }).catch(() => {});
+      }
+    }
     startHosting();
     return new Promise<never>(() => {});
   });

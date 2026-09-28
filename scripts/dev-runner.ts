@@ -1,10 +1,14 @@
 #!/usr/bin/env node
-// `pnpm dev`: the web dev server, the main-process bundler in watch mode, and
-// Electron (restarted on main/preload changes), with one Ctrl-C for all three.
+// Runs the app for development, like Otter Code's runner: `pnpm dev` is the
+// web app with a local relay, `pnpm dev:web` the web app alone, `pnpm dev:demo`
+// the web app on a made-up mailbox (no accounts), and
+// `pnpm dev:desktop` the web dev server, the main-process bundler in watch mode
+// and Electron (restarted on main/preload changes). One Ctrl-C stops them all.
 //
 // Ports: 5833 in the main checkout. Linked git worktrees get a stable offset
 // hashed from their path so several checkouts can run side by side.
-// Override with OTTER_MAIL_PORT_OFFSET=<n> or PORT=<port>.
+// Override with OTTER_MAIL_PORT_OFFSET=<n> or PORT=<port>. The relay sits on
+// 8787 plus the same offset.
 
 import * as NodeChildProcess from "node:child_process";
 import * as NodeCrypto from "node:crypto";
@@ -18,20 +22,31 @@ import { resolveDevHome, resolveLinkedWorktree } from "../apps/desktop/scripts/d
 import { buildTranslator, findTranslatorBinary, repoRoot } from "./build-translator.ts";
 
 const BASE_WEB_PORT = 5833;
+const BASE_RELAY_PORT = 8787;
 const MAX_HASH_OFFSET = 3000;
 const SHUTDOWN_GRACE_MS = 3_000;
 
-const HELP = `Usage: pnpm dev [-- options]
+const MODES = ["dev", "dev:web", "dev:demo", "dev:desktop"] as const;
+type Mode = (typeof MODES)[number];
 
-Starts the Vite dev server (apps/web), \`vp pack --watch\` (apps/desktop), and
-Electron against them. Ctrl-C stops everything.
+const HELP = `Usage: pnpm dev | dev:web | dev:demo | dev:desktop [-- options]
+
+  pnpm dev          The web app (apps/web) and the relay (infra/relay) it signs in
+                    through, on localhost. Open the printed URL in a browser.
+  pnpm dev:web      Only the web app, against VITE_RELAY_URL (default: production,
+                    which only accepts its own origin).
+  pnpm dev:demo     Only the web app, on a made-up demo mailbox: no Google or
+                    Otter account, no relay (VITE_DEMO=1, apps/web/src/web/demo).
+  pnpm dev:desktop  The Mac app: the web dev server, \`vp pack --watch\`
+                    (apps/desktop) and Electron against them.
+
+Ctrl-C stops everything.
 
 Options:
-  --home <dir>    Data home for this run. Default: a linked worktree's own
+  --home <dir>    Data home of the Mac app. Default: a linked worktree's own
                   .otter-mail, otherwise ~/.otter-mail/dev (never the installed
                   app's ~/.otter-mail/userdata).
-  --no-electron   Only run the web dev server and the main-process bundler.
-  --dry-run       Print the resolved port and commands, then exit.
+  --dry-run       Print the resolved ports and commands, then exit.
   -h, --help      Show this help.
 
 Environment:
@@ -41,8 +56,10 @@ Environment:
                           port + 1000; 0 turns it off). Playwright and agents attach
                           here with connectOverCDP.
   PORT                    Exact dev server port.
-  OTTER_MAIL_PORT_OFFSET  Offset added to ${BASE_WEB_PORT} (default: hashed from the
-                          worktree path in linked worktrees, 0 otherwise).
+  OTTER_MAIL_PORT_OFFSET  Offset added to ${BASE_WEB_PORT} and the relay's ${BASE_RELAY_PORT}
+                          (default: hashed from the worktree path in linked
+                          worktrees, 0 otherwise). Google sign-in through the
+                          local relay only works on ${BASE_RELAY_PORT}.
 `;
 
 export function hashOffset(seed: string): number {
@@ -97,6 +114,24 @@ function ensureTranslator(): void {
   }
 }
 
+/** The local relay needs its secrets and an up-to-date local D1 (idempotent). */
+function prepareRelay(wrangler: string): void {
+  const relayDir = NodePath.join(repoRoot, "infra/relay");
+  if (!NodeFS.existsSync(NodePath.join(relayDir, ".dev.vars"))) {
+    throw new Error(
+      "infra/relay/.dev.vars is missing: it needs BETTER_AUTH_SECRET and GOOGLE_WEB_CLIENT_SECRET (see docs/development.md).",
+    );
+  }
+  const migrate = NodeChildProcess.spawnSync(
+    wrangler,
+    ["d1", "migrations", "apply", "otter-mail-relay", "--local"],
+    { cwd: relayDir, env: { ...process.env, CI: "1" }, encoding: "utf8" },
+  );
+  if (migrate.status !== 0) {
+    throw new Error(`Couldn't migrate the relay's local database:\n${migrate.stderr}`);
+  }
+}
+
 const COLORS = ["\u001b[36m", "\u001b[35m", "\u001b[33m"];
 const RESET = "\u001b[0m";
 
@@ -108,10 +143,10 @@ interface Task {
 }
 
 async function main(): Promise<void> {
-  const { values } = parseArgs({
+  const { values, positionals } = parseArgs({
+    allowPositionals: true,
     options: {
       home: { type: "string" },
-      "no-electron": { type: "boolean", default: false },
       "dry-run": { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
@@ -120,7 +155,11 @@ async function main(): Promise<void> {
     console.log(HELP);
     return;
   }
+  const mode = (positionals[0] ?? "dev") as Mode;
+  if (!MODES.includes(mode)) throw new Error(`Unknown mode "${mode}".\n\n${HELP}`);
+  const desktop = mode === "dev:desktop";
 
+  const { offset, source } = resolvePortOffset(process.env, repoRoot);
   const explicitPort = process.env.PORT?.trim();
   let port: number;
   let portSource: string;
@@ -131,44 +170,75 @@ async function main(): Promise<void> {
     }
     portSource = `PORT=${port}`;
   } else {
-    const { offset, source } = resolvePortOffset(process.env, repoRoot);
     const preferred = BASE_WEB_PORT + offset;
     port = values["dry-run"] ? preferred : await findFreePort(preferred);
     portSource = port === preferred ? source : `${source}; ${preferred} was busy`;
   }
   const devServerUrl = `http://localhost:${port}`;
+  // The relay's origin is baked into the web app's sign-in and its CORS, so it
+  // doesn't move to a free port: a busy one fails loudly instead.
+  const relayPort = BASE_RELAY_PORT + offset;
+  const relayUrl = `http://localhost:${relayPort}`;
 
   const vp = NodePath.join(repoRoot, "node_modules", ".bin", "vp");
+  const wrangler = NodePath.join(repoRoot, "infra/relay/node_modules/.bin/wrangler");
   const tasks: Task[] = [
     { name: "web", command: vp, args: ["dev"], cwd: NodePath.join(repoRoot, "apps/web") },
-    {
-      name: "pack",
-      command: vp,
-      args: ["pack", "--watch"],
-      cwd: NodePath.join(repoRoot, "apps/desktop"),
-    },
   ];
-  if (!values["no-electron"]) {
+  if (mode === "dev") {
     tasks.push({
-      name: "electron",
-      command: process.execPath,
-      args: ["scripts/dev-electron.mjs"],
-      cwd: NodePath.join(repoRoot, "apps/desktop"),
+      name: "relay",
+      command: wrangler,
+      args: [
+        "dev",
+        "--port",
+        String(relayPort),
+        "--local-upstream",
+        `localhost:${relayPort}`,
+        "--var",
+        `BETTER_AUTH_URL:${relayUrl}`,
+        "--var",
+        `APP_ORIGIN:${devServerUrl}`,
+        "--var",
+        "COOKIE_DOMAIN:",
+      ],
+      cwd: NodePath.join(repoRoot, "infra/relay"),
     });
+  }
+  if (desktop) {
+    tasks.push(
+      {
+        name: "pack",
+        command: vp,
+        args: ["pack", "--watch"],
+        cwd: NodePath.join(repoRoot, "apps/desktop"),
+      },
+      {
+        name: "electron",
+        command: process.execPath,
+        args: ["scripts/dev-electron.mjs"],
+        cwd: NodePath.join(repoRoot, "apps/desktop"),
+      },
+    );
   }
 
   const dataHome = resolveDevHome({ cwd: repoRoot, explicitHome: values.home });
   const configuredDebugPort = process.env.OTTER_MAIL_REMOTE_DEBUGGING_PORT?.trim();
-  const debugPort =
-    configuredDebugPort !== undefined && configuredDebugPort !== ""
+  const debugPort = !desktop
+    ? 0
+    : configuredDebugPort !== undefined && configuredDebugPort !== ""
       ? Number(configuredDebugPort)
       : values["dry-run"]
         ? port + 1000
         : await findFreePort(port + 1000);
   console.log(`[dev] ${devServerUrl} (${portSource})`);
-  console.log(
-    `[dev] Data: ${dataHome ? NodePath.join(dataHome, "userdata") : "~/.otter-mail/dev"}`,
-  );
+  if (mode === "dev:demo") console.log("[dev] Demo mailbox (?reset-demo starts it over)");
+  if (mode === "dev") console.log(`[dev] Relay: ${relayUrl}`);
+  if (desktop) {
+    console.log(
+      `[dev] Data: ${dataHome ? NodePath.join(dataHome, "userdata") : "~/.otter-mail/dev"}`,
+    );
+  }
   if (debugPort > 0) console.log(`[dev] DevTools: http://127.0.0.1:${debugPort}`);
   if (values["dry-run"]) {
     for (const task of tasks) {
@@ -181,12 +251,15 @@ async function main(): Promise<void> {
   if (!NodeFS.existsSync(vp)) throw new Error("vite-plus is not installed. Run `pnpm install`.");
 
   stopLeftoverGroups();
-  ensureTranslator();
-  // A stale bundle would let Electron start before the first fresh build.
-  NodeFS.rmSync(NodePath.join(repoRoot, "apps/desktop/dist-electron"), {
-    recursive: true,
-    force: true,
-  });
+  if (mode === "dev") prepareRelay(wrangler);
+  if (desktop) {
+    ensureTranslator();
+    // A stale bundle would let Electron start before the first fresh build.
+    NodeFS.rmSync(NodePath.join(repoRoot, "apps/desktop/dist-electron"), {
+      recursive: true,
+      force: true,
+    });
+  }
 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -194,6 +267,8 @@ async function main(): Promise<void> {
     OTTER_MAIL_REMOTE_DEBUGGING_PORT: String(debugPort),
     PORT: String(port),
     VITE_DEV_SERVER_URL: devServerUrl,
+    ...(mode === "dev" ? { VITE_RELAY_URL: relayUrl } : {}),
+    ...(mode === "dev:demo" ? { VITE_DEMO: "1" } : {}),
     FORCE_COLOR: process.env.FORCE_COLOR ?? (process.stdout.isTTY ? "1" : "0"),
   };
 
@@ -251,36 +326,61 @@ async function main(): Promise<void> {
 }
 
 // A runner killed outright (SIGKILL, a closed terminal tab) can't stop its
-// detached task groups; the next run finds them in this file and stops them,
-// so the dev server port is free again.
-const groupsFile = NodePath.join(repoRoot, "apps/desktop/.electron-runtime/dev-groups.json");
+// detached task groups; the next run finds them in its file and stops them,
+// so the dev server port is free again. One file per runner (named by its
+// pid), so runs side by side (\`pnpm dev\` next to \`pnpm dev:desktop\`) leave
+// each other alone.
+const groupsDir = NodePath.join(repoRoot, "apps/desktop/.electron-runtime/dev-groups");
 
 function recordGroups(pids: number[]): void {
-  NodeFS.mkdirSync(NodePath.dirname(groupsFile), { recursive: true });
-  NodeFS.writeFileSync(groupsFile, JSON.stringify(pids));
+  NodeFS.mkdirSync(groupsDir, { recursive: true });
+  NodeFS.writeFileSync(NodePath.join(groupsDir, `${process.pid}.json`), JSON.stringify(pids));
+  process.once("exit", () =>
+    NodeFS.rmSync(NodePath.join(groupsDir, `${process.pid}.json`), { force: true }),
+  );
+}
+
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function stopLeftoverGroups(): void {
-  let pids: number[] = [];
+  let files: string[] = [];
   try {
-    pids = JSON.parse(NodeFS.readFileSync(groupsFile, "utf8")) as number[];
+    files = NodeFS.readdirSync(groupsDir);
   } catch {
     return;
   }
-  for (const pid of pids) {
-    // Only groups that still look like ours: the pid may have been reused.
-    const command = NodeChildProcess.spawnSync("ps", ["-o", "command=", "-p", String(pid)], {
-      encoding: "utf8",
-    }).stdout;
-    if (!/vite-plus|dev-electron\.mjs/.test(command)) continue;
-    console.log(`[dev] Stopping leftovers from an earlier run (pid ${pid})`);
+  for (const file of files) {
+    const runner = Number.parseInt(file, 10);
+    if (isAlive(runner)) continue;
+    const path = NodePath.join(groupsDir, file);
+    let pids: number[] = [];
     try {
-      process.kill(-pid, "SIGKILL");
+      pids = JSON.parse(NodeFS.readFileSync(path, "utf8")) as number[];
     } catch {
-      // Already gone.
+      // Unreadable: drop it below.
     }
+    for (const pid of pids) {
+      // Only groups that still look like ours: the pid may have been reused.
+      const command = NodeChildProcess.spawnSync("ps", ["-o", "command=", "-p", String(pid)], {
+        encoding: "utf8",
+      }).stdout;
+      if (!/vite-plus|dev-electron\.mjs|wrangler/.test(command)) continue;
+      console.log(`[dev] Stopping leftovers from an earlier run (pid ${pid})`);
+      try {
+        process.kill(-pid, "SIGKILL");
+      } catch {
+        // Already gone.
+      }
+    }
+    NodeFS.rmSync(path, { force: true });
   }
-  NodeFS.rmSync(groupsFile, { force: true });
 }
 
 /** Signals the task's whole process group, so grandchildren (esbuild, Electron) go too. */

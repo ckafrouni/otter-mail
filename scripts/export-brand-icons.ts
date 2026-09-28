@@ -2,7 +2,7 @@
 // Regenerates the app icons from assets/prod/otter-mail-macos-1024.png:
 //   assets/dev/blueprint-macos-1024.png   the development ("blueprint") variant
 //   apps/desktop/resources/icon.icns      the released app
-//   apps/desktop/resources/icon-dev.icns  `pnpm dev` / `pnpm start` builds
+//   apps/desktop/resources/icon-dev.icns  `pnpm dev:desktop` / `pnpm start` builds
 // macOS only (swift, sips, iconutil). Run with `pnpm icons:export`.
 
 import * as NodeChildProcess from "node:child_process";

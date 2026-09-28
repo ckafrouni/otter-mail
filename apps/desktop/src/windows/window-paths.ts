@@ -1,6 +1,6 @@
 /**
  * Where windows load their pages from:
- * - dev: the Vite dev server (VITE_DEV_SERVER_URL, set by `pnpm dev`)
+ * - dev: the Vite dev server (VITE_DEV_SERVER_URL, set by `pnpm dev:desktop`)
  * - packaged: the built renderer inside the app, served over ottermail://app/
  * - unpackaged `pnpm start`: apps/web/dist, served the same way
  */

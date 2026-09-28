@@ -1,0 +1,60 @@
+---
+name: test-otter-mail
+description: Test Otter Mail's UI and behavior in T3's built-in Browser panel against the seeded demo mailbox (`pnpm dev:demo`), with no Google, Gmail or Otter account. Use for browser verification of any change to the renderer (apps/web) or the mail backend (packages/core).
+---
+
+# Test Otter Mail on the demo mailbox
+
+Use T3's built-in Browser panel (the `preview_*` tools) for verification. If
+its tools are absent or the panel reports unavailable, explain the blocker and
+stop verification. Do not install or switch to another automation system.
+
+Test against the demo mailbox, never the user's real accounts: don't sign in
+to Google or Otter, and don't use `pnpm dev` (the relay and real sign-ins) for
+testing unless the change is about sign-in or the relay itself.
+
+## Start the app
+
+Reuse this task's healthy `pnpm dev:demo` server. Otherwise run `pnpm dev:demo`
+from the repository root (or the "Dev (demo mailbox)" script in `t3.json`) and
+keep its terminal session. Read the URL from its first line
+(`[dev] http://localhost:<port>`): 5833 in the main checkout, another port in a
+linked worktree or when 5833 is busy. The page title ends in "(demo)".
+
+## What's in it
+
+Two mailboxes under "All mailboxes": Personal (`demo@otter.example`) and Work
+(`sam@acme.example`). A few weeks of mail: multi-message threads, newsletters
+with unsubscribe, PDF/SVG/CSV attachments, calendar invitations (RSVP),
+drafts, spam, trash, nested labels (`Projects/Otter`), non-ASCII names.
+The seed is `apps/web/src/web/demo/seed.ts`; add to it when a flow needs
+mail it doesn't have.
+
+A pretend Gmail (`apps/web/src/web/demo/gmail.ts`) answers the backend: archive,
+labels, stars, trash, send and drafts change it and its history feed, so sync
+behaves as with Gmail. Search supports the common operators and free text.
+Not available: the Otter account (sign-in, devices, synced preferences), Google
+Calendar (RSVPs go out as email replies), contact photos, new mail arriving on
+its own, and Mac-only features (`features` in the web bridge).
+
+## Use the Browser panel
+
+Call `preview_status`, then `preview_open` if the Browser panel is closed.
+Navigate to the dev server URL with `preview_navigate`, then use
+`preview_snapshot` and T3's interaction tools. `preview_evaluate` can call the
+backend directly, e.g.
+`window.desktopBridge.invoke("gmail:listAccounts")`. Keep using the same tab.
+
+## Reset
+
+The demo's state survives reloads (its own OPFS storage, apart from real mail
+on the same origin). To start over, close other tabs of the app and navigate
+to the URL with `?reset-demo` appended. Don't clear site data: that would also
+wipe a real dev sign-in on the same origin.
+
+## Verify and retain
+
+Exercise the affected flow and capture the state that proves it works; check
+the console for errors. Keep the server and panel available while the user
+inspects or iterates. An assistant turn ending is not teardown. Stop only
+processes you started.

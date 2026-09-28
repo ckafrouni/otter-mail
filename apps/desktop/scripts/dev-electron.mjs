@@ -12,7 +12,7 @@ import { desktopDir, electronChildEnv, resolveElectronPath } from "./electron-la
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL?.trim();
 if (!devServerUrl) {
-  throw new Error("VITE_DEV_SERVER_URL is required (run `pnpm dev` from the repo root).");
+  throw new Error("VITE_DEV_SERVER_URL is required (run `pnpm dev:desktop` from the repo root).");
 }
 const devServer = new URL(devServerUrl);
 const devServerPort = Number.parseInt(devServer.port, 10);

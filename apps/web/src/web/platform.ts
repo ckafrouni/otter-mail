@@ -27,7 +27,10 @@ export type Page = {
  */
 async function openDatabase(): Promise<SqlDatabase> {
   const sqlite3 = await sqlite3InitModule();
-  const pool = await sqlite3.installOpfsSAHPoolVfs({ name: "otter-mail" });
+  // The demo keeps its own cache (in OPFS's ".otter-mail-demo").
+  const pool = await sqlite3.installOpfsSAHPoolVfs({
+    name: __DEMO__ ? "otter-mail-demo" : "otter-mail",
+  });
   const db = new pool.OpfsSAHPoolDb("/mail-cache.db");
   const bind = (params: SqlValue[]) => (params.length > 0 ? (params as never) : undefined);
   return {
@@ -43,12 +46,12 @@ async function openDatabase(): Promise<SqlDatabase> {
   };
 }
 
-// ── Files (OPFS, under files/) ──────────────────────────────────────────────
+// ── Files (OPFS, under files/, or demo-files/ in demo mode) ────────────────
 
 async function directory(path: string[], create: boolean): Promise<FileSystemDirectoryHandle> {
   let dir = await (
     await navigator.storage.getDirectory()
-  ).getDirectoryHandle("files", { create: true });
+  ).getDirectoryHandle(__DEMO__ ? "demo-files" : "files", { create: true });
   for (const name of path) dir = await dir.getDirectoryHandle(name, { create });
   return dir;
 }
@@ -116,7 +119,12 @@ const noContext = <T>(): AsyncContext<T> => ({ run: (_value, fn) => fn(), get: (
 
 export async function webPlatform(page: Page): Promise<Platform> {
   const database = await openDatabase();
-  const relayUrl = import.meta.env.VITE_RELAY_URL || "https://relay.mail.otterware.dev";
+  // Demo mode: a pretend Gmail in front of fetch (left out of real builds).
+  const demo = __DEMO__ ? await import("./demo/gmail") : null;
+  if (demo) await demo.installFakeGmail(files);
+  const relayUrl = demo
+    ? demo.DEMO_RELAY_URL
+    : import.meta.env.VITE_RELAY_URL || "https://relay.mail.otterware.dev";
   const platform: Platform = {
     kind: "web",
     appVersion: __APP_VERSION__,
@@ -147,7 +155,7 @@ export async function webPlatform(page: Page): Promise<Platform> {
       pick: () => page.request("pickFiles", undefined),
     },
 
-    google: webGoogleAuth({ relayUrl, page, files }),
+    google: demo ? demo.demoGoogleAuth() : webGoogleAuth({ relayUrl, page, files }),
     relayUrl,
     relaySession: "cookie",
 

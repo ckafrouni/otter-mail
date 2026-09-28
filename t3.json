@@ -1,0 +1,29 @@
+{
+  "$schema": "https://t3.codes/schema/t3.json",
+  "iconPath": "assets/prod/otter-mail-macos-1024.png",
+  "scripts": [
+    {
+      "name": "Setup Worktree",
+      "command": "pnpm install && ln -sf \"$T3CODE_PROJECT_ROOT/.env.local\" .env.local && ln -sf \"$T3CODE_PROJECT_ROOT/infra/relay/.dev.vars\" infra/relay/.dev.vars",
+      "icon": "configure",
+      "runOnWorktreeCreate": true
+    },
+    {
+      "name": "Dev (web)",
+      "command": "pnpm dev",
+      "icon": "play",
+      "previewUrl": "http://localhost:5833"
+    },
+    {
+      "name": "Dev (demo mailbox)",
+      "command": "pnpm dev:demo",
+      "icon": "play",
+      "previewUrl": "http://localhost:5833"
+    },
+    {
+      "name": "Dev (Mac app)",
+      "command": "pnpm dev:desktop",
+      "icon": "play"
+    }
+  ]
+}

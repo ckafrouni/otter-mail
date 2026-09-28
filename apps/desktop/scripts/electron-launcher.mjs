@@ -1,4 +1,4 @@
-// Resolves the Electron binary used by `pnpm dev` and `pnpm start`.
+// Resolves the Electron binary used by `pnpm dev:desktop` and `pnpm start`.
 //
 // On macOS a bare node_modules Electron shows up as "Electron" in the Dock,
 // menu bar, notifications and the "default mail app" picker. We copy

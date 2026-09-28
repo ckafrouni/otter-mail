@@ -52,7 +52,8 @@ jobs:
         run: |
           node scripts/resolve-release-version.ts --bump patch
           node scripts/build-desktop-artifact.ts --help > /dev/null
-          node scripts/dev-runner.ts --dry-run
+          node scripts/dev-runner.ts dev --dry-run
+          node scripts/dev-runner.ts dev:desktop --dry-run
 
   # Apple Translation's TranslationSession(installedSource:target:) is macOS 26
   # API, so the translator needs Xcode 26+ (Swift 6, macOS 26 SDK). No Node

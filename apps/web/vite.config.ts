@@ -17,6 +17,8 @@ export default defineConfig({
   define: {
     __APP_DISPLAY_NAME__: JSON.stringify("Otter Mail"),
     __APP_VERSION__: JSON.stringify(pkg.version),
+    // Demo mode (`pnpm dev:demo`): a made-up mailbox, no Google or Otter account.
+    __DEMO__: JSON.stringify(process.env.VITE_DEMO === "1"),
   },
   resolve: {
     alias: {

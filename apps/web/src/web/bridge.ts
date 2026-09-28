@@ -28,6 +28,8 @@ import {
 
 const RELAY_URL = import.meta.env.VITE_RELAY_URL || "https://relay.mail.otterware.dev";
 const THEME_SOURCE_KEY = "otter:theme-source";
+const TITLE = __DEMO__ ? "Otter Mail (demo)" : "Otter Mail";
+if (__DEMO__) document.title = TITLE;
 
 type Listener = (params: unknown) => void;
 
@@ -121,7 +123,7 @@ function applyEffect(effect: PageEffect): void {
       }
       break;
     case "badge":
-      document.title = effect.count > 0 ? `(${effect.count}) Otter Mail` : "Otter Mail";
+      document.title = effect.count > 0 ? `(${effect.count}) ${TITLE}` : TITLE;
       void navigator.setAppBadge?.(effect.count).catch(() => {});
       break;
     case "download":
@@ -181,7 +183,7 @@ async function invoke<T>(channel: string, params?: unknown): Promise<T> {
 
   // Start what needs the click now, while it counts as the user's.
   if (channel === "gmail:pickAttachments") started.pickFiles = pickFiles();
-  if (channel === "gmail:addAccount") {
+  if (channel === "gmail:addAccount" && !__DEMO__) {
     started.googleSignIn = googleSignIn((params as { email?: string } | undefined)?.email);
   }
   if (channel === "gmail:cancelAddAccount") signInPopup?.close();
@@ -276,8 +278,12 @@ if ("Notification" in window && Notification.permission === "default") {
   });
 }
 
-/** The web app needs an Otter account (it holds the Gmail sign-ins): sign in first. */
+/**
+ * The web app needs an Otter account (it holds the Gmail sign-ins): sign in
+ * first. The demo's mailboxes need none.
+ */
 export async function requireOtterAccount(): Promise<void> {
+  if (__DEMO__) return;
   const state = await invoke<{ user: unknown }>("otter:getState");
   if (!state.user) await invoke("otter:signIn");
   webBridge.on("otter:state", (next) => {

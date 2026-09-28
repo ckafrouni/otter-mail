@@ -56,13 +56,17 @@ it; the web app needs it (the relay keeps its Gmail sign-ins alive).
 
 ## Dev
 
-- `pnpm install`, then `pnpm dev` (Vite dev server + main-process watcher + Electron with reload).
-- The web app: `pnpm --filter @otter-mail/relay dev` (the relay on :8787) and
-  `VITE_RELAY_URL=http://localhost:8787 pnpm dev:web` (on :5833); see docs/development.md.
+- `pnpm install`, then `pnpm dev`: the web app on :5833 with a local relay on :8787 (open it in
+  a browser, e.g. the T3 preview). `pnpm dev:desktop` runs the Mac app (Vite dev server +
+  main-process watcher + Electron with reload); `pnpm dev:web` the web app alone. Both apps render
+  the same `apps/web`, so UI work is checked in the browser. See docs/development.md.
+- `pnpm dev:demo`: the web app on a seeded demo mailbox (a pretend Gmail, no Google or Otter
+  account, no relay). Build and test against it rather than the user's real accounts; see the
+  `test-otter-mail` skill (`.agents/skills`).
 - `pnpm start` runs the built app unpackaged; `pnpm dist:desktop:dmg` builds a DMG in `release/`.
 - Data homes (`apps/desktop/src/paths.ts`, as in T3 Code): the installed app uses
   `~/.otter-mail/userdata`; dev runs use `~/.otter-mail/dev`, or `<worktree>/.otter-mail` in a
-  linked worktree. `pnpm dev --home <dir>` overrides. Never point dev at the installed app's home.
+  linked worktree. `pnpm dev:desktop --home <dir>` overrides. Never point dev at the installed app's home.
 - Main-process logs: the terminal, and `logs/main.log` in the state directory.
 
 ## Releases
