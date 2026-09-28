@@ -371,7 +371,9 @@ export type SettingsPane =
   | "keybindings"
   | "accounts"
   | "views"
-  | "assistant";
+  | "assistant"
+  /** The Otter account page, opened from the user button at the bottom of the nav. */
+  | "otter";
 export type SettingsTarget = {
   pane: SettingsPane;
   viewId?: string | null;

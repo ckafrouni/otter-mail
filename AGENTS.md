@@ -9,13 +9,19 @@ Releases with auto-update.
 - `apps/desktop`: the Electron main process (`src/main.ts`) and the preload (`src/preload.ts`).
   - `src/handlers/`: `ipcMain.handle` handlers, one file per area (gmail, assistant, search, …).
   - `src/services/`: Gmail API client, OAuth, the SQLite mail cache (`node:sqlite`), sync,
-    notifications, tray, translator, assistant providers (Claude, Codex, Hermes).
+    notifications, tray, translator, assistant providers (Claude, Codex, Hermes), and the Otter
+    account: `otter-account.ts` (better-auth client), `linked-accounts.ts`, `realtime.ts`,
+    `gmail-watch.ts`.
   - `src/windows/`: the main window, the menu-bar popover, and where their pages load from.
   - `src/updates.ts`: electron-updater against GitHub Releases.
 - `apps/web`: the React renderer. `index.html` is the main window, `tray-popover.html` the
   menu-bar mini inbox. UI primitives live in `src/components/ui/`.
 - `packages/contracts`: types shared by both sides, including `DesktopBridge`, the
-  `window.desktopBridge` API the preload exposes.
+  `window.desktopBridge` API the preload exposes, and the relay's API (`src/relay.ts`).
+- `infra/relay`: https://relay.mail.otterware.dev, a Cloudflare Worker (Hono, better-auth,
+  Drizzle on D1, a Durable Object per user). Otter accounts, the Gmail accounts linked to them,
+  and realtime mail: Gmail → Pub/Sub → relay → WebSocket to each signed-in Mac. It never sees mail
+  or Gmail tokens. See its README.
 - `native/translator`: a Swift command-line helper for Apple's on-device Translation. It reads a
   JSON request on stdin and prints JSON. Building it needs full Xcode (macOS 26 SDK).
 - `scripts/`: dev runner, desktop packaging (`build-desktop-artifact.ts`), release helpers.
@@ -24,6 +30,9 @@ Releases with auto-update.
 - `site/`: https://mail.otterware.dev (home, privacy policy, terms), a Cloudflare Worker.
 
 ## How the pieces talk
+
+The app is local-first: it talks to Gmail directly and works without the relay. Signing in to an
+Otter account (Settings, the user button by Back) adds account sync across Macs and push.
 
 - Renderer → main: `window.desktopBridge.invoke(channel, params)` → `ipcMain.handle(channel, …)`.
 - Main → renderer: `broadcast(channel, params)` (`apps/desktop/src/ipc.ts`) →

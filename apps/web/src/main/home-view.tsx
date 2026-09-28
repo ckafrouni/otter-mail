@@ -28,6 +28,7 @@ import {
 } from "./gmail/top-bar";
 import { SettingsPage, type SettingsRoute } from "./settings/settings-page";
 import { SettingsNav, settingsSectionLabel } from "./settings/settings-nav";
+import { OtterSignInOnboardingButton } from "./settings/otter-account-pane";
 import { isTypingTarget } from "./gmail/keyboard";
 import { cn } from "./gmail/ui";
 import { usePanelAnimationSettings, usePanelPresence } from "./panel-animations";
@@ -949,17 +950,20 @@ export function HomeView() {
       <div className="h-full flex items-center justify-center bg-canvas">
         <EmptyState
           title="Connect your Gmail account"
-          description="Sign in with Google to start reading your emails."
+          description="Sign in with Google to start reading your emails. Using Otter Mail on another Mac? Sign in to Otter Mail to bring your accounts."
           actions={
-            addAccount.isPending ? (
-              <Button variant="outline" onClick={() => void gmailApi.cancelAddAccount()}>
-                Cancel sign-in
-              </Button>
-            ) : (
-              <Button variant="accent" onClick={() => void handleAddAccount()}>
-                Add Gmail account
-              </Button>
-            )
+            <>
+              {addAccount.isPending ? (
+                <Button variant="outline" onClick={() => void gmailApi.cancelAddAccount()}>
+                  Cancel sign-in
+                </Button>
+              ) : (
+                <Button variant="accent" onClick={() => void handleAddAccount()}>
+                  Add Gmail account
+                </Button>
+              )}
+              <OtterSignInOnboardingButton />
+            </>
           }
         />
       </div>

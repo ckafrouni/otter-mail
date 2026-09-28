@@ -12,6 +12,7 @@ import { cn } from "../gmail/ui";
 import { AppearancePane } from "./appearance-pane";
 import { KeybindingsPane } from "./keybindings-pane";
 import { AccountsPane } from "./accounts-pane";
+import { OtterAccountPane } from "./otter-account-pane";
 import { ViewsPane } from "./views-pane";
 import { ProvidersPane } from "./providers-pane";
 import { TranslationSection } from "./translation-section";
@@ -302,6 +303,7 @@ export function SettingsPage({
   if (route.pane === "appearance") return <AppearancePane />;
   if (route.pane === "keybindings") return <KeybindingsPane />;
   if (route.pane === "accounts") return <AccountsPane />;
+  if (route.pane === "otter") return <OtterAccountPane />;
   if (route.pane === "assistant") return <ProvidersPane />;
   if (route.pane === "views") {
     return (

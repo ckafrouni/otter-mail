@@ -58,6 +58,12 @@ baked in at build time and never committed: copy `.env.example` to `.env.local` 
 `OTTER_MAIL_GOOGLE_CLIENT_ID` / `OTTER_MAIL_GOOGLE_CLIENT_SECRET` variables override the baked-in
 values at runtime.
 
+The same client signs in to the Otter account (`infra/relay`): with a Gmail account already on the
+Mac, the app proves the identity with a fresh ID token from that account's refresh token, no
+browser needed; otherwise it runs the same browser flow with identity scopes only.
+`OTTER_MAIL_RELAY_URL` points the app at another relay (e.g. `http://127.0.0.1:8787` for
+`pnpm --filter @otter-mail/relay dev`).
+
 The consent screen is published but not yet verified by Google, so sign-in shows an "unverified
 app" warning and is capped at 100 users. The home page, privacy policy and terms it links to live
 in `site/` and are served at https://mail.otterware.dev (deploy with `pnpm deploy:site` after

@@ -49,8 +49,10 @@ import {
   useDeleteThreadsForever,
   useLabelResolver,
   useSyncAccountLabels,
+  useAccounts,
 } from "./hooks";
 import { LabelChip, InboxChip, ImportantMarker } from "./label-chip";
+import { SignedOutMailbox } from "./signed-out-mailbox";
 import { LabelOverlay, type LabelOverlayMode } from "./label-overlay";
 import { renderLabelMenuNodes } from "./label-picker-menu";
 import { INBOX_VIEW_ID, STARRED_VIEW_ID, SENT_VIEW_ID, DRAFTS_VIEW_ID } from "./custom-views";
@@ -685,6 +687,10 @@ export function MessageList({
   search,
 }: MessageListProps) {
   const isCombined = combined != null;
+  // This Mac isn't signed in to the account (e.g. it came from another Mac).
+  const signedOutAccount = useAccounts().data?.find(
+    (account) => account.id === accountId && account.signedOut,
+  );
   // "All / Unread" mode switcher — a segmented control in the header, not a
   // buried icon toggle, so the current display mode is always visible.
   const [mailboxMode, setMailboxMode] = useState<"all" | "unread">("all");
@@ -1516,7 +1522,9 @@ export function MessageList({
           " ",
         )}
       >
-        {isLoading ? (
+        {signedOutAccount && !isCombined && !search && visibleMessages.length === 0 ? (
+          <SignedOutMailbox account={signedOutAccount} />
+        ) : isLoading ? (
           <div className="flex flex-col gap-0">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="flex w-full items-start gap-3 px-5 py-2.5">

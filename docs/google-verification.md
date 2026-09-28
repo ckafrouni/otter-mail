@@ -21,8 +21,8 @@ The form only saves once every field is filled, including the video link.
 > names and profile photos of the people the user corresponds with next to their messages, and
 > suggests recipients while the user types an address. Both are read-only; we never modify
 > contacts. All data is used only to show these features to the user in the app on their own
-> Mac. It is stored locally on the device, never sent to our servers (we have none), never
-> shared, and never used for advertising or AI training.
+> Mac. It is stored locally on the device, never sent to our servers, never shared, and never
+> used for advertising or AI training.
 
 ### Restricted scope (https://mail.google.com/)
 
@@ -36,7 +36,10 @@ Features: **Email client**.
 > delete messages (users.messages.delete / batchDelete require https://mail.google.com/), and
 > gmail.readonly/send/compose each cover only part of what an email client does. Mail is fetched
 > directly from the Gmail API to the user's own Mac, cached locally for speed and offline reading,
-> and never sent to our servers (we run none). We do not sell data, use it for ads, or train AI
+> and never sent to our servers. If the user signs in to an optional Otter account, Gmail push
+> notifications (users.watch, delivered through Google Cloud Pub/Sub) reach our relay: they carry
+> only the mailbox address and a history id, which the relay forwards to the user's Macs so they
+> sync at once. The relay stores no Gmail data and holds no Gmail tokens. We do not sell data, use it for ads, or train AI
 > models on it. Our use of Google data follows the Google API Services User Data Policy,
 > including the Limited Use requirements.
 
