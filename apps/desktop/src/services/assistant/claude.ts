@@ -33,9 +33,13 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import { logger } from "../../logger.js";
 import fs from "node:fs/promises";
-import { attachmentsDir, withAttachmentPaths } from "./attachments.js";
+import {
+  attachmentPath,
+  attachmentsDir,
+  assistantWorkspace,
+  withAttachmentPaths,
+} from "./local.js";
 import { ASSISTANT_INSTRUCTIONS } from "./instructions.js";
-import { assistantWorkspace } from "./settings.js";
 import { ensureShellPath } from "./shell-path.js";
 import type {
   ApprovalDecision,
@@ -49,7 +53,7 @@ import type {
   ProviderModelOption,
   RuntimeMode,
   Skill,
-} from "./types.js";
+} from "@otter-mail/core";
 
 const PROBE_TIMEOUT_MS = 25_000;
 /** Image types Claude accepts as content blocks. */
@@ -780,7 +784,7 @@ export const claudeProvider: ChatProvider = {
           source: {
             type: "base64" as const,
             media_type: a.mime,
-            data: (await fs.readFile(a.path)).toString("base64"),
+            data: (await fs.readFile(attachmentPath(a))).toString("base64"),
           },
         })),
     );

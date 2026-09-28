@@ -4,6 +4,7 @@
  * Platform (platform.ts) and serves `registeredHandlers()` to the renderer.
  */
 
+import { registerAssistantHandlers } from "./handlers/assistant.js";
 import { registerCalendarHandlers } from "./handlers/calendar.js";
 import { registerGmailHandlers } from "./handlers/gmail.js";
 import { registerOtterAccountHandlers } from "./handlers/otter-account.js";
@@ -28,6 +29,7 @@ export async function startCore(platform: Platform): Promise<void> {
   registerCalendarHandlers();
   registerOtterAccountHandlers();
   registerTranslationHandlers();
+  registerAssistantHandlers();
   handle("keybindings:read", async () => readKeybindings());
   handle("keybindings:write", async (params: unknown) => {
     const result = await writeKeybindings((params as { rules?: unknown } | undefined)?.rules);
@@ -49,6 +51,9 @@ export type * from "./platform.js";
 export * as accountStore from "./services/account-store.js";
 export * as mailStore from "./services/mail-store.js";
 export { runAsTask } from "./handlers/ipc-budget.js";
+export { ATTACHMENTS_DIR, dataUrl, readAttachment } from "./services/assistant/attachments.js";
+export { shutdownProviders } from "./services/assistant/service.js";
+export * from "./services/assistant/types.js";
 export { getAttachmentBytes } from "./services/gmail-api.js";
 export { KEYBINDINGS_FILE } from "./services/keybindings-store.js";
 export { syncAllAccounts } from "./services/mail-sync.js";

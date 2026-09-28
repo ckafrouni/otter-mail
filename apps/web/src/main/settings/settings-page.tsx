@@ -51,6 +51,11 @@ const ADVANCE_DIRECTION_OPTIONS: { value: AdvanceDirection; label: string }[] = 
   { value: "none", label: "Don't select another message" },
 ];
 
+/** What a setting does, or, where it can't be changed here, that the Mac app has it. */
+function macAppOnly(available: boolean, description: string): string {
+  return available ? description : `${description} Available in the Mac app.`;
+}
+
 /** Compact select in the control slot of a row. */
 function RowSelect({
   value,
@@ -59,6 +64,7 @@ function RowSelect({
   placeholder,
   ariaLabel,
   className,
+  disabled,
 }: {
   value: string | undefined;
   onValueChange: (value: string) => void;
@@ -66,10 +72,11 @@ function RowSelect({
   placeholder?: string;
   ariaLabel: string;
   className?: string;
+  disabled?: boolean;
 }) {
   return (
     // "" keeps the Select controlled (showing the placeholder) while the value loads.
-    <Select value={value ?? ""} onValueChange={onValueChange}>
+    <Select value={value ?? ""} onValueChange={onValueChange} disabled={disabled}>
       <SelectTrigger
         size="small"
         aria-label={ariaLabel}
@@ -200,36 +207,38 @@ function GeneralPane() {
 
   return (
     <SettingsPageContainer>
-      {features.launchAtLogin || features.menuBar ? (
-        <SettingsSection title="Startup & menu bar">
-          {features.launchAtLogin ? (
-            <SettingsRow
-              title="Launch at login"
-              description="Open Otter Mail automatically when you log in to your Mac."
-              control={
-                <Switch
-                  id="launchAtLogin"
-                  checked={launchAtLogin}
-                  onCheckedChange={(checked) => void handleLaunchAtLoginChange(checked)}
-                />
-              }
+      <SettingsSection title="Startup & menu bar">
+        <SettingsRow
+          title="Launch at login"
+          description={macAppOnly(
+            features.launchAtLogin,
+            "Open Otter Mail automatically when you log in to your Mac.",
+          )}
+          control={
+            <Switch
+              id="launchAtLogin"
+              checked={features.launchAtLogin && launchAtLogin}
+              disabled={!features.launchAtLogin}
+              onCheckedChange={(checked) => void handleLaunchAtLoginChange(checked)}
             />
-          ) : null}
-          {features.menuBar ? (
-            <SettingsRow
-              title="Show menu-bar icon"
-              description="An Otter Mail icon in the menu bar with a quick unread inbox view."
-              control={
-                <Switch
-                  id="trayEnabled"
-                  checked={trayEnabled}
-                  onCheckedChange={(checked) => void handleTrayEnabledChange(checked)}
-                />
-              }
+          }
+        />
+        <SettingsRow
+          title="Show menu-bar icon"
+          description={macAppOnly(
+            features.menuBar,
+            "An Otter Mail icon in the menu bar with a quick unread inbox view.",
+          )}
+          control={
+            <Switch
+              id="trayEnabled"
+              checked={features.menuBar && trayEnabled}
+              disabled={!features.menuBar}
+              onCheckedChange={(checked) => void handleTrayEnabledChange(checked)}
             />
-          ) : null}
-        </SettingsSection>
-      ) : null}
+          }
+        />
+      </SettingsSection>
 
       <SettingsSection title="Mail">
         <SettingsRow
@@ -274,24 +283,27 @@ function GeneralPane() {
         />
       </SettingsSection>
 
-      {features.translation ? <TranslationSection /> : null}
+      <TranslationSection />
 
-      {features.defaultMailApp ? (
-        <SettingsSection title="System">
-          <SettingsRow
-            title="Default email app"
-            description="Which app opens mailto: links across macOS."
-            control={
-              <RowSelect
-                value={defaultMailBundleId ?? undefined}
-                onValueChange={(v) => void handleDefaultMailChange(v)}
-                options={mailApps.map((app) => ({ value: app.bundleId, label: app.name }))}
-                ariaLabel="Default email app"
-              />
-            }
-          />
-        </SettingsSection>
-      ) : null}
+      <SettingsSection title="System">
+        <SettingsRow
+          title="Default email app"
+          description={macAppOnly(
+            features.defaultMailApp,
+            "Which app opens mailto: links across macOS.",
+          )}
+          control={
+            <RowSelect
+              value={defaultMailBundleId ?? undefined}
+              onValueChange={(v) => void handleDefaultMailChange(v)}
+              options={mailApps.map((app) => ({ value: app.bundleId, label: app.name }))}
+              ariaLabel="Default email app"
+              placeholder={features.defaultMailApp ? undefined : "—"}
+              disabled={!features.defaultMailApp}
+            />
+          }
+        />
+      </SettingsSection>
 
       <UpdatesSection />
     </SettingsPageContainer>

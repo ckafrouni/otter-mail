@@ -52,8 +52,6 @@ export interface BridgeFeatures {
   defaultMailApp: boolean;
   /** Apple's on-device translation. */
   translation: boolean;
-  /** Local assistant CLIs (Claude Code, Codex, Hermes). */
-  assistant: boolean;
   /** keybindings.json on disk, opened in an editor. */
   keybindingsFile: boolean;
   /** Dragging attachments out to Finder. */
@@ -69,8 +67,6 @@ export interface DesktopBridge {
   /** Listen for a main-process push on `channel`. Returns an unsubscribe function. */
   on(channel: string, listener: (params: unknown) => void): () => void;
   openExternal(url: string): Promise<void>;
-  /** Absolute path of a File dropped or picked in the renderer ("" when it has none). */
-  getPathForFile(file: File): string;
   nativeTheme: {
     getInfo(): Promise<NativeThemeInfo>;
     setThemeSource(source: ThemeSource): Promise<void>;

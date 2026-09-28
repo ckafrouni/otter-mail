@@ -13,7 +13,6 @@ import type { SettingsPane } from "../gmail/api";
 import { cn, HintTooltip } from "../gmail/ui";
 import { useOtterAccount } from "../otter-account";
 import { OtterAvatar } from "./otter-account-pane";
-import { features } from "../features";
 
 type SettingsSection = {
   id: SettingsPane;
@@ -21,16 +20,14 @@ type SettingsSection = {
   icon: ComponentType<{ className?: string }>;
 };
 
-export const SETTINGS_SECTIONS: ReadonlyArray<SettingsSection> = (
-  [
-    { id: "general", label: "General", icon: Settings2Icon },
-    { id: "appearance", label: "Appearance", icon: PaletteIcon },
-    { id: "keybindings", label: "Keybindings", icon: KeyboardIcon },
-    { id: "accounts", label: "Mailboxes", icon: MailIcon },
-    { id: "views", label: "Views", icon: LayersIcon },
-    { id: "assistant", label: "Assistant", icon: BotIcon },
-  ] satisfies SettingsSection[]
-).filter((section) => section.id !== "assistant" || features.assistant);
+export const SETTINGS_SECTIONS: ReadonlyArray<SettingsSection> = [
+  { id: "general", label: "General", icon: Settings2Icon },
+  { id: "appearance", label: "Appearance", icon: PaletteIcon },
+  { id: "keybindings", label: "Keybindings", icon: KeyboardIcon },
+  { id: "accounts", label: "Mailboxes", icon: MailIcon },
+  { id: "views", label: "Views", icon: LayersIcon },
+  { id: "assistant", label: "Assistant", icon: BotIcon },
+];
 
 export function settingsSectionLabel(pane: SettingsPane): string {
   if (pane === "otter") return "Otter account";

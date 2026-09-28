@@ -145,6 +145,7 @@ function ProviderListRow({
       <span className="flex h-5 shrink-0 items-center">
         <Switch
           checked={provider.enabled}
+          disabled={provider.macAppOnly}
           onCheckedChange={(checked: boolean) => onToggle(Boolean(checked))}
           aria-label={`Enable ${provider.displayName}`}
         />
@@ -435,7 +436,11 @@ function HermesEditor({
       <SettingsSection title="Connection">
         <SettingsRow
           title="Base URL"
-          description="Hermes' built-in API server (port 8642), reached over Tailscale."
+          description={
+            window.desktopBridge.platform === "web"
+              ? `Hermes' built-in API server (port 8642), over HTTPS. Allow ${location.origin} in its API_SERVER_CORS_ORIGINS.`
+              : "Hermes' built-in API server (port 8642), reached over Tailscale."
+          }
           control={
             <TextInput
               value={baseUrl}
@@ -448,7 +453,7 @@ function HermesEditor({
         />
         <SettingsRow
           title="API key"
-          description="The server's API_SERVER_KEY. Stored encrypted on this Mac."
+          description="The server's API_SERVER_KEY. Kept on this device only."
           control={
             <TextInput
               type="password"
@@ -695,7 +700,7 @@ export function ProvidersPane() {
                 isDefault={current.kind === state.selected}
                 onMakeDefault={() => update({ selected: current.kind })}
               />
-              {current.kind === "hermes" ? (
+              {current.macAppOnly ? null : current.kind === "hermes" ? (
                 <HermesEditor state={state} provider={current} update={update} />
               ) : (
                 <AgentEditor kind={current.kind} state={state} provider={current} update={update} />

@@ -60,6 +60,8 @@ export type ProviderSnapshot = {
   model: string | null;
   /** Chats persist on the provider and can be listed/resumed. */
   sessions: boolean;
+  /** A local agent the web app can't run: listed, off, pointing to the Mac app. */
+  macAppOnly?: boolean;
 };
 
 /** Everything the renderer needs for the provider picker and settings. */
@@ -192,13 +194,13 @@ export type ChatSessionMessage = {
   toolCalls?: string[];
 };
 
-/** A file attached to a turn, staged under userData/assistant-attachments. */
+/** A file attached to a turn, staged in the app's assistant-attachments folder. */
 export type ChatAttachment = {
   id: string;
   name: string;
   mime: string;
   size: number;
-  /** Where the staged copy lives (agents on this Mac read it from here). */
+  /** The staged copy, in the app's files (`assistant-attachments/…`). */
   path: string;
   kind: "image" | "file";
 };

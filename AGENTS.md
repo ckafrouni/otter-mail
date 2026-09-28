@@ -13,9 +13,9 @@ auto-update.
   platform-specific goes through the `Platform` interface (`src/platform.ts`).
 - `apps/desktop`: the Electron main process (`src/main.ts`), which runs core with the desktop
   platform (`src/platform.ts`: node:sqlite, safeStorage, dialogs, the Dock), and the preload.
-  - `src/handlers/`: the Mac-only handlers (tray, assistant, default mail app, …).
-  - `src/services/`: Google sign-in (loopback OAuth), tray, translator, assistant providers
-    (Claude, Codex, Hermes), default mail app.
+  - `src/handlers/`: the Mac-only handlers (tray, default mail app, …).
+  - `src/services/`: Google sign-in (loopback OAuth), tray, Apple's translator, the local assistants
+    (Claude, Codex; Hermes is in core), default mail app.
   - `src/windows/`: the main window, the menu-bar popover, and where their pages load from.
   - `src/updates.ts`: electron-updater against GitHub Releases.
 - `apps/web`: the React renderer, one build for both apps. `index.html` is the main window,

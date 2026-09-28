@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { logger } from "../../logger.js";
 import { ensureShellPath } from "./shell-path.js";
-import type { CodexSettings } from "./types.js";
+import type { CodexSettings } from "@otter-mail/core";
 
 type Pending = {
   resolve: (value: unknown) => void;

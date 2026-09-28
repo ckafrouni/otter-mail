@@ -63,15 +63,6 @@ function thumbnail(url: string): Promise<string | undefined> {
   });
 }
 
-function base64Of(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
-
 /** The composer's attachments: add (validate + stage), remove, take on send. */
 export function useChatAttachments() {
   const [items, setItems] = useState<DraftAttachment[]>([]);
@@ -119,11 +110,11 @@ export function useChatAttachments() {
       ]);
       void (async () => {
         try {
-          // Finder files by path; pasted content has none, so its bytes go.
-          const path = window.desktopBridge.getPathForFile(file);
-          const item = path
-            ? { path }
-            : { name, mime: file.type || "application/octet-stream", base64: await base64Of(file) };
+          const item = {
+            name,
+            mime: file.type || "application/octet-stream",
+            bytes: new Uint8Array(await file.arrayBuffer()),
+          };
           const [thumb, result] = await Promise.all([
             previewUrl ? thumbnail(previewUrl) : Promise.resolve(undefined),
             gmailApi.assistantStageAttachments([item]),

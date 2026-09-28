@@ -95,6 +95,11 @@ export function providerSummary(p: ProviderSnapshot | undefined): {
   headline: string;
   detail?: string;
 } {
+  if (p?.macAppOnly)
+    return {
+      headline: "In the Mac app",
+      detail: `${p.displayName} runs on your Mac, so it's available in the Otter Mail app.`,
+    };
   if (!p || (p.checkedAt === null && p.enabled))
     return {
       headline: "Checking provider status",

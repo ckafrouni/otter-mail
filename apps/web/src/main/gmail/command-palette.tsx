@@ -43,7 +43,6 @@ import { APP_THEMES, setThemeForAppearance, useThemeChoice } from "../theme/appl
 import type { GmailAccount, GmailMessageSummary, MailView } from "./types";
 import type { KeybindingCommand } from "../keybindings/commands";
 import { shortcutLabelFor, useKeybindingsState } from "../keybindings/store";
-import { features } from "../features";
 
 /**
  * Command palette (⌘K), modeled on Otter Code's: a frosted card anchored near
@@ -239,18 +238,14 @@ export function CommandPalette({
         run: onCompose,
       },
       { id: "sync", icon: <RotateCwIcon className={ICON} />, title: "Sync now", run: onSync },
-      ...(features.assistant
-        ? [
-            {
-              id: "chat",
-              icon: <PanelRightIcon className={ICON} />,
-              title: "Toggle assistant panel",
-              keywords: "chat assistant ai hermes codex",
-              shortcut: sc("assistant.toggle"),
-              run: onToggleChat,
-            },
-          ]
-        : []),
+      {
+        id: "chat",
+        icon: <PanelRightIcon className={ICON} />,
+        title: "Toggle assistant panel",
+        keywords: "chat assistant ai hermes codex",
+        shortcut: sc("assistant.toggle"),
+        run: onToggleChat,
+      },
       {
         id: "sidebar",
         icon: <PanelLeftIcon className={ICON} />,

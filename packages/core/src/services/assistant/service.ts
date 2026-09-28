@@ -4,12 +4,15 @@
  * once, re-checked in the background when stale or when settings change, and
  * pushed to the windows as `assistant:providersChanged`. Chat turns are
  * fire-and-forget; their events stream as `assistant:chatEvent`.
+ *
+ * Hermes is a server, so it works everywhere; Codex and Claude are local
+ * CLIs, which the Mac app hands over as `Platform.assistantProviders`. The
+ * web app lists them, off (`macAppOnly`).
  */
 
-import { logger } from "../../logger.js";
 import { broadcast } from "../../ipc.js";
-import { claudeProvider } from "./claude.js";
-import { codexProvider } from "./codex.js";
+import { logger } from "../../logger.js";
+import { platform } from "../../platform.js";
 import {
   fetchHermesModels,
   hermesProvider,
@@ -37,22 +40,38 @@ import {
   type Skill,
 } from "./types.js";
 
-const PROVIDERS: Record<ProviderKind, ChatProvider> = {
-  hermes: hermesProvider,
-  codex: codexProvider,
-  claude: claudeProvider,
+let providers: Partial<Record<ProviderKind, ChatProvider>> | null = null;
+
+/** The providers this platform runs. */
+function available(): Partial<Record<ProviderKind, ChatProvider>> {
+  providers ??= Object.fromEntries(
+    [hermesProvider, ...(platform().assistantProviders ?? [])].map((p) => [p.kind, p]),
+  );
+  return providers;
+}
+
+function provider(kind: ProviderKind): ChatProvider {
+  const found = available()[kind];
+  if (!found) throw new Error("This assistant runs in the Mac app.");
+  return found;
+}
+
+const DISPLAY_NAMES: Record<ProviderKind, string> = {
+  hermes: "Hermes",
+  codex: "Codex",
+  claude: "Claude",
 };
 
 /** Re-check health when a snapshot is older than this (T3's default interval). */
 const STALE_AFTER_MS = 5 * 60_000;
 
-const snapshots = new Map<ProviderKind, ProviderSnapshot>();
+const checked = new Map<ProviderKind, ProviderSnapshot>();
 const checking = new Map<ProviderKind, Promise<void>>();
 
 function pendingSnapshot(kind: ProviderKind, settings: ProviderSettings): ProviderSnapshot {
   return {
     kind,
-    displayName: PROVIDERS[kind].displayName,
+    displayName: available()[kind]?.displayName ?? DISPLAY_NAMES[kind],
     enabled: settings[kind].enabled,
     installed: false,
     version: null,
@@ -67,8 +86,18 @@ function pendingSnapshot(kind: ProviderKind, settings: ProviderSettings): Provid
 
 async function getState(): Promise<ProvidersState> {
   const settings = await getProviderSettings();
-  const providers = PROVIDER_KINDS.map((kind) => {
-    const snapshot = snapshots.get(kind) ?? pendingSnapshot(kind, settings);
+  const snapshots = PROVIDER_KINDS.map((kind) => {
+    if (!available()[kind]) {
+      return {
+        ...pendingSnapshot(kind, settings),
+        enabled: false,
+        status: "disabled",
+        checkedAt: 0,
+        message: "Available in the Mac app.",
+        macAppOnly: true,
+      } satisfies ProviderSnapshot;
+    }
+    const snapshot = checked.get(kind) ?? pendingSnapshot(kind, settings);
     const enabled = settings[kind].enabled;
     const chosen = settings[kind].model;
     const fallback = snapshot.models.find((m) => m.isDefault)?.slug ?? snapshot.models[0]?.slug;
@@ -81,8 +110,8 @@ async function getState(): Promise<ProvidersState> {
   });
   const { hermes, codex, claude, selected } = settings;
   return {
-    providers,
-    selected,
+    providers: snapshots,
+    selected: available()[selected] ? selected : "hermes",
     settings: {
       hermes,
       codex,
@@ -103,9 +132,10 @@ function check(kind: ProviderKind): Promise<void> {
   if (inFlight) return inFlight;
   const run = (async () => {
     const settings = await getProviderSettings();
-    if (!settings[kind].enabled) return;
-    const result = await PROVIDERS[kind].checkStatus(settings);
-    snapshots.set(kind, { ...result, enabled: true, checkedAt: Date.now() });
+    const found = available()[kind];
+    if (!found || !settings[kind].enabled) return;
+    const result = await found.checkStatus(settings);
+    checked.set(kind, { ...result, enabled: true, checkedAt: Date.now() });
     logger.info("assistant", "provider checked", {
       kind,
       status: result.status,
@@ -130,14 +160,14 @@ function check(kind: ProviderKind): Promise<void> {
 export async function providersState(): Promise<ProvidersState> {
   const state = await getState();
   for (const p of state.providers) {
-    if (p.enabled && (!p.checkedAt || Date.now() - p.checkedAt > STALE_AFTER_MS))
+    if (p.enabled && !p.macAppOnly && (!p.checkedAt || Date.now() - p.checkedAt > STALE_AFTER_MS))
       void check(p.kind);
   }
   return state;
 }
 
 export async function refreshProviders(): Promise<void> {
-  await Promise.all(PROVIDER_KINDS.map(check));
+  await Promise.all(PROVIDER_KINDS.filter((kind) => available()[kind]).map(check));
 }
 
 export type SettingsPatch = {
@@ -164,11 +194,11 @@ export async function updateProviderSettings(patch: SettingsPatch): Promise<Prov
   await saveProviderSettings(next);
   for (const kind of PROVIDER_KINDS) {
     const changed = patch[kind];
-    if (!changed) continue;
+    if (!changed || !available()[kind]) continue;
     // A new binary / home: drop running processes and re-probe.
     if (LAUNCH_KEYS.some((key) => key in changed)) {
-      PROVIDERS[kind].shutdown();
-      snapshots.delete(kind);
+      provider(kind).shutdown();
+      checked.delete(kind);
       void check(kind);
     } else if ("enabled" in changed && next[kind].enabled) void check(kind);
   }
@@ -196,7 +226,7 @@ export async function connectHermes(baseUrl: string, apiKey: string): Promise<Pr
     },
   });
   logger.info("assistant", "hermes connected", { baseUrl: base, sessions });
-  snapshots.delete("hermes");
+  checked.delete("hermes");
   void check("hermes");
   return getState();
 }
@@ -223,17 +253,19 @@ export async function sendTurn(kind: ProviderKind, turn: SendTurnInput): Promise
     });
     return;
   }
-  void PROVIDERS[kind].sendTurn(turn, settings, emit).catch((error: unknown) => {
-    logger.info("assistant", "turn crashed", {
-      provider: kind,
-      error: String(error),
+  void provider(kind)
+    .sendTurn(turn, settings, emit)
+    .catch((error: unknown) => {
+      logger.info("assistant", "turn crashed", {
+        provider: kind,
+        error: String(error),
+      });
+      emit({
+        requestId: turn.requestId,
+        type: "error",
+        message: "unreachable",
+      });
     });
-    emit({
-      requestId: turn.requestId,
-      type: "error",
-      message: "unreachable",
-    });
-  });
 }
 
 export async function respondApproval(
@@ -243,7 +275,7 @@ export async function respondApproval(
   decision: ApprovalDecision,
 ): Promise<void> {
   logger.info("assistant", "approval", { provider: kind, requestId, decision });
-  await PROVIDERS[kind].respondApproval(requestId, approvalId, decision);
+  await provider(kind).respondApproval(requestId, approvalId, decision);
 }
 
 /** Adds a message to a running turn; false → the caller queues it instead. */
@@ -252,21 +284,21 @@ export async function steerTurn(
   requestId: string,
   input: string,
 ): Promise<boolean> {
-  const accepted = await PROVIDERS[kind].steer(requestId, input);
+  const accepted = await provider(kind).steer(requestId, input);
   logger.info("assistant", "steer", { provider: kind, requestId, accepted });
   return accepted;
 }
 
 export function cancelTurn(kind: ProviderKind, requestId: string): void {
-  PROVIDERS[kind].cancel(requestId);
+  provider(kind).cancel(requestId);
 }
 
 export async function listSkills(kind: ProviderKind): Promise<Skill[]> {
-  return PROVIDERS[kind].listSkills(await getProviderSettings());
+  return provider(kind).listSkills(await getProviderSettings());
 }
 
 export async function listSessions(kind: ProviderKind, limit: number): Promise<ChatSession[]> {
-  return PROVIDERS[kind].listSessions(
+  return provider(kind).listSessions(
     await getProviderSettings(),
     Math.min(Math.max(limit, 1), 200),
   );
@@ -276,13 +308,13 @@ export async function readSession(
   kind: ProviderKind,
   sessionId: string,
 ): Promise<ChatSessionMessage[]> {
-  return PROVIDERS[kind].readSession(await getProviderSettings(), sessionId);
+  return provider(kind).readSession(await getProviderSettings(), sessionId);
 }
 
 export async function deleteSession(kind: ProviderKind, sessionId: string): Promise<void> {
-  await PROVIDERS[kind].deleteSession(await getProviderSettings(), sessionId);
+  await provider(kind).deleteSession(await getProviderSettings(), sessionId);
 }
 
 export function shutdownProviders(): void {
-  for (const provider of Object.values(PROVIDERS)) provider.shutdown();
+  for (const found of Object.values(available())) found.shutdown();
 }

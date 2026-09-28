@@ -1,12 +1,11 @@
 /**
- * Provider settings (userData/assistant-providers.json) plus the Hermes API
- * key, which is full agent control: safeStorage-encrypted in
- * userData/assistant-chat.enc, never sent to the renderer, never logged.
+ * Provider settings (assistant-providers.json) plus the Hermes API key, which
+ * is full agent control: kept in the platform's secrets, never sent to the
+ * renderer, never logged.
  */
 
-import fs from "fs/promises";
-import path from "path";
-import { app, safeStorage } from "electron";
+import { readJson, writeJson } from "../../json-file.js";
+import { platform } from "../../platform.js";
 import {
   PROVIDER_KINDS,
   RUNTIME_MODES,
@@ -62,19 +61,7 @@ function migrateRuntimeMode<T extends { runtimeMode: RuntimeMode }>(settings: T)
     : { ...settings, runtimeMode: "approval-required" };
 }
 
-async function userDataFile(name: string): Promise<string> {
-  const dir = app.getPath("userData");
-  await fs.mkdir(dir, { recursive: true });
-  return path.join(dir, name);
-}
-
-async function readJson<T>(name: string): Promise<Partial<T> | null> {
-  try {
-    return JSON.parse(await fs.readFile(await userDataFile(name), "utf-8")) as Partial<T>;
-  } catch {
-    return null;
-  }
-}
+const HERMES_KEY_SECRET = "assistant-hermes-key";
 
 let cache: ProviderSettings | null = null;
 
@@ -100,30 +87,17 @@ export async function getProviderSettings(): Promise<ProviderSettings> {
 
 export async function saveProviderSettings(next: ProviderSettings): Promise<void> {
   cache = next;
-  await fs.writeFile(
-    await userDataFile("assistant-providers.json"),
-    JSON.stringify(next, null, 2),
-    "utf-8",
-  );
+  await writeJson("assistant-providers.json", next);
 }
 
 export async function getHermesKey(): Promise<string> {
-  try {
-    const hex = await fs.readFile(await userDataFile("assistant-chat.enc"), "utf-8");
-    return await safeStorage.decryptString(Buffer.from(hex.trim(), "hex"));
-  } catch {
-    return "";
-  }
+  return (
+    (await platform()
+      .secrets.get(HERMES_KEY_SECRET)
+      .catch(() => null)) ?? ""
+  );
 }
 
 export async function setHermesKey(key: string): Promise<void> {
-  const encrypted = await safeStorage.encryptString(key);
-  await fs.writeFile(await userDataFile("assistant-chat.enc"), encrypted.toString("hex"), "utf-8");
-}
-
-/** Codex threads started from Otter Mail run here (their cwd), so they're listable as ours. */
-export async function assistantWorkspace(): Promise<string> {
-  const dir = path.join(app.getPath("userData"), "assistant-workspace");
-  await fs.mkdir(dir, { recursive: true });
-  return dir;
+  await platform().secrets.set(HERMES_KEY_SECRET, key);
 }

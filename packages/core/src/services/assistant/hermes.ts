@@ -8,9 +8,9 @@
  *    kept so conversations started before the migration keep their thread.
  */
 
-import fs from "node:fs/promises";
+import { utf8Decode } from "../../bytes.js";
 import { logger } from "../../logger.js";
-import { dataUrl } from "./attachments.js";
+import { dataUrl, readAttachment } from "./attachments.js";
 import { getHermesKey } from "./settings.js";
 import type {
   ApprovalDecision,
@@ -79,10 +79,10 @@ async function hermesContent(input: string, attachments: ChatAttachment[]): Prom
   }
   let text = input;
   for (const doc of attachments.filter((a) => a.kind === "file")) {
-    const body = await fs.readFile(doc.path, "utf-8");
+    const body = utf8Decode(await readAttachment(doc));
     text += `\n\n--- ${doc.name} ---\n${body}`;
   }
-  if (Buffer.byteLength(text) > HERMES_TEXT_BUDGET) {
+  if (new TextEncoder().encode(text).byteLength > HERMES_TEXT_BUDGET) {
     throw new Error("The attached text is too long for Hermes (about 60 KB per message).");
   }
   return [

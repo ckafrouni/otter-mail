@@ -5,16 +5,16 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import type { NativeThemeInfo, ThemeSource } from "@otter-mail/contracts";
-import { getSettings, startCore, syncAllAccounts } from "@otter-mail/core";
+import { getSettings, shutdownProviders, startCore, syncAllAccounts } from "@otter-mail/core";
 
 import { registerHandlers } from "./handlers/index.js";
 import { broadcast } from "./ipc.js";
 import { logger } from "./logger.js";
 import { configureAppPaths } from "./paths.js";
 import { desktopPlatform } from "./platform.js";
+import { migrateHermesKey } from "./services/assistant/local.js";
 import { parseMailtoUrl, setPendingMailto } from "./services/mailto-target.js";
 import { createTray, destroyTray } from "./services/tray.js";
-import { shutdownProviders } from "./services/assistant/service.js";
 import { initUpdates } from "./updates.js";
 import { setSettingsTarget } from "./windows/settings-window.js";
 import { createMainWindow, focusMainWindow, getMainWindow } from "./windows/main-window.js";
@@ -295,7 +295,9 @@ void app.whenReady().then(async () => {
   });
 
   // The mail backend (@otter-mail/core) runs in this process.
-  await startCore(desktopPlatform());
+  const platform = desktopPlatform();
+  await migrateHermesKey(platform.secrets);
+  await startCore(platform);
   registerHandlers();
   setupApplicationMenu();
   initUpdates();

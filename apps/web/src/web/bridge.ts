@@ -237,7 +237,6 @@ export const webBridge: DesktopBridge = {
     launchAtLogin: false,
     defaultMailApp: false,
     translation: hasBuiltInTranslator,
-    assistant: false,
     keybindingsFile: false,
     dragOut: false,
   },
@@ -249,7 +248,6 @@ export const webBridge: DesktopBridge = {
     return () => set.delete(listener);
   },
   openExternal: async (url) => void window.open(url, "_blank", "noopener"),
-  getPathForFile: () => "",
   nativeTheme: {
     getInfo: async () => themeInfo(),
     async setThemeSource(source) {

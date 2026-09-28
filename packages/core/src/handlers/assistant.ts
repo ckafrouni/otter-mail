@@ -1,10 +1,11 @@
 /**
- * Assistant IPC: provider state/settings plus chat routing. Every call answers
- * well inside the 5s IPC budget — health checks and turns run in the
+ * Assistant handlers: provider state/settings plus chat routing. Every call
+ * answers well inside the 5s IPC budget — health checks and turns run in the
  * background and report via `assistant:providersChanged` / `assistant:chatEvent`.
  */
 
-import { ipcMain } from "electron";
+import { handle } from "../ipc.js";
+import { ATTACHMENTS_DIR, stageAttachment } from "../services/assistant/attachments.js";
 import * as assistant from "../services/assistant/service.js";
 import {
   PROVIDER_KINDS,
@@ -14,11 +15,6 @@ import {
   type RuntimeMode,
   type ChatAttachment,
 } from "../services/assistant/types.js";
-import {
-  attachmentsDir,
-  stageFromBytes,
-  stageFromPath,
-} from "../services/assistant/attachments.js";
 
 type Params = Record<string, unknown> | undefined;
 
@@ -77,14 +73,14 @@ function settingsPatch(p: Params): assistant.SettingsPatch {
 const MAX_ATTACHMENTS = 10;
 
 /** Only staged files (inside the attachments folder) are passed to agents. */
-async function attachmentsOf(raw: unknown): Promise<ChatAttachment[]> {
+function attachmentsOf(raw: unknown): ChatAttachment[] {
   if (!Array.isArray(raw)) return [];
-  const dir = await attachmentsDir();
   return (raw as Params[])
     .filter(
       (a): a is Params & ChatAttachment =>
         typeof a?.path === "string" &&
-        a.path.startsWith(dir + "/") &&
+        a.path.startsWith(`${ATTACHMENTS_DIR}/`) &&
+        !a.path.includes("..") &&
         typeof a.name === "string" &&
         typeof a.mime === "string" &&
         (a.kind === "image" || a.kind === "file"),
@@ -101,18 +97,18 @@ async function attachmentsOf(raw: unknown): Promise<ChatAttachment[]> {
 }
 
 export function registerAssistantHandlers(): void {
-  ipcMain.handle("assistant:providers", async () => assistant.providersState());
+  handle("assistant:providers", async () => assistant.providersState());
 
-  ipcMain.handle("assistant:refreshProviders", async () => {
+  handle("assistant:refreshProviders", async () => {
     void assistant.refreshProviders();
     return { ok: true };
   });
 
-  ipcMain.handle("assistant:updateSettings", async (_event, params: unknown) =>
+  handle("assistant:updateSettings", async (params: unknown) =>
     assistant.updateProviderSettings(settingsPatch(params as Params)),
   );
 
-  ipcMain.handle("assistant:connectHermes", async (_event, params: unknown) => {
+  handle("assistant:connectHermes", async (params: unknown) => {
     const p = params as Params;
     const baseUrl = str(p?.baseUrl);
     const apiKey = str(p?.apiKey);
@@ -120,13 +116,13 @@ export function registerAssistantHandlers(): void {
     return assistant.connectHermes(baseUrl, apiKey);
   });
 
-  ipcMain.handle("assistant:send", async (_event, params: unknown) => {
+  handle("assistant:send", async (params: unknown) => {
     const p = params as Params;
     const requestId = str(p?.requestId);
     const input = typeof p?.input === "string" ? p.input : "";
     const skill = p?.skill as Params;
     const skillName = str(skill?.name);
-    const attachments = await attachmentsOf(p?.attachments);
+    const attachments = attachmentsOf(p?.attachments);
     if (!requestId || (!input.trim() && !skillName && attachments.length === 0))
       throw new Error("Nothing to send.");
     await assistant.sendTurn(providerOf(p), {
@@ -141,20 +137,18 @@ export function registerAssistantHandlers(): void {
     return { ok: true };
   });
 
-  // Files dropped from Finder (by path) or pasted (bytes) are copied into the
-  // attachments folder; the renderer sends the returned records with a turn.
-  ipcMain.handle("assistant:stageAttachments", async (_event, params: unknown) => {
+  // Dropped, picked or pasted files are copied into the attachments folder;
+  // the renderer sends the returned records with a turn.
+  handle("assistant:stageAttachments", async (params: unknown) => {
     const p = params as Params;
     const items = Array.isArray(p?.items) ? (p.items as Params[]) : [];
     const staged: ChatAttachment[] = [];
     const errors: string[] = [];
     for (const item of items.slice(0, MAX_ATTACHMENTS)) {
       try {
-        if (typeof item?.path === "string" && item.path)
-          staged.push(await stageFromPath(item.path));
-        else if (typeof item?.base64 === "string")
+        if (item?.bytes instanceof Uint8Array)
           staged.push(
-            await stageFromBytes(str(item.name) || "Pasted image.png", str(item.mime), item.base64),
+            await stageAttachment(str(item.name) || "Pasted image.png", str(item.mime), item.bytes),
           );
       } catch (error) {
         errors.push(error instanceof Error ? error.message : String(error));
@@ -163,7 +157,7 @@ export function registerAssistantHandlers(): void {
     return { attachments: staged, errors };
   });
 
-  ipcMain.handle("assistant:respondApproval", async (_event, params: unknown) => {
+  handle("assistant:respondApproval", async (params: unknown) => {
     const p = params as Params;
     const decision = p?.decision as ApprovalDecision;
     if (!["once", "session", "always", "deny"].includes(decision))
@@ -172,7 +166,7 @@ export function registerAssistantHandlers(): void {
     return { ok: true };
   });
 
-  ipcMain.handle("assistant:steer", async (_event, params: unknown) => {
+  handle("assistant:steer", async (params: unknown) => {
     const p = params as Params;
     const input = typeof p?.input === "string" ? p.input : "";
     if (!input.trim()) throw new Error("Nothing to send.");
@@ -181,28 +175,28 @@ export function registerAssistantHandlers(): void {
     };
   });
 
-  ipcMain.handle("assistant:cancel", async (_event, params: unknown) => {
+  handle("assistant:cancel", async (params: unknown) => {
     const p = params as Params;
     assistant.cancelTurn(providerOf(p), str(p?.requestId));
     return { ok: true };
   });
 
-  ipcMain.handle("assistant:skills", async (_event, params: unknown) =>
+  handle("assistant:skills", async (params: unknown) =>
     assistant.listSkills(providerOf(params as Params)),
   );
 
-  ipcMain.handle("assistant:sessions", async (_event, params: unknown) => {
+  handle("assistant:sessions", async (params: unknown) => {
     const p = params as Params;
     const limit = typeof p?.limit === "number" && Number.isFinite(p.limit) ? p.limit : 40;
     return assistant.listSessions(providerOf(p), limit);
   });
 
-  ipcMain.handle("assistant:sessionMessages", async (_event, params: unknown) => {
+  handle("assistant:sessionMessages", async (params: unknown) => {
     const p = params as Params;
     return assistant.readSession(providerOf(p), sessionIdOf(p));
   });
 
-  ipcMain.handle("assistant:deleteSession", async (_event, params: unknown) => {
+  handle("assistant:deleteSession", async (params: unknown) => {
     const p = params as Params;
     await assistant.deleteSession(providerOf(p), sessionIdOf(p));
     return { ok: true };

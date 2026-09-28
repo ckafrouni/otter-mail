@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "../gmail/menu";
 import { languageName, TRANSLATION_LANGUAGES, useTranslationSettings } from "../gmail/translation";
+import { features } from "../features";
 import { Btn, HintTooltip, IconBtn } from "../gmail/ui";
 import { SettingsRow, SettingsSection } from "./settings-ui";
 
@@ -37,10 +38,14 @@ export function TranslationSection() {
     <SettingsSection title="Translation">
       <SettingsRow
         title="Languages I read"
-        description="Mail in any other language offers a translation into your starred language. Apple's translator runs on this Mac, so nothing is sent anywhere."
+        description={
+          features.translation
+            ? "Mail in any other language offers a translation into your starred language. The translator runs on this device, so nothing is sent anywhere."
+            : "Mail in any other language offers a translation into your starred language. Available in Chrome and in the Mac app, which translate on the device."
+        }
         control={
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+            <DropdownMenuTrigger asChild disabled={!features.translation}>
               <Btn size="xs" variant="outline">
                 <PlusIcon className="size-3.5" />
                 Add language
@@ -104,7 +109,8 @@ export function TranslationSection() {
         control={
           <Switch
             id="autoTranslate"
-            checked={autoTranslate}
+            checked={features.translation && autoTranslate}
+            disabled={!features.translation}
             onCheckedChange={(checked) => void save({ autoTranslate: checked })}
           />
         }

@@ -4,7 +4,7 @@
  * never sees ipcRenderer itself.
  */
 
-import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "electron";
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 
 import {
   UPDATE_STATE_CHANNEL,
@@ -30,7 +30,6 @@ const bridge: DesktopBridge = {
     launchAtLogin: true,
     defaultMailApp: true,
     translation: true,
-    assistant: true,
     keybindingsFile: true,
     dragOut: true,
   },
@@ -40,13 +39,6 @@ const bridge: DesktopBridge = {
   openExternal: async (url: string) => {
     const opened = (await ipcRenderer.invoke("shell:openExternal", url)) as boolean;
     if (!opened) throw new Error("Failed to open URL");
-  },
-  getPathForFile: (file: File) => {
-    try {
-      return webUtils.getPathForFile(file);
-    } catch {
-      return "";
-    }
   },
   nativeTheme: {
     getInfo: () => ipcRenderer.invoke("nativeTheme:getInfo") as Promise<NativeThemeInfo>,

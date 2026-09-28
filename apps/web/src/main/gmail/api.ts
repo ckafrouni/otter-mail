@@ -155,6 +155,8 @@ export type ProviderSnapshot = {
   model: string | null;
   /** Chats persist on the provider and can be listed/resumed. */
   sessions: boolean;
+  /** A local agent the web app can't run: listed, off, pointing to the Mac app. */
+  macAppOnly?: boolean;
 };
 /** T3 Code's runtime modes: how much an agent may do without asking. */
 export type RuntimeMode = "approval-required" | "auto-accept-edits" | "full-access";
@@ -640,9 +642,9 @@ export const gmailApi = {
     previousResponseId?: string;
   }): Promise<{ ok: boolean }> => ipc("assistant:send", params),
 
-  /** Copies dropped (by path) or pasted (bytes) files into the attachments folder. */
+  /** Copies dropped, picked or pasted files into the attachments folder. */
   assistantStageAttachments: (
-    items: ({ path: string } | { name: string; mime: string; base64: string })[],
+    items: { name: string; mime: string; bytes: Uint8Array }[],
   ): Promise<{ attachments: ChatAttachment[]; errors: string[] }> =>
     ipc("assistant:stageAttachments", { items }),
 

@@ -69,7 +69,6 @@ import type { GmailAccount, GmailLabel, GmailMessageSummary, ViewRule } from "./
 import { pickAdvanceTarget } from "./advance-direction";
 import { beginUndoGroup, clearUndo } from "./undo";
 import { isMoveSourceLabel, setThreadDragImage, writeThreadDrag } from "./thread-drag";
-import { features } from "../features";
 
 type ResolveLabel = (accountId: string | undefined, labelId: string) => GmailLabel | undefined;
 
@@ -552,14 +551,10 @@ function MessageRow({
             {message.starred ? "Unflag" : "Flag"}
           </ContextMenuItem>
           <ContextMenuSeparator />
-          {features.assistant ? (
-            <>
-              <ContextMenuItem icon="bubble.left" onSelect={onChatAssistant}>
-                Open in assistant chat
-              </ContextMenuItem>
-              <ContextMenuSeparator />
-            </>
-          ) : null}
+          <ContextMenuItem icon="bubble.left" onSelect={onChatAssistant}>
+            Open in assistant chat
+          </ContextMenuItem>
+          <ContextMenuSeparator />
           <ContextMenuSub label="Label">
             {labelTree.length === 0 ? (
               <ContextMenuItem disabled>No labels</ContextMenuItem>

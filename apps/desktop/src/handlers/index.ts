@@ -24,7 +24,6 @@ import { takePendingOpenMessage } from "../services/open-message-target.js";
 import { createTray, destroyTray } from "../services/tray.js";
 import { focusMainWindow } from "../windows/main-window.js";
 import { setSettingsTarget, takeSettingsTarget } from "../windows/settings-window.js";
-import { registerAssistantHandlers } from "./assistant.js";
 import { registerTrayPopoverHandlers } from "./tray-popover.js";
 
 /** Watches keybindings.json (editors replace files) so hand edits apply live. */
@@ -146,7 +145,6 @@ export function registerHandlers(): void {
     });
   });
 
-  registerAssistantHandlers();
   registerTrayPopoverHandlers();
 
   logger.info("handlers", "✓ IPC handlers registered");

@@ -18,6 +18,8 @@ import type { AsyncContext, Platform, SqlDatabase } from "@otter-mail/core";
 import { broadcast } from "./ipc.js";
 import { logger } from "./logger.js";
 import { googleAuth } from "./services/gmail-oauth.js";
+import { claudeProvider } from "./services/assistant/claude.js";
+import { codexProvider } from "./services/assistant/codex.js";
 import { appleTranslator } from "./services/translator.js";
 import { refreshTray } from "./services/tray.js";
 import { focusMainWindow } from "./windows/main-window.js";
@@ -208,5 +210,6 @@ export function desktopPlatform(): Platform {
     },
     offlineDownloads: true,
     translator: appleTranslator,
+    assistantProviders: [codexProvider, claudeProvider],
   };
 }

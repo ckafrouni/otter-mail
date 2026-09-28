@@ -16,9 +16,9 @@ import {
   type Notification,
   type ServerRequest,
 } from "./codex-app-server.js";
-import { dataUrl, withAttachmentPaths } from "./attachments.js";
+import { dataUrl } from "@otter-mail/core";
+import { assistantWorkspace, withAttachmentPaths } from "./local.js";
 import { ASSISTANT_INSTRUCTIONS } from "./instructions.js";
-import { assistantWorkspace } from "./settings.js";
 import type {
   ChatProvider,
   ChatSession,
@@ -32,7 +32,7 @@ import type {
   ProviderSettings,
   SendTurnInput,
   Skill,
-} from "./types.js";
+} from "@otter-mail/core";
 
 const PROBE_TIMEOUT_MS = 10_000;
 const REQUEST_TIMEOUT_MS = 30_000;

@@ -34,7 +34,7 @@ switched off in the web app.
 | Menu-bar mini inbox, launch at login                          | ✓                                 | –                                              | –                                              |
 | Default mail app (mailto: links)                              | ✓                                 | –                                              | –                                              |
 | On-device translation                                         | ✓ Apple Translation               | ✓ Chrome's built-in translator                 | –                                              |
-| Assistant (Claude Code, Codex, Hermes)                        | ✓                                 | –                                              | –                                              |
+| Assistant                                                     | Claude Code, Codex, Hermes        | Hermes                                         | Hermes                                         |
 | Drag attachments out to Finder                                | ✓                                 | –                                              | –                                              |
 | Updates                                                       | Automatic                         | Always the latest                              | Always the latest                              |
 
