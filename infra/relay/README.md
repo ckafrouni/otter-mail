@@ -1,11 +1,15 @@
 # Otter Mail relay
 
-https://relay.mail.otterware.dev, a Cloudflare Worker. It gives Otter Mail three things (the
+https://relay.mail.otterware.dev, a Cloudflare Worker. It gives Otter Mail four things (the
 Mac app works without it; the web app needs it):
 
 - **Otter accounts.** Sign in with Google once per Mac, and the Gmail accounts you use come
   along to every Mac. The relay keeps the list of linked addresses and their display names and
   colors. Each Mac still signs in to Gmail itself; the relay never holds Gmail tokens.
+- **Preferences that follow you.** Settings, views, keybindings, the assistant's settings and
+  UI choices like the theme, as sections of JSON per Otter account, plus the Hermes API key,
+  sealed with a key derived from the auth secret. A change is pushed to the account's other
+  devices over the same WebSocket as mail. See `src/preferences.ts`.
 - **Gmail sign-in for the web app.** A browser can't keep a Google refresh token by itself, so
   the relay does the OAuth exchange with the web client and seals the refresh token (only the
   relay can open it, and only for the Otter user it was issued to). The browser keeps the sealed
@@ -24,16 +28,19 @@ Mac ◀──── WebSocket /v1/events ◀── UserHub (Durable Object, one 
 
 ## Code map
 
-- `src/worker.ts`: routes (Hono). `/v1/auth/*` is better-auth; `/v1/me`, `/v1/accounts` and
-  `/v1/events` need a session; `/push/gmail` takes Pub/Sub pushes.
+- `src/worker.ts`: routes (Hono). `/v1/auth/*` is better-auth; `/v1/me`, `/v1/accounts`,
+  `/v1/preferences` and `/v1/events` need a session; `/push/gmail` takes Pub/Sub pushes.
 - `src/auth.ts`: better-auth: Google sign-in (ID tokens from the Mac app, the redirect flow for
   the web app), sessions (bearer tokens for the Mac app, a cookie shared with mail.otterware.dev
   for the web app; one per device, 90 days, renewed with use), device list, account deletion.
   Signing a session out closes its sockets.
 - `src/gmail.ts`: the web app's Gmail sign-in popup, and token refreshes.
+- `src/preferences.ts`: merging preference sections, sealing the Hermes key.
+- `src/keys.ts`: keys derived from the auth secret, one per purpose.
 - `src/google-jwt.ts`: verifies Google-signed JWTs (jose): ID tokens, and Pub/Sub's push tokens.
 - `src/user-hub.ts`: the Durable Object holding each user's sockets (hibernating).
-- `src/schema.ts`, `src/store.ts`: the D1 schema (Drizzle) and the linked-accounts queries.
+- `src/schema.ts`, `src/store.ts`: the D1 schema (Drizzle) and the queries (linked accounts,
+  preferences).
 - `migrations/`: generated with `pnpm db:generate` from `src/schema.ts`.
 - API types shared with the app: `packages/contracts/src/relay.ts`.
 

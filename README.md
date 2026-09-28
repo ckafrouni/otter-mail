@@ -28,6 +28,8 @@ switched off in the web app.
 | New-mail notifications                                        | ✓                                 | ✓ while a tab is open (browser permission)     | ✓ while a tab is open (browser permission)     |
 | Unread badge                                                  | Dock                              | Tab title (and the app badge, where supported) | Tab title (and the app badge, where supported) |
 | Otter account: mailboxes on every device, device list         | Optional                          | Required (it keeps the Gmail sign-ins alive)   | Required (it keeps the Gmail sign-ins alive)   |
+| Settings, views, theme, assistant settings on every device    | With an Otter account             | ✓                                              | ✓                                              |
+| Signatures, kept in Gmail                                     | ✓                                 | ✓                                              | ✓                                              |
 | Gmail sign-in                                                 | Tokens stay on your Mac           | Through our relay (tokens pass, never stored)  | Through our relay (tokens pass, never stored)  |
 | Keyboard shortcuts, edited in Settings                        | ✓                                 | ✓                                              | ✓                                              |
 | `keybindings.json` opened in an editor                        | ✓                                 | –                                              | –                                              |

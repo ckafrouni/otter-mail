@@ -30,6 +30,11 @@
           app.
         </li>
         <li>
+          <strong>Gmail settings</strong> (<code>gmail.settings.basic</code>): to save the signature
+          you edit in Otter Mail to your Gmail account, so it's the same in Gmail. Otter Mail
+          changes no other Gmail setting.
+        </li>
+        <li>
           <strong>Contacts</strong> (<code>contacts.readonly</code>,
           <code>contacts.other.readonly</code>): to show the photos and names of people you
           correspond with, and to suggest recipients as you type.
@@ -71,8 +76,9 @@
       <h2>The Otter account (optional)</h2>
       <p>
         An Otter account (optional in the Mac app, required for the web app) brings your mailboxes
-        to every device you use and delivers new mail the moment it arrives. For this, Otter Mail's
-        server at <code>relay.mail.otterware.dev</code> (run on Cloudflare) stores:
+        and preferences to every device you use and delivers new mail the moment it arrives. For
+        this, Otter Mail's server at <code>relay.mail.otterware.dev</code> (run on Cloudflare)
+        stores:
       </p>
       <ul>
         <li>your Google account's ID, address, name and picture, to know who is signed in;</li>
@@ -82,7 +88,12 @@
         </li>
         <li>
           for each signed-in device, its session (a random sign-in token), when it was last used,
-          its browser or Mac name and its IP address, so you can see and sign out your devices.
+          its browser or Mac name and its IP address, so you can see and sign out your devices;
+        </li>
+        <li>
+          your preferences: app settings, saved views, keyboard shortcuts, the theme and the
+          assistant's settings, and, if you connect the Hermes assistant, its address and API key,
+          which is stored encrypted.
         </li>
       </ul>
       <p>

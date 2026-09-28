@@ -66,6 +66,7 @@ import { formatShortcut, parseShortcut } from "../keybindings/keys";
 import { LabelShortcutDialog } from "../settings/keybindings-pane";
 import { UnreadPill, HintTooltip, IconBtn } from "./ui";
 import { MailboxSwitcher, WindowTitle } from "./top-bar";
+import { useOtterAccount } from "../otter-account";
 import { UpdateCard } from "../updates";
 
 const LABEL_DRAG_MIME = "application/x-gmail-label";
@@ -597,6 +598,7 @@ export function AccountsSidebar({
   onSelectSearch,
   onCloseSearch,
 }: AccountsSidebarProps) {
+  const otter = useOtterAccount();
   const isCombined = selectedAccountId === COMBINED_ACCOUNT_ID;
 
   const accountsQuery = useAccounts();
@@ -996,11 +998,15 @@ export function AccountsSidebar({
             </IconBtn>
           </HintTooltip>
           <span className="flex-1" />
-          <HintTooltip label={syncing ? "Syncing…" : "Sync now"} hint="⌘R">
-            <IconBtn label="Sync now" onClick={onSync} disabled={syncing} className="size-8">
-              <RotateCwIcon className={syncing ? "size-4 animate-spin" : "size-4"} />
-            </IconBtn>
-          </HintTooltip>
+          {/* With Gmail pushing changes (Otter account connected) there's nothing to sync by
+              hand; ⌘R and the command palette still do. */}
+          {otter?.realtime === "live" ? null : (
+            <HintTooltip label={syncing ? "Syncing…" : "Sync now"} hint="⌘R">
+              <IconBtn label="Sync now" onClick={onSync} disabled={syncing} className="size-8">
+                <RotateCwIcon className={syncing ? "size-4 animate-spin" : "size-4"} />
+              </IconBtn>
+            </HintTooltip>
+          )}
         </div>
 
         <Dialog
