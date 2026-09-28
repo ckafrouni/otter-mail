@@ -2,6 +2,7 @@ packages:
   - apps/*
   - packages/*
   - site
+  - infra/*
 
 # true = allowed to run install scripts.
 allowBuilds:
