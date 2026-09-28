@@ -1,0 +1,49 @@
+name: Relay smoke test
+
+# Checks production end to end: a real Google ID token signs in, a real
+# Pub/Sub push reaches the socket, then the test account is deleted
+# (infra/relay/scripts/smoke.ts). Cloudflare Workers Builds deploys the relay;
+# this watches that it works. Google Cloud access is keyless (Workload
+# Identity Federation); see infra/relay/README.md.
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: relay-smoke
+
+env:
+  ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+
+jobs:
+  smoke:
+    name: Smoke test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/187875144740/locations/global/workloadIdentityPools/github/providers/otter-mail
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Smoke test production
+        run: pnpm --filter @otter-mail/relay smoke

@@ -1,13 +1,14 @@
 // Checks the deployed relay end to end with real Google tokens and a real
-// Pub/Sub push: signs in as the push service account (gcloud mints its ID
-// token for the desktop app's client), links its address, opens the event
+// Pub/Sub push: signs in as the relay-smoke service account (gcloud mints its
+// ID token for the desktop app's client), links its address, opens the event
 // stream, publishes a Gmail-shaped notification to the topic, and waits for it
-// to come back over the socket. Then cleans up.
+// to come back over the socket. Then deletes the account.
 //
 //   pnpm smoke                       against https://relay.mail.otterware.dev
 //   RELAY_URL=http://… pnpm smoke    against another deployment
 //
-// Needs gcloud signed in with Token Creator on the service account.
+// Needs gcloud credentials with Token Creator on relay-smoke and Pub/Sub
+// Publisher on the topic: yours, or CI's (Workload Identity Federation).
 
 import { execFileSync } from "node:child_process";
 import * as NodeFS from "node:fs";
@@ -18,8 +19,8 @@ const RELAY_URL = process.env.RELAY_URL ?? "https://relay.mail.otterware.dev";
 const config = NodeFS.readFileSync(`${import.meta.dirname}/../wrangler.jsonc`, "utf8");
 const setting = (name: string) => new RegExp(`"${name}": "([^"]+)"`).exec(config)![1]!;
 const CLIENT_ID = setting("GOOGLE_CLIENT_ID");
-const SERVICE_ACCOUNT = setting("PUSH_SERVICE_ACCOUNT");
 const [, PROJECT, , TOPIC] = setting("PUSH_TOPIC").split("/");
+const SERVICE_ACCOUNT = `relay-smoke@${PROJECT}.iam.gserviceaccount.com`;
 
 const gcloud = (...args: string[]) =>
   execFileSync("gcloud", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();

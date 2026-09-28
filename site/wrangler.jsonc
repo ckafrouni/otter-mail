@@ -1,5 +1,6 @@
 // mail.otterware.dev: Otter Mail's home page, privacy policy and terms.
-// Static files only; `cf deploy` (or `wrangler deploy`) from this folder.
+// Static files only. Cloudflare Workers Builds deploys it on pushes to main
+// that touch site/ (`pnpm --filter @otter-mail/site run deploy`).
 {
   "name": "otter-mail-site",
   "compatibility_date": "2026-09-01",

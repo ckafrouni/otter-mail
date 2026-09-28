@@ -42,22 +42,34 @@ plays Google and signs the ID and push tokens.
 
 ## Deploying
 
-Needs Cloudflare credentials for wrangler (`wrangler login`, or `CLOUDFLARE_API_TOKEN`):
+Cloudflare Workers Builds deploys on every push to `main` that touches `infra/relay/`,
+`packages/contracts/` or `pnpm-lock.yaml` (trigger "Deploy relay from main" on the
+`otter-mail-relay` Worker): it installs the workspace from the repo root and runs
+`pnpm --filter @otter-mail/relay run deploy`, which applies D1 migrations and deploys. Builds and
+logs are in the Cloudflare dashboard (Workers → otter-mail-relay → Deployments) and on the
+commit's checks. `site/` deploys the same way ("Deploy site from main").
+
+The Relay smoke test workflow checks production every 6 hours (and on demand): it signs in with a
+real Google ID token, links the address, publishes a notification to the real topic, waits for it
+on the socket, and deletes the account. To run it from a laptop:
 
 ```sh
-pnpm --filter @otter-mail/relay run deploy   # applies D1 migrations, then deploys
-pnpm --filter @otter-mail/relay smoke        # checks production end to end (needs gcloud)
+pnpm --filter @otter-mail/relay smoke   # needs gcloud; Token Creator on relay-smoke
 ```
 
-The smoke test signs in with a real Google ID token (minted by gcloud for the push service
-account), links its address, publishes a notification to the real topic and waits for it on the
-socket, then deletes the account.
+A manual deploy, if ever needed: `pnpm --filter @otter-mail/relay run deploy` with wrangler
+credentials (`wrangler login`, or `CLOUDFLARE_API_TOKEN`).
 
 ## Google Cloud setup (project `otter-mail`, done once)
 
 - Topic `gmail-push`; `gmail-api-push@system.gserviceaccount.com` has Pub/Sub Publisher on it.
 - Service account `gmail-push-relay@otter-mail.iam.gserviceaccount.com`: Pub/Sub signs push
-  requests as it (the relay checks the token's audience and email).
+  requests as it (the relay checks the token's audience and email). Nobody else may impersonate
+  it.
+- Service account `relay-smoke@otter-mail.iam.gserviceaccount.com`: the smoke test's identity.
+- Workload Identity pool `github`, provider `otter-mail`: GitHub Actions in
+  `ckafrouni/otter-mail` (only) may mint `relay-smoke` ID tokens and publish to `gmail-push`. No
+  service account keys exist.
 - Push subscription `gmail-push-relay` → `https://relay.mail.otterware.dev/push/gmail`, OIDC
   token with that URL as audience; 10 minutes retention (a missed notification only delays a
   sync: the app still polls every few minutes).

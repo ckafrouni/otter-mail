@@ -28,6 +28,8 @@ Releases with auto-update.
 - `assets/`: app icons like T3 Code's: `prod/` for releases, `dev/` for the blueprint variant that
   unpackaged runs wear. `pnpm icons:export` regenerates the dev icon and both `.icns` files.
 - `site/`: https://mail.otterware.dev (home, privacy policy, terms), a Cloudflare Worker.
+- Deploys: Cloudflare Workers Builds deploys `infra/relay` and `site/` on pushes to `main` that
+  touch them; GitHub Actions smoke-tests the relay every 6 hours (keyless Google Cloud access).
 
 ## How the pieces talk
 
