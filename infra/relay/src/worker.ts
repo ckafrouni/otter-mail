@@ -244,7 +244,10 @@ authed.put(
   zValidator(
     "json",
     z.object({
-      preferences: z.record(z.string().max(64), z.unknown()).optional(),
+      // Section names end up in JSON paths: plain identifiers only.
+      preferences: z
+        .record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9]{0,63}$/), z.unknown())
+        .optional(),
       hermesKey: z.string().max(4096).nullable().optional(),
     }),
     rejectInvalid,

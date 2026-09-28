@@ -17,8 +17,10 @@ import type { PreferencesResponse } from "@otter-mail/contracts/relay";
 import { broadcast } from "../ipc.js";
 import { readJson, writeJson } from "../json-file.js";
 import { logger } from "../logger.js";
+import { platform } from "../platform.js";
 import {
   applySyncedHermesKey,
+  forgetHermesKey,
   applySyncedProviderSettings,
   syncedProviderSettings,
   type SyncedProviderSettings,
@@ -45,11 +47,18 @@ async function writeUiPreferences(ui: UiPreferences): Promise<void> {
   broadcast("preferences:uiChanged", ui);
 }
 
-export async function setUiPreference(key: string, value: string): Promise<void> {
-  const ui = await getUiPreferences();
-  if (ui[key] === value) return;
-  await writeUiPreferences({ ...ui, [key]: value });
-  preferenceChanged("ui");
+let uiWrites: Promise<void> = Promise.resolve();
+
+/** One at a time, so two choices made together don't lose one another. */
+export function setUiPreference(key: string, value: string): Promise<void> {
+  const write = uiWrites.then(async () => {
+    const ui = await getUiPreferences();
+    if (ui[key] === value) return;
+    await writeUiPreferences({ ...ui, [key]: value });
+    preferenceChanged("ui");
+  });
+  uiWrites = write.catch(() => {});
+  return write;
 }
 
 // ── Sections ────────────────────────────────────────────────────────────────
@@ -120,6 +129,16 @@ const SECTION_NAMES = Object.keys(SECTIONS) as SectionName[];
 /** What each section (and the Hermes key) was when last synced, as JSON. */
 const synced = new Map<SectionName | "hermesKey", string>();
 
+// The Hermes key is full control of someone's agent, and a device can be shared: this remembers
+// which Otter account a key synced with, so it never reaches another account, and it leaves the
+// device with its account. A key set while signed out has no owner until an account adopts it.
+const HERMES_KEY_OWNER = "assistant-hermes-key-owner";
+const hermesKeyOwner = () =>
+  platform()
+    .secrets.get(HERMES_KEY_OWNER)
+    .catch(() => null);
+const setHermesKeyOwner = (userId: string) => platform().secrets.set(HERMES_KEY_OWNER, userId);
+
 // ── Sync ────────────────────────────────────────────────────────────────────
 
 /** Takes the account's preferences, and seeds the ones it doesn't have from here. */
@@ -141,10 +160,13 @@ export async function pullPreferences(): Promise<void> {
       logger.warn("preferences", `Couldn't apply ${name}: ${String(err)}`);
     }
   }
+  const userId = getOtterUser()?.id;
+  if (!userId) return;
   if (remote.hermesKey) {
     synced.set("hermesKey", JSON.stringify(remote.hermesKey));
     await applySyncedHermesKey(remote.hermesKey);
-  } else {
+    await setHermesKeyOwner(userId);
+  } else if (((await hermesKeyOwner()) ?? userId) === userId) {
     preferenceChanged("hermesKey");
   }
 }
@@ -159,10 +181,15 @@ export function preferenceChanged(name: SectionName | "hermesKey"): void {
   pushTimer ??= setTimeout(() => void push(), 500);
 }
 
+const RETRY_MS = 30_000;
+
 async function push(): Promise<void> {
   pushTimer = null;
+  const userId = getOtterUser()?.id;
+  if (!userId) return;
   const names = [...pending];
   pending.clear();
+  const sending = new Map<SectionName | "hermesKey", string>();
   const preferences: Record<string, unknown> = {};
   let hermesKey: string | undefined;
   for (const name of names) {
@@ -170,22 +197,30 @@ async function push(): Promise<void> {
     if (value === undefined || value === "") continue;
     const json = JSON.stringify(value);
     if (synced.get(name) === json) continue;
-    synced.set(name, json);
+    sending.set(name, json);
     if (name === "hermesKey") hermesKey = value as string;
     else preferences[name] = value;
   }
-  if (Object.keys(preferences).length === 0 && hermesKey === undefined) return;
+  if (sending.size === 0) return;
   try {
     await relayRequest("PUT", "/v1/preferences", { preferences, hermesKey });
+    for (const [name, json] of sending) synced.set(name, json);
+    if (hermesKey !== undefined) await setHermesKeyOwner(userId);
   } catch (err) {
-    // Try again with the next change or connection.
-    for (const name of names) synced.delete(name);
-    logger.info("preferences", `Couldn't save preferences: ${String(err)}`);
+    logger.info("preferences", `Couldn't save preferences, retrying: ${String(err)}`);
+    for (const name of sending.keys()) pending.add(name);
+    pushTimer ??= setTimeout(() => void push(), RETRY_MS);
   }
 }
 
-/** Signed out: the next account starts from what it has. */
-export function forgetSyncedPreferences(): void {
+/** Signed out: the next account starts from what it has, and the account's Hermes key goes. */
+export async function forgetSyncedPreferences(): Promise<void> {
   synced.clear();
   pending.clear();
+  if (pushTimer) clearTimeout(pushTimer);
+  pushTimer = null;
+  if (await hermesKeyOwner()) {
+    await forgetHermesKey();
+    await platform().secrets.delete(HERMES_KEY_OWNER);
+  }
 }

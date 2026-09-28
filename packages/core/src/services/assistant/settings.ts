@@ -101,3 +101,7 @@ export async function getHermesKey(): Promise<string> {
 export async function setHermesKey(key: string): Promise<void> {
   await platform().secrets.set(HERMES_KEY_SECRET, key);
 }
+
+export async function clearHermesKey(): Promise<void> {
+  await platform().secrets.delete(HERMES_KEY_SECRET);
+}

@@ -27,7 +27,7 @@ The form only saves once every field is filled, including the video link.
 ### Restricted scope (gmail.settings.basic)
 
 > Otter Mail lets the user edit the email signature of each Gmail account in its settings. The
-> signature is saved in Gmail itself (users.settings.sendAs.update on the account's own address),
+> signature is saved in Gmail itself (users.settings.sendAs.patch on the account's own address),
 > so it is the same in Gmail on the web and in Otter Mail on every device, and Otter Mail adds it
 > to messages the user writes. Reading it only needs the Gmail scope; saving it needs
 > gmail.settings.basic. We change nothing else in the user's Gmail settings.

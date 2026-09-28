@@ -138,7 +138,13 @@ function GeneralPane() {
     void loadSyncSettings();
     void loadMailApps();
     // Changed on another device.
-    return window.desktopBridge.on("settings:changed", () => void loadSyncSettings());
+    const offSettings = window.desktopBridge.on("settings:changed", () => void loadSyncSettings());
+    const onStorage = () => setAdvanceDirectionState(getAdvanceDirection());
+    window.addEventListener("storage", onStorage);
+    return () => {
+      offSettings();
+      window.removeEventListener("storage", onStorage);
+    };
   }, []);
 
   const handleSyncIntervalChange = async (value: string) => {

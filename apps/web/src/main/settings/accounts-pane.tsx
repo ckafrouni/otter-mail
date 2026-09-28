@@ -274,6 +274,12 @@ function AccountListRow({
 // Editor
 // ---------------------------------------------------------------------------
 
+/** The editor's signature: empty when it holds neither text nor an image. */
+function editedSignature(editor: RichTextRef): string {
+  const html = editor.getHTML();
+  return editor.getText().trim() || /<img\b/i.test(html) ? html : "";
+}
+
 function AccountEditor({ account }: { account: GmailAccount }) {
   const updateAccount = useUpdateAccount();
   const removeAccount = useRemoveAccount();
@@ -282,6 +288,19 @@ function AccountEditor({ account }: { account: GmailAccount }) {
   const displayName = getAccountDisplayName(account);
   const status = accountStatus(account, sync.data);
   const signatureRef = useRef<RichTextRef>(null);
+  // Gmail's signature as loaded into the editor. A newer one from Gmail replaces it only while
+  // the editor holds no unsaved edits (compared with what the editor showed once loaded).
+  const [shown, setShown] = useState(account.signature ?? "");
+  const loadedRef = useRef<string | null>(null);
+  useEffect(() => {
+    loadedRef.current = signatureRef.current ? editedSignature(signatureRef.current) : null;
+  }, [shown]);
+  useEffect(() => {
+    const next = account.signature ?? "";
+    const editor = signatureRef.current;
+    if (next === shown) return;
+    if (!editor || editedSignature(editor) === loadedRef.current) setShown(next);
+  }, [account.signature, shown]);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
@@ -296,19 +315,22 @@ function AccountEditor({ account }: { account: GmailAccount }) {
   const saveSignature = () => {
     const editor = signatureRef.current;
     if (!editor) return;
-    const html = editor.getText().trim().length === 0 ? "" : editor.getHTML();
-    if (html === (account.signature ?? "")) return;
+    const html = editedSignature(editor);
+    if (html === loadedRef.current) return;
     console.log("[Settings:updateSignature]", { accountId: account.id });
     void updateAccount.mutateAsync({ accountId: account.id, signature: html }).then(
-      () => toast.success("Signature saved in Gmail"),
+      (saved) => {
+        setShown(saved.signature ?? "");
+        toast.success("Signature saved in Gmail");
+      },
       (err: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
         if (message.includes(GMAIL_SETTINGS_PERMISSION)) {
           toast.error("Gmail needs your permission first", {
-            description: `Sign in to ${account.email} again to let Otter Mail save its signature in Gmail.`,
+            description: `Sign in to ${account.email} again to let Otter Mail save its signature in Gmail, then save it again. Your edits stay here.`,
             action: {
               label: "Sign in",
-              onClick: () => void signIn.mutateAsync(account.email).then(saveSignature, () => {}),
+              onClick: () => void signIn.mutateAsync(account.email).catch(() => {}),
             },
           });
         } else {
@@ -390,13 +412,12 @@ function AccountEditor({ account }: { account: GmailAccount }) {
           </p>
           <div className="rounded-lg border border-input bg-canvas dark:bg-input/32">
             <RichTextArea
-              // Starts over when Gmail's copy changes (refreshed, or saved and sanitized).
-              key={`${account.id}:${account.signature ?? ""}`}
+              key={shown}
               ref={signatureRef}
               placeholder="Your signature…"
               ariaLabel={`Signature for ${account.email}`}
               minHeightClass="min-h-[96px]"
-              initialHTML={account.signature}
+              initialHTML={shown}
             />
           </div>
         </div>

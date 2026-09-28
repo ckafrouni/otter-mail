@@ -24,7 +24,13 @@ export async function saveSignature(account: GmailAccount, html: string): Promis
   try {
     saved = await setSignature(account.id, account.email, html);
   } catch (err) {
-    if (err instanceof GmailApiError && err.status === 403) {
+    // Only a sign-in without the settings scope; not rate limits or other refusals.
+    if (
+      err instanceof GmailApiError &&
+      err.status === 403 &&
+      !err.rateLimited &&
+      /insufficient|ACCESS_TOKEN_SCOPE_INSUFFICIENT/i.test(err.body)
+    ) {
       throw new Error(GMAIL_SETTINGS_PERMISSION, { cause: err });
     }
     throw err;

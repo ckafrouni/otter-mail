@@ -24,6 +24,7 @@ import {
   getProviderSettings,
   saveProviderSettings,
   setHermesKey,
+  clearHermesKey,
 } from "./settings.js";
 import {
   PROVIDER_KINDS,
@@ -362,6 +363,13 @@ export async function applySyncedProviderSettings(
     checked.delete("hermes");
   }
   void check("hermes");
+  await broadcastState();
+}
+
+/** Drops this device's Hermes key (it belonged to an Otter account that signed out). */
+export async function forgetHermesKey(): Promise<void> {
+  await clearHermesKey();
+  checked.delete("hermes");
   await broadcastState();
 }
 

@@ -49,15 +49,16 @@ export async function write(
   userId: string,
   change: { preferences?: Preferences; hermesKey?: string | null },
 ): Promise<boolean> {
-  const current = await store.getPreferences(db, userId);
-  const data = { ...current.data, ...change.preferences };
-  if (JSON.stringify(data).length > MAX_BYTES) return false;
-  await store.putPreferences(db, userId, {
-    data,
-    hermesKey:
-      change.hermesKey === undefined
-        ? current.hermesKey
-        : change.hermesKey && (await seal(secret, userId, change.hermesKey)),
-  });
-  return true;
+  return store.putPreferences(
+    db,
+    userId,
+    {
+      sections: change.preferences ?? {},
+      hermesKey:
+        change.hermesKey === undefined
+          ? undefined
+          : change.hermesKey && (await seal(secret, userId, change.hermesKey)),
+    },
+    MAX_BYTES,
+  );
 }

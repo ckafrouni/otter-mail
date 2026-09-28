@@ -439,6 +439,16 @@ describe("preferences", () => {
     expect(await preferences(other)).toEqual({ preferences: {}, hermesKey: null });
   });
 
+  it("keeps every section when devices write at the same time", async () => {
+    const { token } = await signIn("prefs-race@example.com");
+    const names = Array.from({ length: 10 }, (_, i) => `section${i}`);
+    const responses = await Promise.all(
+      names.map((name) => call("PUT", "/v1/preferences", token, { preferences: { [name]: name } })),
+    );
+    expect(responses.map((r) => r.status)).toEqual(names.map(() => 204));
+    expect(Object.keys((await preferences(token)).preferences).sort()).toEqual(names.sort());
+  });
+
   it("refuses preferences that are too large", async () => {
     const { token } = await signIn("big@example.com");
     const big = "x".repeat(300 * 1024);

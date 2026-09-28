@@ -3,7 +3,7 @@
  * (schema.ts). Users and sessions belong to better-auth (auth.ts).
  */
 
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 import type { Preferences, RelayAccount } from "@otter-mail/contracts/relay";
 
@@ -90,14 +90,34 @@ export async function getPreferences(
   };
 }
 
+/**
+ * Replaces the given sections (the others stay) and, when given, the sealed
+ * Hermes key, in one statement: devices writing at once can't lose each
+ * other's sections. False (nothing written) when the result would exceed
+ * `maxBytes`.
+ */
 export async function putPreferences(
   db: Db,
   userId: string,
-  next: { data: Preferences; hermesKey: string | null },
-): Promise<void> {
-  const values = { data: JSON.stringify(next.data), hermesKey: next.hermesKey };
-  await db
+  change: { sections: Preferences; hermesKey?: string | null },
+  maxBytes: number,
+): Promise<boolean> {
+  const fresh = JSON.stringify(change.sections);
+  if (fresh.length > maxBytes) return false;
+  const merged = Object.entries(change.sections).reduce(
+    (data, [name, value]) =>
+      sql`json_set(${data}, ${`$."${name}"`}, json(${JSON.stringify(value)}))`,
+    sql`${preferences.data}`,
+  );
+  const hermesKey = change.hermesKey === undefined ? {} : { hermesKey: change.hermesKey };
+  const result = await db
     .insert(preferences)
-    .values({ userId, ...values })
-    .onConflictDoUpdate({ target: preferences.userId, set: { ...values, updatedAt: new Date() } });
+    .values({ userId, data: fresh, ...hermesKey })
+    .onConflictDoUpdate({
+      target: preferences.userId,
+      set: { data: merged, ...hermesKey, updatedAt: new Date() },
+      setWhere: sql`length(${merged}) <= ${maxBytes}`,
+    })
+    .run();
+  return result.meta.changes > 0;
 }

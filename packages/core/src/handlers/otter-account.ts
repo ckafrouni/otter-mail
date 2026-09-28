@@ -138,7 +138,7 @@ function stop(): void {
   refreshTimer = null;
   setPushedAccounts([]);
   clearLinkedSnapshot();
-  forgetSyncedPreferences();
+  void forgetSyncedPreferences();
 }
 
 export function registerOtterAccountHandlers(): void {
