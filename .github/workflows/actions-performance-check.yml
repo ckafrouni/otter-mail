@@ -90,6 +90,7 @@ jobs:
         run: git show "$BASE_SHA:scripts/build-desktop-artifact.ts" > scripts/build-desktop-artifact.ts
       - name: Build signed artifacts without publishing
         env:
+          CSC_FOR_PULL_REQUEST: "true"
           OTTER_MAIL_GOOGLE_CLIENT_ID: ${{ vars.OTTER_MAIL_GOOGLE_CLIENT_ID }}
           OTTER_MAIL_GOOGLE_CLIENT_SECRET: ${{ secrets.OTTER_MAIL_GOOGLE_CLIENT_SECRET }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
