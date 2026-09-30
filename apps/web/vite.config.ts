@@ -11,7 +11,7 @@ const port = Number(process.env.PORT ?? 5833);
 
 export default defineConfig({
   // Built files are loaded by the Electron shell (ottermail://app/) and served
-  // at mail.otterware.dev by the site Worker; relative paths suit both.
+  // at mail.otterware.app by the site Worker; relative paths suit both.
   base: "./",
   plugins: [react(), babel({ presets: [reactCompilerPreset()] }), tailwindcss()],
   define: {

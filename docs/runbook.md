@@ -12,9 +12,11 @@ breaks. The details behind each step are in `docs/release.md`, `infra/relay/READ
 
 ## Web app and relay
 
-Cloudflare Workers Builds deploys `site/` (https://mail.otterware.dev) and `infra/relay`
-(https://relay.mail.otterware.dev) on every push to `main` that touches them. The relay's D1
-migrations run first.
+Cloudflare Workers Builds deploys `site/` (https://mail.otterware.app) and `infra/relay`
+(https://relay.mail.otterware.app) on every push to `main` that touches them. The relay's
+database and secrets stay with the existing workers. The old mail site redirects to `.app`;
+the old relay still serves installed apps. See [domain migration](domain-migration.md) for
+the Google and GitHub settings that go with these URLs. D1 migrations run before deployment.
 
 - **Check:** the commit's checks on GitHub ("Workers Builds: …"), or Cloudflare → Workers →
   the worker → Deployments. The relay smoke test (Actions → Relay smoke test) runs every 6 hours;

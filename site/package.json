@@ -2,10 +2,11 @@
   "name": "@otter-mail/site",
   "version": "0.0.0",
   "private": true,
-  "description": "mail.otterware.dev: the landing page, privacy policy and terms, and the web app.",
+  "description": "mail.otterware.app: the landing page, privacy policy and terms, and the web app.",
   "scripts": {
     "build": "node scripts/build.ts",
     "deploy": "node scripts/build.ts && wrangler deploy",
+    "test": "vp test run",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

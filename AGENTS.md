@@ -1,7 +1,7 @@
 # Otter Mail
 
 Otter Mail is a calm, fast Gmail client: an Electron app for macOS, and the same app in the
-browser at https://mail.otterware.dev. It is laid out like Otter Code (our fork of T3 Code): a
+browser at https://mail.otterware.app. It is laid out like Otter Code (our fork of T3 Code): a
 pnpm monorepo built with Vite+ (`vp`); the Mac app ships through GitHub Releases with
 auto-update.
 
@@ -40,7 +40,7 @@ when a feature lands or goes.
 - `packages/shared`: what every app shows the same, the iPhone app included: the color themes
   (`./themes`) and the demo mailbox (`./demo-mailboxes`). The web app imports it; the iPhone app
   bundles it as JSON.
-- `infra/relay`: https://relay.mail.otterware.dev, a Cloudflare Worker (Hono, better-auth,
+- `infra/relay`: https://relay.mail.otterware.app, a Cloudflare Worker (Hono, better-auth,
   Drizzle on D1, a Durable Object per user). Otter accounts, the Gmail accounts linked to them,
   the account's preferences (core's `services/preferences.ts` syncs them), and realtime mail: Gmail → Pub/Sub → relay → WebSocket to each signed-in device. It never sees
   mail; the web app's Gmail tokens pass through it (never stored), the Mac app's never do. See its
@@ -50,7 +50,7 @@ when a feature lands or goes.
 - `scripts/`: dev runner, desktop packaging (`build-desktop-artifact.ts`), release helpers.
 - `assets/`: app icons like T3 Code's: `prod/` for releases, `dev/` for the blueprint variant that
   unpackaged runs wear. `pnpm icons:export` regenerates the dev icon and both `.icns` files.
-- `site/`: https://mail.otterware.dev, a Cloudflare Worker: the landing page, privacy policy and
+- `site/`: https://mail.otterware.app, a Cloudflare Worker: the landing page, privacy policy and
   terms, and the web app (`/` shows the app when signed in, `/app` always).
 - Deploys: Cloudflare Workers Builds deploys `infra/relay` and `site/` on pushes to `main` that
   touch them; GitHub Actions smoke-tests the relay every 6 hours (keyless Google Cloud access).

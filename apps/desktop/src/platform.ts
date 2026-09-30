@@ -119,7 +119,7 @@ export function desktopPlatform(): Platform {
     },
 
     google: googleAuth,
-    relayUrl: process.env.OTTER_MAIL_RELAY_URL?.trim() || "https://relay.mail.otterware.dev",
+    relayUrl: process.env.OTTER_MAIL_RELAY_URL?.trim() || "https://relay.mail.otterware.app",
     relaySession: "bearer",
     deviceName: computerName(),
 

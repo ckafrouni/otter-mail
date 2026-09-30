@@ -25,7 +25,7 @@ nonisolated enum MIME {
         if !cc.isEmpty { headers.append("Cc: \(cc.map(address).joined(separator: ", "))") }
         if stamped {
             headers.append("Date: \(rfc5322Date.string(from: .now))")
-            let domain = from.email.split(separator: "@").last.map(String.init) ?? "otterware.dev"
+            let domain = from.email.split(separator: "@").last.map(String.init) ?? "otterware.app"
             headers.append("Message-ID: <\(UUID().uuidString.lowercased())@\(domain)>")
         }
         headers.append("Subject: \(encoded(subject))")

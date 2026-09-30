@@ -1,7 +1,7 @@
 # Otter Mail
 
 Gmail, calm and fast. A macOS app, and the same app in your browser at
-[mail.otterware.dev](https://mail.otterware.dev).
+[mail.otterware.app](https://mail.otterware.app).
 
 - Several Gmail accounts side by side, or combined into one inbox
 - Gmail labels, plus saved views that filter across accounts
@@ -41,9 +41,9 @@ switched off in the web app.
 
 ## Install
 
-Download the latest DMG from [Releases](https://github.com/ckafrouni/otter-mail/releases).
+Download the latest DMG from [Releases](https://github.com/otterware-app/otter-mail/releases).
 Installed apps update themselves from the same page. Or open
-[mail.otterware.dev](https://mail.otterware.dev) in your browser.
+[mail.otterware.app](https://mail.otterware.app) in your browser.
 
 ## Develop
 

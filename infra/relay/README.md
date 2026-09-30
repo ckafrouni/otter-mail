@@ -1,6 +1,6 @@
 # Otter Mail relay
 
-https://relay.mail.otterware.dev, a Cloudflare Worker. It gives Otter Mail five things (the
+https://relay.mail.otterware.app, a Cloudflare Worker. It gives Otter Mail five things (the
 Mac app works without it; the web app needs it):
 
 - **Otter accounts.** Sign in with Google once per Mac, and the mailboxes you use come along to
@@ -64,7 +64,7 @@ Mac ◀──── WebSocket /v1/events ◀── UserHub (Durable Object, one 
 - `src/tunnel.ts`: the web app's TCP tunnel (`cloudflare:sockets`), and which hosts and ports
   it may reach.
 - `src/auth.ts`: better-auth: Google sign-in (ID tokens from the Mac app, the redirect flow for
-  the web app), sessions (bearer tokens for the Mac app, a cookie shared with mail.otterware.dev
+  the web app), sessions (bearer tokens for the Mac app, a cookie shared with mail.otterware.app
   for the web app; one per device, 90 days, renewed with use), device list, account deletion.
   Signing a session out closes its sockets.
 - `src/gmail.ts`: the web app's Gmail sign-in popup, and token refreshes.
@@ -116,9 +116,9 @@ credentials (`wrangler login`, or `CLOUDFLARE_API_TOKEN`).
   it.
 - Service account `relay-smoke@otter-mail.iam.gserviceaccount.com`: the smoke test's identity.
 - Workload Identity pool `github`, provider `otter-mail`: GitHub Actions in
-  `ckafrouni/otter-mail` (only) may mint `relay-smoke` ID tokens and publish to `gmail-push`. No
+  `otterware-app/otter-mail` (only) may mint `relay-smoke` ID tokens and publish to `gmail-push`. No
   service account keys exist.
-- Push subscription `gmail-push-relay` → `https://relay.mail.otterware.dev/push/gmail`, OIDC
+- Push subscription `gmail-push-relay` → `https://relay.mail.otterware.app/push/gmail`, OIDC
   token with that URL as audience; 10 minutes retention (a missed notification only delays a
   sync: the app still polls every few minutes).
 

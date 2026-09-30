@@ -118,7 +118,7 @@ export async function webPlatform(page: Page): Promise<Platform> {
   if (demo) await demo.installFakeGmail(files);
   const relayUrl = demo
     ? demo.DEMO_RELAY_URL
-    : import.meta.env.VITE_RELAY_URL || "https://relay.mail.otterware.dev";
+    : import.meta.env.VITE_RELAY_URL || "https://relay.mail.otterware.app";
   const platform: Platform = {
     kind: "web",
     appVersion: __APP_VERSION__,

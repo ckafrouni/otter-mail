@@ -22,7 +22,7 @@ const { autoUpdater } = electronUpdater;
 
 const STARTUP_DELAY_MS = 15_000;
 const POLL_INTERVAL_MS = 4 * 60 * 60_000;
-const RELEASES_URL = "https://github.com/ckafrouni/otter-mail/releases";
+const RELEASES_URL = "https://github.com/otterware-app/otter-mail/releases";
 
 let state: UpdateState = {
   status: "idle",

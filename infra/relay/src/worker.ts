@@ -45,9 +45,9 @@ export interface Env {
   GOOGLE_WEB_CLIENT_ID: string;
   /** Its secret (a Worker secret). */
   GOOGLE_WEB_CLIENT_SECRET: string;
-  /** Where the web app runs (https://mail.otterware.dev): trusted for CORS and redirects. */
+  /** Where the web app runs (https://mail.otterware.app): trusted for CORS and redirects. */
   APP_ORIGIN: string;
-  /** The session cookie's domain, shared with the web app ("mail.otterware.dev"); unset locally. */
+  /** The session cookie's domain, shared with the web app ("mail.otterware.app"); unset locally. */
   COOKIE_DOMAIN?: string;
   /** Pub/Sub topic Gmail publishes to (`projects/…/topics/…`). */
   PUSH_TOPIC: string;

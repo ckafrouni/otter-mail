@@ -4,7 +4,7 @@
 // stream, publishes a Gmail-shaped notification to the topic, and waits for it
 // to come back over the socket. Then deletes the account.
 //
-//   pnpm smoke                       against https://relay.mail.otterware.dev
+//   pnpm smoke                       against https://relay.mail.otterware.app
 //   RELAY_URL=http://… pnpm smoke    against another deployment
 //
 // Needs gcloud credentials with Token Creator on relay-smoke and Pub/Sub
@@ -15,7 +15,7 @@ import * as NodeFS from "node:fs";
 
 import type { RelayEvent } from "@otter-mail/contracts/relay";
 
-const RELAY_URL = process.env.RELAY_URL ?? "https://relay.mail.otterware.dev";
+const RELAY_URL = process.env.RELAY_URL ?? "https://relay.mail.otterware.app";
 const config = NodeFS.readFileSync(`${import.meta.dirname}/../wrangler.jsonc`, "utf8");
 const setting = (name: string) => new RegExp(`"${name}": "([^"]+)"`).exec(config)![1]!;
 const CLIENT_ID = setting("GOOGLE_CLIENT_ID");

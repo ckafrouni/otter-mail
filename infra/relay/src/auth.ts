@@ -81,7 +81,7 @@ export function createAuth(env: Env, db: Db) {
       },
     },
     advanced: env.COOKIE_DOMAIN
-      ? // The web app at mail.otterware.dev sees the session cookie (and knows you're signed in).
+      ? // The web app at mail.otterware.app sees the session cookie (and knows you're signed in).
         { crossSubDomainCookies: { enabled: true, domain: env.COOKIE_DOMAIN } }
       : {},
     telemetry: { enabled: false },

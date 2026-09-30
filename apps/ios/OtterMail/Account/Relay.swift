@@ -47,7 +47,7 @@ final class Relay {
     }
 
     /** `OTTER_RELAY_URL` in the scheme points a dev build at `pnpm dev`'s relay (http://localhost:8787). */
-    let baseURL = URL(string: ProcessInfo.processInfo.environment["OTTER_RELAY_URL"] ?? "https://relay.mail.otterware.dev")!
+    let baseURL = URL(string: ProcessInfo.processInfo.environment["OTTER_RELAY_URL"] ?? "https://relay.mail.otterware.app")!
 
     private static let sessionKey = "otter-session"
     private(set) var token: String? = Keychain.get(sessionKey)

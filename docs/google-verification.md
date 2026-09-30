@@ -1,8 +1,9 @@
 # Google OAuth verification
 
 Otter Mail signs in to Google through the `otter-mail` Google Cloud project (owned by
-chris.kafrouni@gmail.com). Its consent screen is published, and its branding (name, logo, home
-page, privacy policy, terms, `otterware.dev`) is verified. The Gmail scope still needs Google's
+chris.kafrouni@gmail.com). Its consent screen is published. The original branding and
+`otterware.dev` were verified; the move to `otterware.app` needs the new domain and branding
+to be verified too (see [domain migration](domain-migration.md)). The Gmail scope still needs Google's
 data-access verification; until then sign-in shows "Google hasn't verified this app"
 (Advanced → Go to Otter Mail) and the app is capped at 100 users.
 
@@ -18,7 +19,7 @@ does the job; justifications below.
 
 ### Sensitive scopes (calendar.events.owned, contacts.readonly, contacts.other.readonly)
 
-> Otter Mail is a desktop email client for macOS (https://mail.otterware.dev).
+> Otter Mail is a desktop email client for macOS (https://mail.otterware.app).
 > calendar.events.owned: when a user receives a calendar invitation by email, Otter Mail shows the
 > event and lets the user Accept, Decline or reply Maybe from the message; the reply is written to
 > that event on the user's own primary calendar (events.list by the invitation's iCalUID, then
@@ -43,7 +44,7 @@ does the job; justifications below.
 
 Features: **Email client**.
 
-> Otter Mail is a full Gmail client for macOS (https://mail.otterware.dev) that users sign in to
+> Otter Mail is a full Gmail client for macOS (https://mail.otterware.app) that users sign in to
 > in place of the Gmail website. With this scope the user reads and searches their mail, sends,
 > replies and forwards, saves drafts, applies and removes labels, archives, marks read/unread,
 > moves mail to Trash or Spam, and permanently deletes messages when they empty Trash or Spam or
@@ -51,7 +52,7 @@ Features: **Email client**.
 > delete messages (users.messages.delete / batchDelete require https://mail.google.com/), and
 > gmail.readonly/send/compose each cover only part of what an email client does. Mail is fetched
 > directly from the Gmail API to the user's own Mac, cached locally for speed and offline reading,
-> and never sent to our servers. In the web app (https://mail.otterware.dev), mail is likewise
+> and never sent to our servers. In the web app (https://mail.otterware.app), mail is likewise
 > fetched by the user's browser directly from the Gmail API and cached in the browser; because a
 > browser can't hold a lasting Google sign-in, our relay performs the OAuth code exchange and
 > token refreshes for the web client: tokens pass through it but are not stored (the refresh token

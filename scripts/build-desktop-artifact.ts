@@ -21,7 +21,7 @@ import { buildTranslator, findTranslatorBinary, repoRoot } from "./build-transla
 
 const APP_ID = "dev.otterware.mail";
 const PRODUCT_NAME = "Otter Mail";
-const DEFAULT_UPDATE_REPOSITORY = "ckafrouni/otter-mail";
+const DEFAULT_UPDATE_REPOSITORY = "otterware-app/otter-mail";
 const ARCHES = ["arm64", "x64", "universal", "both"] as const;
 type Arch = (typeof ARCHES)[number];
 

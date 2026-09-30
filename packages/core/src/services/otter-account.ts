@@ -2,7 +2,7 @@
  * otter-account.ts
  *
  * The Otter account, signed in to the relay (infra/relay,
- * relay.mail.otterware.dev), which keeps the list of linked Gmail accounts
+ * relay.mail.otterware.app), which keeps the list of linked Gmail accounts
  * and pushes new-mail events. Sign-in, devices and account deletion go
  * through better-auth's client; the relay's own routes through
  * relayRequest. linked-accounts.ts and realtime.ts build on this module.

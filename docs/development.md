@@ -74,7 +74,7 @@ browser needed; otherwise it runs the same browser flow with identity scopes onl
 
 The consent screen is published but not yet verified by Google, so sign-in shows an "unverified
 app" warning and is capped at 100 users. The home page, privacy policy and terms it links to live
-in `site/` and are served at https://mail.otterware.dev; Cloudflare Workers Builds deploys them on
+in `site/` and are served at https://mail.otterware.app; Cloudflare Workers Builds deploys them on
 every push to `main` that touches `site/` (as it does the relay, see `infra/relay/README.md`).
 
 ## The web app
