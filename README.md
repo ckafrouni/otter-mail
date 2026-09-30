@@ -17,6 +17,7 @@ Gmail, calm and fast. A macOS app, and the same app in your browser at
 
 Both run the same app and the same mail backend (`packages/core`); what a browser can't do is
 switched off in the web app.
+Mac releases support Apple Silicon Macs (arm64).
 
 | Feature                                                       | Mac app                           | Web app in Chrome                              | Web app in other browsers                      |
 | ------------------------------------------------------------- | --------------------------------- | ---------------------------------------------- | ---------------------------------------------- |
