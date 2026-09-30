@@ -102,10 +102,10 @@ async function findFreePort(start: number): Promise<number> {
 }
 
 function ensureTranslator(): void {
-  if (findTranslatorBinary("host") || findTranslatorBinary("universal")) return;
+  if (findTranslatorBinary()) return;
   console.log("[dev] Building native/translator (first run only)...");
   try {
-    console.log(`[dev] Translator ready: ${buildTranslator({ universal: false, quiet: true })}`);
+    console.log(`[dev] Translator ready: ${buildTranslator({ quiet: true })}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn(

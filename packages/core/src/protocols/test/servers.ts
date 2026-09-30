@@ -9,6 +9,7 @@
 
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
+import { join } from "node:path";
 import { nodeConnect } from "./node-stream.ts";
 
 const run = promisify(execFile);
@@ -33,13 +34,18 @@ async function start(
   env: Record<string, string>,
   ports: number[],
   ready: { port: number; tls: boolean }[],
+  dockerArgs: string[] = [],
 ): Promise<Container> {
   const name = `otter-mail-test-${Math.random().toString(36).slice(2, 10)}`;
   const envArgs = Object.entries(env).flatMap(([key, value]) => ["-e", `${key}=${value}`]);
   const portArgs = ports.flatMap((port) => ["-p", `127.0.0.1::${port}`]);
-  await run("docker", ["run", "-d", "--rm", "--name", name, ...envArgs, ...portArgs, image], {
-    timeout: 300_000,
-  });
+  await run(
+    "docker",
+    ["run", "-d", "--rm", "--name", name, ...envArgs, ...portArgs, ...dockerArgs, image],
+    {
+      timeout: 300_000,
+    },
+  );
   const mapped = new Map<number, number>();
   for (const port of ports) {
     const { stdout } = await run("docker", ["port", name, String(port)]);
@@ -102,4 +108,5 @@ export const startDovecot = () =>
       { port: 31143, tls: false },
       { port: 31993, tls: true },
     ],
+    ["-v", `${join(import.meta.dirname, "dovecot.conf")}:/etc/dovecot/conf.d/99-test.conf:ro`],
   );

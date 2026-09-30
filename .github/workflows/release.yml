@@ -84,7 +84,7 @@ jobs:
           node scripts/resolve-release-version.ts "${args[@]}"
 
   build_mac:
-    name: Build macOS (arm64 + x64)
+    name: Build macOS (Apple Silicon)
     needs: [preflight]
     # Needs Xcode 26+ for the translator; see .github/actions/select-xcode.
     runs-on: macos-15
@@ -124,7 +124,7 @@ jobs:
             echo "::error::Set the OTTER_MAIL_GOOGLE_CLIENT_ID variable and OTTER_MAIL_GOOGLE_CLIENT_SECRET secret; without them the app can't sign in to Google."
             exit 1
           fi
-          args=(--platform mac --target dmg --arch both --build-version "$VERSION" --verbose)
+          args=(--platform mac --target dmg --arch arm64 --build-version "$VERSION" --verbose)
 
           if [[ -n "$CSC_LINK" && -n "$CSC_KEY_PASSWORD" && -n "$APPLE_API_KEY" && -n "$APPLE_API_KEY_ID" && -n "$APPLE_API_ISSUER" ]]; then
             # electron-builder's notarization reads APPLE_API_KEY as a path to the .p8.

@@ -3,9 +3,9 @@
 // electron-builder.
 //
 //   node scripts/build-desktop-artifact.ts --platform mac --arch arm64
-//   node scripts/build-desktop-artifact.ts --platform mac --arch both --build-version 0.2.0 --signed
+//   node scripts/build-desktop-artifact.ts --platform mac --build-version 0.2.0 --signed
 //
-// Steps: build web + desktop bundles and the universal translator, stage a
+// Steps: build web + desktop bundles and the arm64 translator, stage a
 // self-contained app directory (package.json, dist-electron/, renderer/, the
 // translator), run electron-builder on it, and copy the artifacts and update
 // manifests into --output-dir. The main process and preload are fully
@@ -22,8 +22,6 @@ import { buildTranslator, findTranslatorBinary, repoRoot } from "./build-transla
 const APP_ID = "dev.otterware.mail";
 const PRODUCT_NAME = "Otter Mail";
 const DEFAULT_UPDATE_REPOSITORY = "otterware-app/otter-mail";
-const ARCHES = ["arm64", "x64", "universal", "both"] as const;
-type Arch = (typeof ARCHES)[number];
 
 const desktopDir = NodePath.join(repoRoot, "apps", "desktop");
 const webDir = NodePath.join(repoRoot, "apps", "web");
@@ -36,9 +34,7 @@ Options:
   --platform mac            Target platform (only mac is supported). Default: mac.
   --target dmg              Installer target; a zip is always built too (auto-update
                             needs it). Default: dmg.
-  --arch <arch>             arm64 | x64 | universal | both. \`both\` builds arm64 and
-                            x64 in one run so latest-mac.yml lists both.
-                            Default: host architecture.
+  --arch arm64              Target architecture (Apple Silicon only). Default: arm64.
   --build-version <v>       App version. Default: apps/desktop/package.json version.
   --output-dir <dir>        Where artifacts are copied. Default: release/.
   --skip-build              Reuse existing apps/web/dist, apps/desktop/dist-electron
@@ -62,7 +58,7 @@ Environment:
 interface Options {
   readonly platform: "mac";
   readonly target: string;
-  readonly arch: Arch;
+  readonly arch: "arm64";
   readonly version: string;
   readonly outputDir: string;
   readonly skipBuild: boolean;
@@ -84,17 +80,13 @@ function fail(message: string): never {
   process.exit(1);
 }
 
-function hostArch(): Arch {
-  return process.arch === "arm64" ? "arm64" : "x64";
-}
-
 export function parseOptions(argv: readonly string[]): Options | null {
   const { values } = parseArgs({
     args: [...argv],
     options: {
       platform: { type: "string", default: "mac" },
       target: { type: "string", default: "dmg" },
-      arch: { type: "string" },
+      arch: { type: "string", default: "arm64" },
       "build-version": { type: "string" },
       "output-dir": { type: "string", default: "release" },
       "skip-build": { type: "boolean", default: false },
@@ -112,9 +104,10 @@ export function parseOptions(argv: readonly string[]): Options | null {
   if (values.target !== "dmg" && values.target !== "zip") {
     throw new Error(`Unsupported --target "${values.target}". Use "dmg" (or "zip").`);
   }
-  const arch = (values.arch ?? hostArch()) as Arch;
-  if (!ARCHES.includes(arch)) {
-    throw new Error(`Unsupported --arch "${values.arch}". Use one of: ${ARCHES.join(", ")}.`);
+  if (values.arch !== "arm64") {
+    throw new Error(
+      `Unsupported --arch "${values.arch}". Only Apple Silicon (arm64) is supported.`,
+    );
   }
   const version =
     values["build-version"]?.trim().replace(/^v/, "") ||
@@ -126,7 +119,7 @@ export function parseOptions(argv: readonly string[]): Options | null {
   return {
     platform: "mac",
     target: values.target,
-    arch,
+    arch: "arm64",
     version,
     outputDir: NodePath.resolve(repoRoot, values["output-dir"]),
     skipBuild: values["skip-build"],
@@ -191,8 +184,6 @@ export function createBuildConfig(options: {
     electronVersion: options.electronVersion,
     artifactName: "Otter-Mail-${version}-${arch}.${ext}",
     electronLanguages: ["en-US"],
-    // Overlap arm64 and x64 packaging, signing and notarization in one build.
-    concurrency: { jobs: 2 },
     // Everything is bundled; there is nothing to install or rebuild.
     npmRebuild: false,
     nodeGypRebuild: false,
@@ -276,39 +267,26 @@ function binaryArchs(path: string): string[] {
 function resolveTranslatorBinary(options: Options): string {
   let binary: string | undefined;
   if (options.skipBuild) {
-    binary = findTranslatorBinary("universal") ?? findTranslatorBinary("host");
+    binary = findTranslatorBinary();
     if (!binary) {
-      fail(
-        "No translator build found. Run `pnpm build:translator --universal` or drop --skip-build.",
-      );
+      fail("No translator build found. Run `pnpm build:translator` or drop --skip-build.");
     }
   } else {
-    log("Building native/translator (universal)...");
+    log("Building native/translator (arm64)...");
     try {
-      binary = buildTranslator({ universal: true });
+      binary = buildTranslator();
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }
   }
-  const needed = {
-    arm64: ["arm64"],
-    x64: ["x86_64"],
-    universal: ["arm64", "x86_64"],
-    both: ["arm64", "x86_64"],
-  }[options.arch];
   const present = binaryArchs(binary);
-  const absent = needed.filter((arch) => !present.includes(arch));
-  if (absent.length > 0) {
+  if (present.length !== 1 || present[0] !== "arm64") {
     fail(
-      `${binary} lacks ${absent.join(", ")} (has ${present.join(", ") || "none"}). ` +
-        "Run `pnpm build:translator --universal`.",
+      `${binary} must be arm64 only (has ${present.join(", ") || "none"}). ` +
+        "Run `pnpm build:translator`.",
     );
   }
   return binary;
-}
-
-function builderArchFlags(arch: Arch): string[] {
-  return arch === "both" ? ["--arm64", "--x64"] : [`--${arch}`];
 }
 
 function main(): void {
@@ -434,14 +412,7 @@ function main(): void {
       .join(",");
   }
 
-  const builderArgs = [
-    "--projectDir",
-    stageDir,
-    "--mac",
-    ...builderArchFlags(options.arch),
-    "--publish",
-    "never",
-  ];
+  const builderArgs = ["--projectDir", stageDir, "--mac", "--arm64", "--publish", "never"];
   run(electronBuilderBin, builderArgs, {
     env: buildEnv,
     label: `electron-builder ${builderArgs.join(" ")}`,

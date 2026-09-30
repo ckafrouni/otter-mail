@@ -534,7 +534,6 @@ function providerScenario(
     } finally {
       await setImapPassword(accountId, password);
     }
-    // Servers take their time over a failed login (Dovecot: 2 seconds).
   }, 30_000);
 }
 

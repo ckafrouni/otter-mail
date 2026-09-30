@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- macOS 26 or newer (the translator uses Apple's Translation framework).
+- An Apple Silicon Mac with macOS 26 or newer (the translator uses Apple's Translation framework).
 - Node 24 (`engines` in `package.json`) and pnpm 11 via `corepack enable`.
 - Full Xcode 26 or newer, selected with `sudo xcode-select -s /Applications/Xcode.app`, to build
   `native/translator`. Without it the app still runs; translation just fails.

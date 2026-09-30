@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 // Builds the native/translator Swift helper (Apple Translation, on-device).
 //
-//   node scripts/build-translator.ts              host architecture, release
-//   node scripts/build-translator.ts --universal  arm64 + x86_64, for packaging
+//   node scripts/build-translator.ts              arm64, release
 //
 // Needs full Xcode (not just the Command Line Tools) with a macOS 26 SDK.
 // Prints the path of the built binary on the last line of stdout.
@@ -19,20 +18,15 @@ export const repoRoot = NodePath.resolve(
 );
 export const translatorPackageDir = NodePath.join(repoRoot, "native", "translator");
 const buildDir = NodePath.join(translatorPackageDir, ".build");
-// Where `swift build -c release` leaves the binary. Multi-arch builds go
-// through Xcode's build system, whose output folder depends on the Swift
-// version: .build/apple/... up to Swift 6.2, .build/out/... from 6.3.
-export const translatorBinaryPaths = {
-  host: [NodePath.join(buildDir, "release", "translator")],
-  universal: [
-    NodePath.join(buildDir, "out", "Products", "Release", "translator"),
-    NodePath.join(buildDir, "apple", "Products", "Release", "translator"),
-  ],
-} as const;
+// Swift's output folder depends on the selected toolchain.
+const translatorBinaryPaths = [
+  NodePath.join(buildDir, "out", "Products", "Release", "translator"),
+  NodePath.join(buildDir, "apple", "Products", "Release", "translator"),
+  NodePath.join(buildDir, "arm64-apple-macosx", "release", "translator"),
+];
 
-/** The newest existing translator build of the given kind, if any. */
-export function findTranslatorBinary(kind: "host" | "universal"): string | undefined {
-  return translatorBinaryPaths[kind]
+export function findTranslatorBinary(): string | undefined {
+  return translatorBinaryPaths
     .filter((path) => NodeFS.existsSync(path))
     .sort((a, b) => NodeFS.statSync(b).mtimeMs - NodeFS.statSync(a).mtimeMs)[0];
 }
@@ -57,12 +51,19 @@ export function translatorToolchainProblem(): string | null {
   return null;
 }
 
-export function buildTranslator(options: { universal: boolean; quiet?: boolean }): string {
+export function buildTranslator(options: { quiet?: boolean } = {}): string {
   const problem = translatorToolchainProblem();
   if (problem) throw new Error(problem);
 
-  const args = ["build", "-c", "release", "--package-path", translatorPackageDir];
-  if (options.universal) args.push("--arch", "arm64", "--arch", "x86_64");
+  const args = [
+    "build",
+    "-c",
+    "release",
+    "--package-path",
+    translatorPackageDir,
+    "--arch",
+    "arm64",
+  ];
   const result = NodeChildProcess.spawnSync("swift", args, {
     cwd: repoRoot,
     stdio: options.quiet ? ["ignore", "ignore", "inherit"] : "inherit",
@@ -86,16 +87,15 @@ export function buildTranslator(options: { universal: boolean; quiet?: boolean }
 if (import.meta.main) {
   const { values } = parseArgs({
     options: {
-      universal: { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
   });
   if (values.help) {
-    console.log("Usage: node scripts/build-translator.ts [--universal]");
+    console.log("Usage: node scripts/build-translator.ts");
     process.exit(0);
   }
   try {
-    const output = buildTranslator({ universal: values.universal });
+    const output = buildTranslator();
     console.log(output);
   } catch (error) {
     console.error(`[build-translator] ${error instanceof Error ? error.message : String(error)}`);

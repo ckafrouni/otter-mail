@@ -3,6 +3,7 @@
 Every user-facing feature and where it works, checked against the code. Mac and Web are the
 same renderer (`apps/web`) over core, so they match unless noted; the iPhone app is its own
 Swift code (`apps/ios`). Gmail and IMAP are noted where they differ.
+The Mac app supports Apple Silicon Macs (arm64).
 
 ✓ supported · — not supported · a note means partly, or differently
 

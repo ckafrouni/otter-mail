@@ -29,7 +29,7 @@ the Google and GitHub settings that go with these URLs. D1 migrations run before
 
 1. Actions → **Release** → Run workflow → `patch`, `minor` or `major` (or
    `gh workflow run release.yml -f bump=minor`).
-2. It builds arm64 and x64, signs with the Developer ID, notarizes, publishes a GitHub Release
+2. It builds arm64 (Apple Silicon), signs with the Developer ID, notarizes, publishes a GitHub Release
    and bumps the version on `main`.
 3. Installed apps update themselves ("Restart to update" in the sidebar).
 

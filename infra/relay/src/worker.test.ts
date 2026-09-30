@@ -329,16 +329,21 @@ describe("devices", () => {
   });
 
   // The close frame goes out at once; the runtime drops the TCP connection
-  // (when Node's WebSocket reports `close`) about 10s later.
-  it("signing out ends the session and closes its sockets", { timeout: 20_000 }, async () => {
-    const { token } = await signIn("leaving@example.com");
-    const device = await connect(token);
-    expect((await call("POST", "/v1/auth/sign-out", token, {})).status).toBe(200);
-    expect((await call("GET", "/v1/me", token)).status).toBe(401);
-    expect(await device.closed).toBe(4001);
-  });
+  // (when Node's WebSocket reports `close`) about 10s later. These tests use
+  // separate accounts, so their waits can overlap.
+  it.concurrent(
+    "signing out ends the session and closes its sockets",
+    { timeout: 20_000 },
+    async () => {
+      const { token } = await signIn("leaving@example.com");
+      const device = await connect(token);
+      expect((await call("POST", "/v1/auth/sign-out", token, {})).status).toBe(200);
+      expect((await call("GET", "/v1/me", token)).status).toBe(401);
+      expect(await device.closed).toBe(4001);
+    },
+  );
 
-  it("signing another device out closes its sockets", { timeout: 20_000 }, async () => {
+  it.concurrent("signing another device out closes its sockets", { timeout: 20_000 }, async () => {
     const here = await signIn("revoker@example.com", "revoker-sub");
     const there = await signIn("revoker@example.com", "revoker-sub");
     const device = await connect(there.token);
@@ -355,7 +360,7 @@ describe("devices", () => {
     expect(await device.closed).toBe(4001);
   });
 
-  it(
+  it.concurrent(
     "deleting the account removes its linked accounts and signs every device out",
     { timeout: 20_000 },
     async () => {

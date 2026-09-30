@@ -3,6 +3,8 @@
 The short version, for every part including the web app and relay: `docs/runbook.md`.
 
 Mac releases are GitHub Releases of this repository, built by `.github/workflows/release.yml`.
+New releases support Apple Silicon Macs only (arm64). Intel Macs can keep using older releases,
+but no longer receive compatible updates.
 The iPhone app ships separately, with its own version, through `.github/workflows/release-ios.yml`
 ([The iPhone app](#the-iphone-app)).
 There is one channel, stable, like T3 Code's stable train (no nightlies). Installed apps check for
@@ -20,7 +22,7 @@ Dock → Quit, logging out).
    The version is the latest `vX.Y.Z` tag with that bump. The very first release ships
    `apps/desktop/package.json`'s version (`0.1.0`).
 
-3. The workflow builds `main`'s HEAD for arm64 and x64 on `macos-15` (DMG + ZIP, with
+3. The workflow builds `main`'s HEAD for arm64 on `macos-15` (DMG + ZIP, with
    `latest-mac.yml` and blockmaps for the updater), publishes the GitHub Release as the latest
    with notes generated since the previous release, and commits the new version to
    `apps/*/package.json` on `main`.
@@ -73,8 +75,8 @@ Optional repository variable: `XCODE_APP`, the Xcode to build with on the runner
 
 ## Building locally
 
-`pnpm dist:desktop:dmg` builds an unsigned DMG for this Mac. With the secrets above exported
-(`APPLE_API_KEY` as a path to the `.p8`), `node scripts/build-desktop-artifact.ts --arch both
+`pnpm dist:desktop:dmg` builds an unsigned Apple Silicon DMG. With the secrets above exported
+(`APPLE_API_KEY` as a path to the `.p8`), `node scripts/build-desktop-artifact.ts --arch arm64
 --signed` builds what CI builds. On a Mac that has the Developer ID identity in its keychain,
 `CSC_NAME="Christophe Nicolas Kafrouni (838JVGY7W4)"` can stand in for `CSC_LINK` and
 `CSC_KEY_PASSWORD`.

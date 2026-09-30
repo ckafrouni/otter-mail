@@ -79,5 +79,5 @@ jobs:
           # Pin a path (e.g. /Applications/Xcode_26.0.app) if the newest misbehaves.
           xcode-app: ${{ vars.XCODE_APP }}
 
-      - name: Build translator (universal)
-        run: swift build -c release --package-path native/translator --arch arm64 --arch x86_64
+      - name: Build translator (Apple Silicon)
+        run: swift build -c release --package-path native/translator --arch arm64
