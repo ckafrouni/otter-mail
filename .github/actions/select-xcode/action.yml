@@ -1,12 +1,12 @@
 name: Select Xcode
 description: >-
-  Switches to the newest Xcode 26+ installed on the runner (or the one given
-  by `xcode-app`). native/translator uses Apple Translation's macOS 26 API
-  (TranslationSession(installedSource:target:)), so it needs the macOS 26 SDK.
+  Switches to the newest Xcode 27+ installed on the runner (or the one given
+  by `xcode-app`). native/apple-helper uses Foundation Models' macOS 27 API
+  (LanguageModelError) and Translation's macOS 26 API, so it needs the macOS 27 SDK.
 
 inputs:
   xcode-app:
-    description: Path to an Xcode.app to use instead, e.g. /Applications/Xcode_26.0.app.
+    description: Path to an Xcode.app to use instead, e.g. /Applications/Xcode_27.0.app.
     required: false
     default: ""
 
@@ -24,7 +24,7 @@ runs:
         xcodebuild -version
         swift --version
         major="$(xcodebuild -version | awk 'NR==1 { split($2, v, "."); print v[1] }')"
-        if (( major < 26 )); then
-          echo "::error::native/translator needs Xcode 26 or newer; $app is Xcode $major. Pass xcode-app or use a newer runner image."
+        if (( major < 27 )); then
+          echo "::error::native/apple-helper needs Xcode 27 or newer; $app is Xcode $major. Pass xcode-app or use the xcode-27 runner image."
           exit 1
         fi

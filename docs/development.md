@@ -2,29 +2,29 @@
 
 ## Prerequisites
 
-- macOS 26 or newer (the translator uses Apple's Translation framework).
+- macOS 26 or newer (translation and the Apple agent use Apple's on-device frameworks).
 - Node 24 (`engines` in `package.json`) and pnpm 11 via `corepack enable`.
-- Full Xcode 26 or newer, selected with `sudo xcode-select -s /Applications/Xcode.app`, to build
-  `native/translator`. Without it the app still runs; translation just fails.
+- Full Xcode 27 or newer, selected with `sudo xcode-select -s /Applications/Xcode.app`, to build
+  `native/apple-helper`. Without it the app still runs; translation and the Apple agent don't.
 
 ## Commands
 
-| Command                  | What it does                                                                       |
-| ------------------------ | ---------------------------------------------------------------------------------- |
-| `pnpm install`           | Installs dependencies and the git pre-commit hook (formats staged files).          |
-| `pnpm dev`               | The web app and a local relay (see [The web app](#the-web-app)).                   |
-| `pnpm dev:desktop`       | Vite dev server + main-process watcher + Electron, restarting on main changes.     |
-| `pnpm dev:web`           | The web app alone, against `VITE_RELAY_URL`.                                       |
-| `pnpm dev:demo`          | The web app on a made-up mailbox, no accounts (see [Demo mailbox](#demo-mailbox)). |
-| `pnpm dev:mail`          | A local IMAP server with a seeded mailbox (see [IMAP locally](#imap-locally)).     |
-| `pnpm dev:ios`           | Builds the iPhone app and runs it in the simulator (see `apps/ios/README.md`).     |
-| `pnpm ios:resources`     | Re-exports the themes and demo mailbox the iPhone app bundles.                     |
-| `pnpm start`             | Runs the built app unpackaged (`pnpm build` first).                                |
-| `pnpm build`             | Builds `apps/web/dist` and `apps/desktop/dist-electron`.                           |
-| `pnpm build:translator`  | Builds the Swift translator helper.                                                |
-| `pnpm typecheck`         | TypeScript across the workspace.                                                   |
-| `pnpm lint` / `pnpm fmt` | Oxlint and Oxfmt through Vite+.                                                    |
-| `pnpm dist:desktop:dmg`  | Unsigned DMG + ZIP for this Mac's architecture in `release/`.                      |
+| Command                   | What it does                                                                       |
+| ------------------------- | ---------------------------------------------------------------------------------- |
+| `pnpm install`            | Installs dependencies and the git pre-commit hook (formats staged files).          |
+| `pnpm dev`                | The web app and a local relay (see [The web app](#the-web-app)).                   |
+| `pnpm dev:desktop`        | Vite dev server + main-process watcher + Electron, restarting on main changes.     |
+| `pnpm dev:web`            | The web app alone, against `VITE_RELAY_URL`.                                       |
+| `pnpm dev:demo`           | The web app on a made-up mailbox, no accounts (see [Demo mailbox](#demo-mailbox)). |
+| `pnpm dev:mail`           | A local IMAP server with a seeded mailbox (see [IMAP locally](#imap-locally)).     |
+| `pnpm dev:ios`            | Builds the iPhone app and runs it in the simulator (see `apps/ios/README.md`).     |
+| `pnpm ios:resources`      | Re-exports the themes and demo mailbox the iPhone app bundles.                     |
+| `pnpm start`              | Runs the built app unpackaged (`pnpm build` first).                                |
+| `pnpm build`              | Builds `apps/web/dist` and `apps/desktop/dist-electron`.                           |
+| `pnpm build:apple-helper` | Builds the Swift Apple helper (translation, the Apple agent).                      |
+| `pnpm typecheck`          | TypeScript across the workspace.                                                   |
+| `pnpm lint` / `pnpm fmt`  | Oxlint and Oxfmt through Vite+.                                                    |
+| `pnpm dist:desktop:dmg`   | Unsigned DMG + ZIP for this Mac's architecture in `release/`.                      |
 
 The dev commands pick ports from the worktree path, so several checkouts can run at once. Set
 `OTTER_MAIL_PORT_OFFSET` to choose one yourself. `t3.json` sets up new T3 Code worktrees (install,

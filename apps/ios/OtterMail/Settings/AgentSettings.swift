@@ -1,9 +1,9 @@
 import SwiftUI
 
 /**
- * Settings › Agents, as on the desktop: Hermes' connection and model
- * (following the Otter account, key included), and the Mac's local agents,
- * listed but off here.
+ * Settings › Agents, as on the desktop: which one to ask, Apple's
+ * on-device model, Hermes' connection and model (following the Otter
+ * account, key included), and the Mac's local agents, listed but off here.
  */
 struct AgentSettings: View {
     @Environment(Session.self) private var session
@@ -16,6 +16,25 @@ struct AgentSettings: View {
     var body: some View {
         @Bindable var agent = session.agent
         SettingsForm {
+            Section {
+                Picker("Ask", selection: $agent.provider) {
+                    ForEach(Agent.Provider.allCases) { Text($0.name).tag($0) }
+                }
+            }
+
+            Section {
+                LabeledContent {
+                    Text(AppleAgent.unavailable == nil ? "On this iPhone" : "Off")
+                        .foregroundStyle(AppleAgent.unavailable == nil ? palette.focus : palette.muted)
+                } label: {
+                    Label("Apple Intelligence", systemImage: "apple.intelligence")
+                }
+            } header: {
+                Text("Apple")
+            } footer: {
+                Text(AppleAgent.unavailable ?? "Apple's on-device model, with Otter Mail's tools. Nothing leaves this iPhone, chats included. It asks before it changes or sends mail.")
+            }
+
             Section {
                 LabeledContent {
                     Text(statusText).foregroundStyle(statusColor)

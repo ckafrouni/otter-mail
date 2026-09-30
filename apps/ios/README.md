@@ -42,9 +42,13 @@ SMTP servers directly too (`docs/imap.md`); the relay never sees its mail, token
   providers, then Thunderbird's autoconfig). The password stays in the Keychain; the settings
   follow the Otter account. Debug builds trust any certificate from localhost, to test against
   GreenMail or Dovecot in Docker.
-- `Agent/`: the agent, as on the desktop. Hermes (`Hermes.swift`) runs anywhere, so it runs here:
-  the same server-side chats, model and key (the `assistant` preferences section, under its old
-  name, and the sealed `hermesKey` follow the Otter account). Conversations go to it as pointers, the
+- `Agent/`: the agent, as on the desktop. Apple's on-device model (`AppleAgent.swift`, Foundation
+  Models) has core's on-device toolset (`AgentTools.swift`: the same six tools, by the same names,
+  arguments and results) over the mail on the phone, so nothing leaves it; its chats
+  are kept on the phone and go when the account signs out. Hermes (`Hermes.swift`) runs anywhere,
+  so it runs here: the same server-side chats, model and key (the `assistant` preferences section,
+  under its old name, and the sealed `hermesKey` follow the Otter account). Conversations go to
+  both as pointers, the
   desktop's "context from Otter Mail" block; the agent reads the mail itself. Codex and Claude are
   local agents on the Mac, listed but off.
 - `Mail/`: the model and `MailStore`, which screens render from. `DemoMail.swift` loads the demo.

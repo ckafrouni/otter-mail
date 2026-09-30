@@ -21,8 +21,8 @@ when a feature lands or goes.
   messages in `src/backend-protocol.ts`), so syncing never holds up the app itself.
   - `src/handlers/`: the Mac-only handlers (tray, default mail app, …); `backend.ts` there holds
     the ones the backend serves.
-  - `src/services/`: Google sign-in (loopback OAuth), tray, Apple's translator, the local agents
-    (Claude, Codex; Hermes is in core), default mail app.
+  - `src/services/`: Google sign-in (loopback OAuth), tray, the Apple helper (translation), the
+    local agents (Claude, Codex, and Apple's on-device model; Hermes is in core), default mail app.
   - `src/windows/`: the main window, the menu-bar popover, and where their pages load from.
   - `src/updates.ts`: electron-updater against GitHub Releases.
 - `apps/web`: the React renderer, one build for both apps. `index.html` is the main window,
@@ -45,8 +45,9 @@ when a feature lands or goes.
   the account's preferences (core's `services/preferences.ts` syncs them), and realtime mail: Gmail → Pub/Sub → relay → WebSocket to each signed-in device. It never sees
   mail; the web app's Gmail tokens pass through it (never stored), the Mac app's never do. See its
   README.
-- `native/translator`: a Swift command-line helper for Apple's on-device Translation. It reads a
-  JSON request on stdin and prints JSON. Building it needs full Xcode (macOS 26 SDK).
+- `native/apple-helper`: a Swift command-line helper for Apple's on-device frameworks: Translation
+  (a JSON request on stdin, JSON out) and Foundation Models, the Apple agent's model (JSON lines
+  both ways; its tools run in the app). Building it needs full Xcode 27 (macOS 27 SDK).
 - `scripts/`: dev runner, desktop packaging (`build-desktop-artifact.ts`), release helpers.
 - `assets/`: app icons like T3 Code's: `prod/` for releases, `dev/` for the blueprint variant that
   unpackaged runs wear. `pnpm icons:export` regenerates the dev icon and both `.icns` files.

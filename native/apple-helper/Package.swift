@@ -2,9 +2,9 @@
 import PackageDescription
 
 let package = Package(
-  name: "translator",
+  name: "apple-helper",
   platforms: [.macOS(.v13)],
   targets: [
-    .executableTarget(name: "translator")
+    .executableTarget(name: "apple-helper")
   ]
 )

@@ -34,7 +34,7 @@ struct AgentView: View {
                 ToolbarItem(placement: .principal) { modelMenu }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Chats", systemImage: "clock.arrow.circlepath") { showHistory = true }
-                        .disabled(agent.status != .ready)
+                        .disabled(agent.current != .ready)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("New chat", systemImage: "square.and.pencil") { agent.newChat() }
@@ -48,14 +48,14 @@ struct AgentView: View {
 
     @ViewBuilder
     private var content: some View {
-        switch agent.status {
+        switch agent.current {
         case .notConfigured:
             unavailable(
                 "Connect Hermes",
                 "Hermes, your agent server, runs everywhere: connect it once and it's on every device. Codex and Claude run in the Mac app."
             )
         case .failed(let message):
-            unavailable("Hermes isn't answering", message)
+            unavailable(agent.provider == .apple ? "Apple Intelligence is off" : "Hermes isn't answering", message)
         case .checking, .ready:
             conversation
         }
@@ -69,7 +69,7 @@ struct AgentView: View {
         } actions: {
             Button("Open Settings") { onSettings() }
                 .buttonStyle(.glass)
-            if case .failed = agent.status {
+            if case .failed = agent.current {
                 Button("Try again") { Task { await agent.check() } }
             }
         }
@@ -114,9 +114,9 @@ struct AgentView: View {
             Text("What can I help with?")
                 .font(.system(size: 26, weight: .semibold))
                 .foregroundStyle(palette.text)
-            if !context.isEmpty {
+            if !suggestions.isEmpty {
                 VStack(spacing: 8) {
-                    ForEach(["Summarize this conversation", "Draft a reply", "What do I need to do?"], id: \.self) { suggestion in
+                    ForEach(suggestions, id: \.self) { suggestion in
                         Button(suggestion) { send(suggestion) }
                             .font(.subheadline)
                             .foregroundStyle(palette.text)
@@ -129,6 +129,12 @@ struct AgentView: View {
             }
         }
         .padding(.horizontal, 28)
+    }
+
+    /** About the conversations attached; Apple's model has the inbox at hand, so it has starts without them too. */
+    private var suggestions: [String] {
+        if !context.isEmpty { return ["Summarize this conversation", "Draft a reply", "What do I need to do?"] }
+        return agent.provider == .apple ? ["What's new in my inbox?", "What needs a reply?"] : []
     }
 
     // ── The composer ─────────────────────────────────────────────────────────
@@ -158,13 +164,13 @@ struct AgentView: View {
                 .scrollIndicators(.hidden)
             }
             HStack(alignment: .bottom, spacing: 10) {
-                TextField(agent.running ? "Steer Hermes…" : "Ask Hermes", text: $draft, axis: .vertical)
+                TextField(steers && agent.running ? "Steer Hermes…" : "Ask \(agent.provider.name)", text: $draft, axis: .vertical)
                     .lineLimit(1...6)
                     .focused($focused)
                     .foregroundStyle(palette.text)
                     .padding(.vertical, 8)
                     .onSubmit { send(draft) }
-                if agent.running && draft.isEmpty {
+                if agent.running && (draft.isEmpty || !steers) {
                     Button("Stop", systemImage: "stop.fill") { agent.stop() }
                         .labelStyle(.iconOnly)
                         .font(.system(size: 13))
@@ -191,6 +197,9 @@ struct AgentView: View {
         .padding(.bottom, 6)
     }
 
+    /** Hermes takes a message mid-turn; Apple's model answers one at a time. */
+    private var steers: Bool { agent.provider == .hermes }
+
     private func send(_ text: String) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
@@ -202,12 +211,16 @@ struct AgentView: View {
 
     // ── The model ────────────────────────────────────────────────────────────
 
-    /** "Hermes · GPT-5 ⌄", ChatGPT's title menu: the model, its reasoning and speed. */
+    /** "Hermes · GPT-5 ⌄", ChatGPT's title menu: the agent, then Hermes' model, its reasoning and speed. */
     private var modelMenu: some View {
         @Bindable var agent = session.agent
-        let model = agent.model
+        let model = agent.provider == .hermes ? agent.model : nil
         return Menu {
-            let groups = Dictionary(grouping: agent.models) { $0.subProvider ?? "Hermes" }
+            Picker("Agent", selection: $agent.provider) {
+                Label("Apple", systemImage: "apple.intelligence").tag(Agent.Provider.apple)
+                Label("Hermes", systemImage: "sparkles").tag(Agent.Provider.hermes)
+            }
+            let groups = Dictionary(grouping: model == nil ? [] : agent.models) { $0.subProvider ?? "Hermes" }
             ForEach(groups.keys.sorted(), id: \.self) { group in
                 Section(group) {
                     ForEach(groups[group] ?? []) { m in
@@ -233,8 +246,9 @@ struct AgentView: View {
             }
         } label: {
             HStack(spacing: 4) {
-                Text("Hermes").foregroundStyle(palette.text)
+                Text(agent.provider.name).foregroundStyle(palette.text)
                 if let model { Text(model.shortName).foregroundStyle(palette.muted).lineLimit(1) }
+                if agent.provider == .apple { Text("On device").foregroundStyle(palette.muted) }
                 Image(systemName: "chevron.down")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(palette.muted)
@@ -242,7 +256,6 @@ struct AgentView: View {
             .font(.headline)
             .frame(maxWidth: 230)
         }
-        .disabled(agent.models.isEmpty)
     }
 
     static func efforts(_ model: Hermes.Model) -> [(String, String)] {
@@ -394,7 +407,7 @@ private struct ApprovalCard: View {
     }
 }
 
-/** The chats kept on Hermes (from every device and Hermes' own web UI), newest first. */
+/** The chats kept on Hermes (from every device and Hermes' own web UI), or Apple's on this iPhone, newest first. */
 private struct ChatHistory: View {
     @Environment(Session.self) private var session
     @Environment(\.palette) private var palette

@@ -11,7 +11,7 @@
     "dev:desktop": "node scripts/dev-runner.ts dev:desktop",
     "start": "vp run --filter @otter-mail/desktop start",
     "build": "vp run --filter './apps/*' build",
-    "build:translator": "node scripts/build-translator.ts",
+    "build:apple-helper": "node scripts/build-apple-helper.ts",
     "icons:export": "node scripts/export-brand-icons.ts",
     "dev:ios": "node scripts/dev-ios.ts",
     "ios:resources": "node scripts/export-ios-resources.ts",

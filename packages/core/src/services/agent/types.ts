@@ -5,9 +5,9 @@
  * turns, and every provider streams the same canonical {@link ChatEvent}s.
  */
 
-export type ProviderKind = "hermes" | "codex" | "claude";
+export type ProviderKind = "hermes" | "codex" | "claude" | "apple";
 
-export const PROVIDER_KINDS: readonly ProviderKind[] = ["hermes", "codex", "claude"];
+export const PROVIDER_KINDS: readonly ProviderKind[] = ["hermes", "codex", "claude", "apple"];
 
 export type ProviderState = "ready" | "warning" | "error" | "disabled";
 
@@ -142,11 +142,20 @@ export type ClaudeSettings = {
   runtimeMode: RuntimeMode;
 };
 
+/** Apple's on-device model: nothing to set up. */
+export type AppleSettings = {
+  enabled: boolean;
+  /** Empty → the one model it has. */
+  model: string;
+  runtimeMode: RuntimeMode;
+};
+
 export type ProviderSettings = {
   selected: ProviderKind;
   hermes: HermesSettings;
   codex: CodexSettings;
   claude: ClaudeSettings;
+  apple: AppleSettings;
 };
 
 /** Settings as the renderer sees them: Hermes' API key never leaves the backend. */

@@ -11,9 +11,11 @@ import { logger } from "../../../logger.js";
 import type { ApprovalDecision, ApprovalRequest } from "../types.js";
 import { calendarTools } from "./calendar.js";
 import { mailTools } from "./mail.js";
+import { onDeviceTools } from "./on-device.js";
 import type { AgentTool, ToolArgs, ToolCaller } from "./tool.js";
 
 export type { AgentTool, ToolCaller, ToolFiles } from "./tool.js";
+export { onDeviceInstructions } from "./on-device.js";
 
 const TOOLS: AgentTool[] = [...mailTools, ...calendarTools];
 
@@ -22,11 +24,12 @@ export const OTTER_TOOLS_SERVER = "otter-mail";
 
 /** A tool's title ("Search mail"), for the chat's step rows. */
 export function toolTitle(name: string): string | undefined {
-  return TOOLS.find((t) => t.name === name)?.title;
+  return [...TOOLS, ...onDeviceTools].find((t) => t.name === name)?.title;
 }
 
-/** The tools a caller can use (attachments need files on the device). */
+/** The tools a caller can use: its toolset (attachments need files on the device). */
 export function agentTools(caller: ToolCaller): AgentTool[] {
+  if (caller.toolset === "on-device") return onDeviceTools;
   return TOOLS.filter((t) => !t.needsFiles || caller.files);
 }
 
@@ -77,7 +80,7 @@ async function confirm(tool: AgentTool, caller: ToolCaller, detail: string): Pro
 const lastChange = new WeakMap<ToolCaller, Promise<unknown>>();
 
 /**
- * Runs a tool for a caller: its result as JSON text, or what went wrong.
+ * Runs a tool for a caller: its result as text (JSON, or the words of an on-device tool), or what went wrong.
  * Changes run one after another in the order they were asked for (agents
  * send "add a label" and "remove it" at once); reads don't wait.
  */
@@ -106,7 +109,9 @@ async function run(
       caller,
       confirm: (detail) => confirm(tool, caller, detail),
     });
-    return { text: JSON.stringify(result ?? { ok: true }), isError: false };
+    // Text as it is (the on-device tools answer in words); anything else as JSON.
+    const text = typeof result === "string" ? result : JSON.stringify(result ?? { ok: true });
+    return { text, isError: false };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.info("agent", "tool failed", { tool: name, error: message });

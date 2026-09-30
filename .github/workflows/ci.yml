@@ -55,12 +55,12 @@ jobs:
           node scripts/dev-runner.ts dev --dry-run
           node scripts/dev-runner.ts dev:desktop --dry-run
 
-  # Apple Translation's TranslationSession(installedSource:target:) is macOS 26
-  # API, so the translator needs Xcode 26+ (Swift 6, macOS 26 SDK). No Node
-  # needed: this only compiles the Swift package.
-  translator:
-    name: Translator (Swift)
-    runs-on: macos-15
+  # The Apple helper uses Foundation Models' macOS 27 API, so it needs Xcode 27
+  # (see .github/actions/select-xcode). No Node needed: this only compiles the
+  # Swift package.
+  apple-helper:
+    name: Apple helper (Swift)
+    runs-on: xcode-27
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -69,8 +69,8 @@ jobs:
       - name: Select Xcode
         uses: ./.github/actions/select-xcode
         with:
-          # Pin a path (e.g. /Applications/Xcode_26.0.app) if the newest misbehaves.
+          # Pin a path (e.g. /Applications/Xcode_27.0.app) if the newest misbehaves.
           xcode-app: ${{ vars.XCODE_APP }}
 
-      - name: Build translator (universal)
-        run: swift build -c release --package-path native/translator --arch arm64 --arch x86_64
+      - name: Build the Apple helper (universal)
+        run: swift build -c release --package-path native/apple-helper --arch arm64 --arch x86_64

@@ -19,7 +19,7 @@ import * as NodeReadline from "node:readline";
 import { parseArgs } from "node:util";
 
 import { resolveDevHome, resolveLinkedWorktree } from "../apps/desktop/scripts/dev-home.mjs";
-import { buildTranslator, findTranslatorBinary, repoRoot } from "./build-translator.ts";
+import { buildHelper, findHelperBinary, repoRoot } from "./build-apple-helper.ts";
 
 const BASE_WEB_PORT = 5833;
 const BASE_RELAY_PORT = 8787;
@@ -101,15 +101,15 @@ async function findFreePort(start: number): Promise<number> {
   throw new Error(`No free dev server port between ${start} and ${start + 99}.`);
 }
 
-function ensureTranslator(): void {
-  if (findTranslatorBinary("host") || findTranslatorBinary("universal")) return;
-  console.log("[dev] Building native/translator (first run only)...");
+function ensureHelper(): void {
+  if (findHelperBinary("host") || findHelperBinary("universal")) return;
+  console.log("[dev] Building native/apple-helper (first run only)...");
   try {
-    console.log(`[dev] Translator ready: ${buildTranslator({ universal: false, quiet: true })}`);
+    console.log(`[dev] Apple helper ready: ${buildHelper({ universal: false, quiet: true })}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn(
-      `[dev] Skipping the translator; in-app translation will be unavailable.\n${message}`,
+      `[dev] Skipping the Apple helper; translation and the Apple agent will be unavailable.\n${message}`,
     );
   }
 }
@@ -256,7 +256,7 @@ async function main(): Promise<void> {
   stopLeftoverGroups();
   if (mode === "dev") prepareRelay(wrangler);
   if (desktop) {
-    ensureTranslator();
+    ensureHelper();
     // A stale bundle would let Electron start before the first fresh build.
     NodeFS.rmSync(NodePath.join(repoRoot, "apps/desktop/dist-electron"), {
       recursive: true,

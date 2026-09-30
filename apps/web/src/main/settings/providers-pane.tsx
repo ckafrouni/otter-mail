@@ -684,7 +684,7 @@ export function ProvidersPane() {
         isDefault={current.kind === state.selected}
         onMakeDefault={() => update({ selected: current.kind })}
       />
-      {current.macAppOnly ? null : current.kind === "hermes" ? (
+      {current.macAppOnly || current.kind === "apple" ? null : current.kind === "hermes" ? (
         <HermesEditor state={state} provider={current} update={update} />
       ) : (
         <AgentEditor kind={current.kind} state={state} provider={current} update={update} />

@@ -227,6 +227,16 @@ const MIME_TYPES: Record<string, string> = {
 const mimeTypeOf = (name: string) =>
   MIME_TYPES[name.split(".").pop()?.toLowerCase() ?? ""] ?? "application/octet-stream";
 
+/** What `replyTo` names: a message, or a conversation (its latest message from someone else). */
+function replySource(account: GmailAccount, ref: string): string {
+  const sent = mailStore
+    .getThreadMessages(account.id, ref)
+    .filter((m) => !m.labelIds.includes("DRAFT"));
+  if (sent.length === 0) return ref;
+  const own = account.email.toLowerCase();
+  return (sent.findLast((m) => m.fromEmail.toLowerCase() !== own) ?? sent.at(-1)!).id;
+}
+
 /**
  * A message from the tool's arguments, as the composer would write it: a
  * reply threads, answers the right people and quotes the message; a forward
@@ -234,7 +244,8 @@ const mimeTypeOf = (name: string) =>
  * the body.
  */
 async function compose(args: ToolArgs, account: GmailAccount, ctx: ToolContext): Promise<Composed> {
-  const replyTo = optStr(args, "replyTo");
+  const replyRef = optStr(args, "replyTo");
+  const replyTo = replyRef && replySource(account, replyRef);
   const forward = optStr(args, "forward");
   if (replyTo && forward) throw new Error(`Use "replyTo" or "forward", not both.`);
   const sourceId = replyTo ?? forward;
@@ -357,7 +368,7 @@ const COMPOSE_INPUT = {
   replyTo: {
     type: "string",
     description:
-      "A messageId to reply to: the reply joins its conversation, goes to its sender (with replyAll, everyone on it) and quotes it.",
+      "A messageId to reply to, or a threadId (its latest message from someone else): the reply joins its conversation, goes to its sender (with replyAll, everyone on it) and quotes it.",
   },
   replyAll: { type: "boolean" },
   forward: {

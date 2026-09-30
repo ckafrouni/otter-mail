@@ -85,8 +85,8 @@ jobs:
   build_mac:
     name: Build macOS (arm64 + x64)
     needs: [preflight]
-    # Needs Xcode 26+ for the translator; see .github/actions/select-xcode.
-    runs-on: macos-15
+    # Needs Xcode 27 for the Apple helper; see .github/actions/select-xcode.
+    runs-on: xcode-27
     timeout-minutes: 60
     steps:
       - name: Checkout

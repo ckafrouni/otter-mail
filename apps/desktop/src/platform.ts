@@ -19,6 +19,7 @@ import { logger } from "./logger.js";
 import { requestMain, tellMain } from "./main-link.js";
 import { googleAuth } from "./services/gmail-oauth.js";
 import { connectMailSocket } from "./services/mail-socket.js";
+import { appleProvider } from "./services/agent/apple.js";
 import { claudeProvider } from "./services/agent/claude.js";
 import { codexProvider } from "./services/agent/codex.js";
 import { appleTranslator } from "./services/translator.js";
@@ -136,6 +137,6 @@ export function desktopPlatform(): Platform {
     },
     offlineDownloads: true,
     translator: appleTranslator,
-    agentProviders: [codexProvider, claudeProvider],
+    agentProviders: [codexProvider, claudeProvider, appleProvider],
   };
 }

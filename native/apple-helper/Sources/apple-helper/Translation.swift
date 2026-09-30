@@ -3,13 +3,8 @@ import NaturalLanguage
 import Translation
 
 // Apple's on-device translator (the one behind Safari's "Translate page").
-// Nothing leaves the Mac; language packs are managed by macOS in System
-// Settings → General → Language & Region → Translation Languages.
-//
-// Usage: `translator <command>` with a JSON request on stdin; the JSON
-// response goes to stdout. Failures print a message to stderr and exit 1.
-//   detect     {"text": "…"}                                → Detection
-//   translate  {"texts": ["…"], "source": "de", "target": "en"} → Translated
+// Language packs are managed by macOS in System Settings → General →
+// Language & Region → Translation Languages.
 
 struct Detection: Codable {
   /// BCP-47 code ("de", "fr", "zh-Hans"), or nil when undetermined.
@@ -75,35 +70,3 @@ func translate(texts: [String], source: String, target: String) async throws -> 
   return Translated(status: "unsupported", texts: [])
 }
 
-func fail(_ message: String) -> Never {
-  FileHandle.standardError.write(Data((message + "\n").utf8))
-  exit(1)
-}
-
-func respond<T: Encodable>(_ value: T) {
-  do {
-    FileHandle.standardOutput.write(try JSONEncoder().encode(value))
-  } catch {
-    fail("Couldn't encode the response: \(error)")
-  }
-}
-
-let arguments = CommandLine.arguments.dropFirst()
-guard let command = arguments.first else { fail("usage: translator detect|translate < request.json") }
-let input = FileHandle.standardInput.readDataToEndOfFile()
-let decoder = JSONDecoder()
-
-do {
-  switch command {
-  case "detect":
-    let request = try decoder.decode(DetectRequest.self, from: input)
-    respond(detectLanguage(text: request.text))
-  case "translate":
-    let request = try decoder.decode(TranslateRequest.self, from: input)
-    respond(try await translate(texts: request.texts, source: request.source, target: request.target))
-  default:
-    fail("unknown command: \(command)")
-  }
-} catch {
-  fail("\(error)")
-}

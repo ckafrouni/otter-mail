@@ -406,7 +406,7 @@ function formatAgo(ts: number): string {
 
 /** Canonical error codes from the backend → what the transcript says. */
 function friendlyError(code: string, provider: ProviderKind): string {
-  const name = provider === "codex" ? "Codex" : provider === "claude" ? "Claude" : "Hermes";
+  const name = { codex: "Codex", claude: "Claude", apple: "Apple", hermes: "Hermes" }[provider];
   switch (code) {
     case "not_configured":
       return `${name} isn't set up — connect it in Settings → Agents.`;
@@ -1616,7 +1616,7 @@ export function AgentChatPanel({
   /** Setup fallback: switch new chats to another provider. */
   const pickProvider = (kind: ProviderKind) => updateSettings({ selected: kind });
 
-  // Hermes' approval mode is server-side config; Codex / Claude pick it per turn.
+  // Hermes' approval mode is server-side config; Codex, Claude and Apple pick it per turn.
   const runtimeMode =
     providerKind === "hermes" ? null : (providersState?.settings[providerKind].runtimeMode ?? null);
   const pendingApproval = activeApprovals[0];
@@ -1624,7 +1624,7 @@ export function AgentChatPanel({
   // Reasoning / Service Tier of the model in use, with the saved choices.
   const currentModel = provider?.models.find((m) => m.slug === provider.model);
   const traitOptions = currentModel?.options ?? [];
-  const traitSettings = providersState?.settings[providerKind];
+  const traitSettings = providerKind === "apple" ? null : providersState?.settings[providerKind];
   const traitValues = {
     reasoningEffort: traitSettings?.reasoningEffort ?? "",
     serviceTier: traitSettings?.serviceTier ?? "",

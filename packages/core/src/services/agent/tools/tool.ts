@@ -21,6 +21,8 @@ export type ToolFiles = {
 
 /** Who is calling: one agent chat. */
 export type ToolCaller = {
+  /** The on-device model's few tools (on-device.ts) rather than the full set. */
+  toolset?: "on-device";
   /** The chat's runtime mode now: full access makes changes without asking. */
   mode(): RuntimeMode;
   /** The turn running now, which approvals are asked on; null between turns. */

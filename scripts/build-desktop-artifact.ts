@@ -5,9 +5,9 @@
 //   node scripts/build-desktop-artifact.ts --platform mac --arch arm64
 //   node scripts/build-desktop-artifact.ts --platform mac --arch both --build-version 0.2.0 --signed
 //
-// Steps: build web + desktop bundles and the universal translator, stage a
+// Steps: build web + desktop bundles and the universal Apple helper, stage a
 // self-contained app directory (package.json, dist-electron/, renderer/, the
-// translator), run electron-builder on it, and copy the artifacts and update
+// helper), run electron-builder on it, and copy the artifacts and update
 // manifests into --output-dir. The main process and preload are fully
 // bundled, so the stage has no node_modules.
 
@@ -17,7 +17,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { parseArgs } from "node:util";
 
-import { buildTranslator, findTranslatorBinary, repoRoot } from "./build-translator.ts";
+import { buildHelper, findHelperBinary, repoRoot } from "./build-apple-helper.ts";
 
 const APP_ID = "dev.otterware.mail";
 const PRODUCT_NAME = "Otter Mail";
@@ -42,7 +42,7 @@ Options:
   --build-version <v>       App version. Default: apps/desktop/package.json version.
   --output-dir <dir>        Where artifacts are copied. Default: release/.
   --skip-build              Reuse existing apps/web/dist, apps/desktop/dist-electron
-                            and translator builds.
+                            and Apple helper builds.
   --keep-stage              Keep the temporary staging directory.
   --signed                  Sign with Developer ID (CSC_LINK and CSC_KEY_PASSWORD, or
                             CSC_NAME for an identity in the keychain) and
@@ -196,7 +196,7 @@ export function createBuildConfig(options: {
     nodeGypRebuild: false,
     files: ["package.json", "dist-electron/**/*", "renderer/**/*", "!**/*.map"],
     directories: { buildResources: "resources", output: "dist" },
-    extraResources: [{ from: "bin/translator", to: "bin/translator" }],
+    extraResources: [{ from: "bin/apple-helper", to: "bin/apple-helper" }],
     mac: {
       target: options.target === "dmg" ? ["dmg", "zip"] : ["zip"],
       category: "public.app-category.productivity",
@@ -271,19 +271,19 @@ function binaryArchs(path: string): string[] {
   return result.status === 0 ? result.stdout.trim().split(/\s+/) : [];
 }
 
-function resolveTranslatorBinary(options: Options): string {
+function resolveHelperBinary(options: Options): string {
   let binary: string | undefined;
   if (options.skipBuild) {
-    binary = findTranslatorBinary("universal") ?? findTranslatorBinary("host");
+    binary = findHelperBinary("universal") ?? findHelperBinary("host");
     if (!binary) {
       fail(
-        "No translator build found. Run `pnpm build:translator --universal` or drop --skip-build.",
+        "No Apple helper build found. Run `pnpm build:apple-helper --universal` or drop --skip-build.",
       );
     }
   } else {
-    log("Building native/translator (universal)...");
+    log("Building native/apple-helper (universal)...");
     try {
-      binary = buildTranslator({ universal: true });
+      binary = buildHelper({ universal: true });
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }
@@ -299,7 +299,7 @@ function resolveTranslatorBinary(options: Options): string {
   if (absent.length > 0) {
     fail(
       `${binary} lacks ${absent.join(", ")} (has ${present.join(", ") || "none"}). ` +
-        "Run `pnpm build:translator --universal`.",
+        "Run `pnpm build:apple-helper --universal`.",
     );
   }
   return binary;
@@ -342,7 +342,7 @@ function main(): void {
       label: `(apps/desktop) OTTER_MAIL_VERSION=${options.version} vp pack`,
     });
   }
-  const translatorBinary = resolveTranslatorBinary(options);
+  const helperBinary = resolveHelperBinary(options);
 
   const requiredInputs = [
     NodePath.join(desktopDir, "dist-electron", "main.cjs"),
@@ -368,8 +368,8 @@ function main(): void {
   copyDir(NodePath.join(webDir, "dist"), NodePath.join(stageDir, "renderer"), notMap);
   copyDir(NodePath.join(desktopDir, "resources"), NodePath.join(stageDir, "resources"));
   NodeFS.mkdirSync(NodePath.join(stageDir, "bin"));
-  NodeFS.copyFileSync(translatorBinary, NodePath.join(stageDir, "bin", "translator"));
-  NodeFS.chmodSync(NodePath.join(stageDir, "bin", "translator"), 0o755);
+  NodeFS.copyFileSync(helperBinary, NodePath.join(stageDir, "bin", "apple-helper"));
+  NodeFS.chmodSync(NodePath.join(stageDir, "bin", "apple-helper"), 0o755);
 
   let entitlementsPath: string | undefined;
   if (options.signed) {

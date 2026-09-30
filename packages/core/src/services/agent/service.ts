@@ -6,8 +6,8 @@
  * fire-and-forget; their events stream as `agent:chatEvent`.
  *
  * Hermes is a server, so it works everywhere; Codex and Claude are local
- * CLIs, which the Mac app hands over as `Platform.agentProviders`. The
- * web app lists them, off (`macAppOnly`).
+ * CLIs, and Apple's model runs on the Mac, which the Mac app hands over as
+ * `Platform.agentProviders`. The web app lists them, off (`macAppOnly`).
  */
 
 import { broadcast } from "../../ipc.js";
@@ -62,6 +62,7 @@ const DISPLAY_NAMES: Record<ProviderKind, string> = {
   hermes: "Hermes",
   codex: "Codex",
   claude: "Claude",
+  apple: "Apple",
 };
 
 /** Re-check health when a snapshot is older than this (T3's default interval). */
@@ -110,7 +111,7 @@ async function getState(): Promise<ProvidersState> {
       model: chosen || fallback || null,
     } as ProviderSnapshot;
   });
-  const { hermes, codex, claude, selected } = settings;
+  const { hermes, codex, claude, apple, selected } = settings;
   return {
     providers: snapshots,
     selected: available()[selected] ? selected : "hermes",
@@ -118,6 +119,7 @@ async function getState(): Promise<ProvidersState> {
       hermes,
       codex,
       claude,
+      apple,
       selected,
       hermesHasKey: (await getHermesKey()).length > 0,
     },
@@ -179,6 +181,7 @@ export type SettingsPatch = {
   >;
   codex?: Partial<ProviderSettings["codex"]>;
   claude?: Partial<ProviderSettings["claude"]>;
+  apple?: Partial<ProviderSettings["apple"]>;
 };
 
 /** Settings that change how a provider's process is launched. */
@@ -192,6 +195,7 @@ export async function updateProviderSettings(patch: SettingsPatch): Promise<Prov
     hermes: { ...current.hermes, ...patch.hermes },
     codex: { ...current.codex, ...patch.codex },
     claude: { ...current.claude, ...patch.claude },
+    apple: { ...current.apple, ...patch.apple },
   };
   await saveProviderSettings(next);
   for (const kind of PROVIDER_KINDS) {
@@ -334,6 +338,7 @@ export type SyncedProviderSettings = {
   hermes: ProviderSettings["hermes"];
   codex: Synced<ProviderSettings["codex"]>;
   claude: Synced<ProviderSettings["claude"]>;
+  apple: ProviderSettings["apple"];
 };
 
 const withoutDeviceKeys = <T extends object>(settings: T) =>
@@ -342,8 +347,14 @@ const withoutDeviceKeys = <T extends object>(settings: T) =>
   ) as Synced<T>;
 
 export async function syncedProviderSettings(): Promise<SyncedProviderSettings> {
-  const { selected, hermes, codex, claude } = await getProviderSettings();
-  return { selected, hermes, codex: withoutDeviceKeys(codex), claude: withoutDeviceKeys(claude) };
+  const { selected, hermes, codex, claude, apple } = await getProviderSettings();
+  return {
+    selected,
+    hermes,
+    codex: withoutDeviceKeys(codex),
+    claude: withoutDeviceKeys(claude),
+    apple,
+  };
 }
 
 /** Takes the account's provider settings, keeping this device's CLI paths. */
@@ -359,6 +370,7 @@ export async function applySyncedProviderSettings(
     hermes: { ...current.hermes, ...synced.hermes },
     codex: { ...current.codex, ...(synced.codex && withoutDeviceKeys(synced.codex)) },
     claude: { ...current.claude, ...(synced.claude && withoutDeviceKeys(synced.claude)) },
+    apple: { ...current.apple, ...synced.apple },
   };
   await saveProviderSettings(next);
   if (next.hermes.baseUrl !== current.hermes.baseUrl) {

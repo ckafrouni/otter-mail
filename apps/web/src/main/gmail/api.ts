@@ -115,7 +115,7 @@ export type MailAppsResult = { apps: MailApp[]; defaultBundleId: string | null }
  * Agent providers (mirrors main/services/agent/types.ts). A snapshot
  * is one provider's health; every provider streams the same ChatEvents.
  */
-export type ProviderKind = "hermes" | "codex" | "claude";
+export type ProviderKind = "hermes" | "codex" | "claude" | "apple";
 export type ProviderState = "ready" | "warning" | "error" | "disabled";
 export type ProviderOptionChoice = {
   id: string;
@@ -204,6 +204,7 @@ export type ProviderSettingsView = {
     serviceTier: string;
     runtimeMode: RuntimeMode;
   };
+  apple: { enabled: boolean; model: string; runtimeMode: RuntimeMode };
   hermesHasKey: boolean;
 };
 export type ProvidersState = {
@@ -216,6 +217,7 @@ export type AgentSettingsPatch = {
   hermes?: { enabled?: boolean; model?: string; reasoningEffort?: string; serviceTier?: string };
   codex?: Partial<ProviderSettingsView["codex"]>;
   claude?: Partial<ProviderSettingsView["claude"]>;
+  apple?: Partial<ProviderSettingsView["apple"]>;
 };
 
 /** One step an agent took, the same for every agent (core's steps.ts). */

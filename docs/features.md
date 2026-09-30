@@ -130,19 +130,27 @@ Swift code (`apps/ios`). Gmail and IMAP are noted where they differ.
 
 ## Agents
 
-| Feature                                            | Mac                         | Web                        | iPhone       |
-| -------------------------------------------------- | --------------------------- | -------------------------- | ------------ |
-| Providers                                          | Claude, Codex, Hermes       | Hermes (Claude, Codex off) | Hermes       |
-| Chat, models, steer / stop, tool approval, history | ✓                           | ✓                          | ✓            |
-| Chat about a conversation (pointers, not mail)     | ✓ (also selections, quotes) | ✓                          | ✓ (a thread) |
-| Attach images and files to a chat                  | ✓                           | ✓                          | —            |
-| Queued follow-ups                                  | ✓                           | ✓                          | —            |
-| Mail and calendar tools (Claude, Codex)            | ✓ (every mailbox)           | —                          | —            |
+| Feature                                            | Mac                          | Web                               | iPhone        |
+| -------------------------------------------------- | ---------------------------- | --------------------------------- | ------------- |
+| Providers                                          | Claude, Codex, Hermes, Apple | Hermes (Claude, Codex, Apple off) | Hermes, Apple |
+| Apple's on-device model (Apple Intelligence)       | ✓                            | —                                 | ✓             |
+| Chat, models, steer / stop, tool approval, history | ✓                            | ✓                                 | ✓             |
+| Chat about a conversation (pointers, not mail)     | ✓ (also selections, quotes)  | ✓                                 | ✓ (a thread)  |
+| Attach images and files to a chat                  | ✓                            | ✓                                 | —             |
+| Queued follow-ups                                  | ✓                            | ✓                                 | —             |
+| Mail and calendar tools (Claude, Codex)            | ✓ (every mailbox)            | —                                 | —             |
+| A few mail tools for Apple's model                 | ✓                            | —                                 | ✓             |
 
 Claude and Codex get Otter Mail's own tools (an MCP server in the Mac app's backend), so they
 need no mail CLI: search, read and sort mail, download attachments, save drafts and send, in
 any mailbox (Gmail or IMAP), and list, add, change and answer events in Google Calendar. A tool
 that changes a mailbox asks first unless the chat has full access; drafts don't ask.
+
+Apple's model runs on the device and nothing leaves it, chats included. It's small (an 8K-token
+context), so it gets a toolset of its own (core's `on-device.ts`, built on the tools above): list
+the inbox, search, read a conversation, save a reply, write an email, and archive / trash / read /
+star. Flat arguments, one id per conversation, short text results. The iPhone mirrors the same six
+in Swift. Its changes ask first by default; drafts don't.
 
 ## Translation
 

@@ -78,7 +78,7 @@ struct SettingsView: View {
                         AgentSettings()
                     } label: {
                         LabeledContent {
-                            Text(session.agent.status == .ready ? "Hermes" : "Off")
+                            Text(session.agent.current == .ready ? session.agent.provider.name : "Off")
                         } label: {
                             Label("Agents", systemImage: "cursorarrow")
                         }

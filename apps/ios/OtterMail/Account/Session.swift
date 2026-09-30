@@ -53,6 +53,7 @@ final class Session {
         relay.onSignedOut = { [weak self] in self?.endSession() }
         preferences.onChange = { [weak self] section in self?.preferenceChanged(section) }
         agent.onChange = { [weak self] section in self?.preferenceChanged(section) }
+        agent.apple.tools.mailStore = { [weak self] in self?.store }
         Task { [agent] in await agent.check() }
         if case .signedIn = state { startLive() }
     }
@@ -422,12 +423,15 @@ final class Session {
         state = .welcome
         agent.newChat()
         agent.forgetKey()
+        AppleAgent.forgetAll()
         Task { try? await UNUserNotificationCenter.current().setBadgeCount(0) }
     }
 
     /** The demo ends the same way. */
     func leaveDemo() {
         UserDefaults.standard.set(false, forKey: Self.demoKey)
+        agent.newChat()
+        AppleAgent.forgetAll()
         store = MailStore(preferences: preferences)
         state = .welcome
     }
