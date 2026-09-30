@@ -191,6 +191,8 @@ export function createBuildConfig(options: {
     electronVersion: options.electronVersion,
     artifactName: "Otter-Mail-${version}-${arch}.${ext}",
     electronLanguages: ["en-US"],
+    // Overlap arm64 and x64 packaging, signing and notarization in one build.
+    concurrency: { jobs: 2 },
     // Everything is bundled; there is nothing to install or rebuild.
     npmRebuild: false,
     nodeGypRebuild: false,

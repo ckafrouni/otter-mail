@@ -39,14 +39,21 @@ jobs:
       - name: Lint
         run: vp run lint
 
-      - name: Typecheck
-        run: vp run typecheck
+      - name: Typecheck, test and build
+        run: |
+          vp run typecheck &
+          typecheck_pid=$!
+          vp run test &
+          test_pid=$!
+          vp run build &
+          build_pid=$!
 
-      - name: Test
-        run: vp run test
-
-      - name: Build web and desktop bundles
-        run: vp run build
+          # Wait for every check; a failure in any of them must fail CI.
+          status=0
+          for pid in "$typecheck_pid" "$test_pid" "$build_pid"; do
+            if ! wait "$pid"; then status=1; fi
+          done
+          exit "$status"
 
       - name: Check release scripts
         run: |

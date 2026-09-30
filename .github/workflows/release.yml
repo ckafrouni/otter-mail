@@ -64,10 +64,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
+      - name: Setup Node
+        uses: actions/setup-node@v7
         with:
           node-version-file: package.json
+          package-manager-cache: false
 
       - id: meta
         name: Resolve release version
@@ -149,6 +150,7 @@ jobs:
             release/*.yml
           if-no-files-found: error
           retention-days: 7
+          compression-level: 0
 
   release:
     name: Publish GitHub release
@@ -193,10 +195,11 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
 
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
+      - name: Setup Node
+        uses: actions/setup-node@v7
         with:
           node-version-file: package.json
+          package-manager-cache: false
 
       - id: bump
         name: Update versions

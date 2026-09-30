@@ -53,10 +53,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
+      - name: Setup Node
+        uses: actions/setup-node@v7
         with:
           node-version-file: package.json
+          package-manager-cache: false
 
       - id: meta
         name: Resolve release version
@@ -82,10 +83,11 @@ jobs:
         with:
           ref: ${{ needs.preflight.outputs.ref }}
 
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
+      - name: Setup Node
+        uses: actions/setup-node@v7
         with:
           node-version-file: package.json
+          package-manager-cache: false
 
       - name: Install signing
         env:
