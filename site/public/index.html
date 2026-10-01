@@ -10,9 +10,10 @@
     />
     <meta property="og:title" content="Otter Mail" />
     <meta property="og:description" content="Email, calm and fast." />
-    <meta property="og:image" content="https://mail.otterware.app/screenshot.png" />
+    <meta property="og:image" content="https://mail.otterware.app/og.png" />
     <link rel="icon" href="/favicon.png" />
     <link rel="stylesheet" href="/style.css" />
+    <script src="/mailroom.js" defer></script>
   </head>
   <body class="landing">
     <div class="wrap">
@@ -28,50 +29,41 @@
     </div>
 
     <main>
-      <div class="stage">
-        <div class="field" aria-hidden="true"><div class="field-rows"></div></div>
-
-        <header class="hero">
-          <div class="wrap">
-            <div class="hero-copy">
-              <a
-                class="chip"
-                href="mailto:chris.kafrouni@gmail.com?subject=Otter%20Mail%20for%20iOS%20(TestFlight)&body=Hi%2C%20please%20add%20me%20to%20the%20Otter%20Mail%20iOS%20TestFlight.%0A%0AThe%20email%20of%20my%20Apple%20ID%3A%20"
-                >Otter Mail for iOS is on TestFlight <span aria-hidden="true">&rarr;</span></a
+      <header class="hero">
+        <div class="wrap">
+          <div class="hero-copy">
+            <a
+              class="chip"
+              href="mailto:chris.kafrouni@gmail.com?subject=Otter%20Mail%20for%20iOS%20(TestFlight)&body=Hi%2C%20please%20add%20me%20to%20the%20Otter%20Mail%20iOS%20TestFlight.%0A%0AThe%20email%20of%20my%20Apple%20ID%3A%20"
+              >Otter Mail for iOS is on TestFlight <span aria-hidden="true">&rarr;</span></a
+            >
+            <h1>
+              <b>Email, calm and&nbsp;fast.</b> A quiet mail client for Gmail and IMAP, on your Mac,
+              in your browser and on iOS. Your mail stays on your device.
+            </h1>
+            <p class="cta">
+              <a class="btn" href="https://github.com/otterware-app/otter-mail/releases/latest"
+                >Download for macOS</a
               >
-              <h1>
-                <b>Email, calm and&nbsp;fast.</b> A quiet mail client for Gmail and IMAP, on your
-                Mac, in your browser and on iOS. Your mail stays on your device.
-              </h1>
-              <p class="cta">
-                <a class="btn" href="https://github.com/otterware-app/otter-mail/releases/latest"
-                  >Download for macOS</a
-                >
-                <a class="text-link" href="/app"
-                  >Open in your browser <span aria-hidden="true">&rarr;</span></a
-                >
-              </p>
-              <p class="works-with">
-                <span>Gmail</span><span>IMAP</span><span>Claude Code</span><span>Codex</span
-                ><span>Hermes</span>
-              </p>
-            </div>
+              <a class="text-link" href="/app"
+                >Open in your browser <span aria-hidden="true">&rarr;</span></a
+              >
+            </p>
+            <p class="works-with">
+              <span>Gmail</span><span>IMAP</span><span>Claude Code</span><span>Codex</span
+              ><span>Hermes</span>
+            </p>
           </div>
-        </header>
+        </div>
+      </header>
 
-        <section class="shot">
-          <div class="wrap wide">
-            <div class="window">
-              <img
-                src="/screenshot.webp"
-                width="3200"
-                height="2000"
-                alt="Otter Mail: the mailboxes down the left edge, then the Work mailbox with its labels and inbox, and a conversation open beside the agent panel, with the reply it drafted."
-              />
-            </div>
-          </div>
-        </section>
-      </div>
+      <figure class="mailroom">
+        <canvas
+          role="img"
+          aria-label="Otter Mail as a mail room: mail drops in from Gmail and IMAP, rides a belt through the search index, and robot arms sort it into labels. The rest lands in the inbox, shown the same on a Mac, in a browser and on an iPhone, where an arm files it in the archive or hands it to the agent, whose reply rides back out."
+        ></canvas>
+        <button type="button" aria-pressed="false">Pause</button>
+      </figure>
 
       <div class="wrap">
         <section class="features" id="features">
@@ -152,37 +144,5 @@
         </footer>
       </div>
     </main>
-
-    <script>
-      // The inbox, far behind the hero: lines of real-sounding mail drifting past, too soft to read.
-      (() => {
-        const lines = [
-          "Hi Sam, our contract renews on 1 November. We'd like to add 40 seats and move to annual billing.",
-          "Thanks for the time today. As promised, the order form is attached. Let me know if legal wants changes.",
-          "Can we move the sync to 2pm? I have a dentist appointment, and I'd rather not rush the agenda.",
-          "Priya has invited you to Design review on Friday at 2:00 PM. Reply to let her know if you can make it.",
-          "Your invoice for September is ready. The total is $4,812.33 and it is due in 30 days.",
-          "Élodie passed the technical screen and was strong on distributed systems. Can we schedule the onsite?",
-          "Everything looks right to me, except SSO: it is Enterprise-only for now, so keep that off the pricing page.",
-          "Brewery! Some of us have kids to pick up, so an early start works better than dinner.",
-          "Reminder: the annual security training is due by 15 October. It takes about twenty minutes.",
-          "I went through the components and left comments on the doc. Nothing blocking, just a few naming things.",
-          "This week we shipped faster builds, a new profiler and a fix for the flaky test everyone hated.",
-          "Glad the numbers work. SSO can be live well before your freeze, and I'll send our SOC 2 report tomorrow.",
-        ];
-        const rows = document.querySelector(".field-rows");
-        const pace = [1.8, 2.2, 1.6, 2.0, 2.4, 1.7, 2.1, 1.5, 2.3, 1.9];
-        for (let i = 0; i < 40; i++) {
-          const row = document.createElement("div");
-          let period = "";
-          for (let j = 0; j < 8; j++)
-            period += lines[(i * 5 + j * 7) % lines.length] + "          ";
-          row.textContent = period + period;
-          row.style.animationDuration = 1000 * pace[i % pace.length] + "s";
-          if (i % 2) row.style.animationDirection = "reverse";
-          rows.append(row);
-        }
-      })();
-    </script>
   </body>
 </html>
