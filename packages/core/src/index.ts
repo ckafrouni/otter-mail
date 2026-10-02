@@ -27,6 +27,7 @@ import { loadOtterAccount } from "./services/otter-account.js";
 import { getUiPreferences, preferenceChanged, setUiPreference } from "./services/preferences.js";
 import { getSettings, onSettingsChanged } from "./services/settings-store.js";
 import { refreshProfiles } from "./services/google-profile.js";
+import { startMailSchedule } from "./services/mail-schedule.js";
 import { refreshSignatures } from "./services/signatures.js";
 
 /** Starts the backend: restores sign-ins, registers every handler, and syncs. */
@@ -37,6 +38,7 @@ export async function startCore(platform: Platform): Promise<void> {
   await loadOtterAccount();
 
   registerGmailHandlers();
+  startMailSchedule();
   registerImapAccountHandlers();
   registerSearchHandlers();
   registerCalendarHandlers();

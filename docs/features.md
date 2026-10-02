@@ -55,23 +55,23 @@ to another app. This page is where they're compared.
 
 ## Organizing
 
-| Feature                                  | Mac                      | Web          | iPhone         |
-| ---------------------------------------- | ------------------------ | ------------ | -------------- |
-| Archive, trash, restore, junk / not junk | ✓                        | ✓            | ✓              |
-| Delete forever                           | ✓                        | ✓            | ✓              |
-| Empty Trash / Empty Junk                 | ✓                        | ✓            | —              |
-| Star (flag), read / unread               | ✓                        | ✓            | ✓              |
-| Mark all as read                         | —                        | —            | ✓              |
-| Multi-select and bulk actions            | ✓ (⌘/⇧-click)            | ✓            | —              |
-| Undo and redo (z ⌘Z, ⇧Z ⇧⌘Z)             | ✓                        | ✓            | —              |
-| Apply / remove labels                    | ✓ (IMAP: move to folder) | ✓            | ✓ (IMAP: move) |
-| Create, rename, delete labels            | ✓ (IMAP: folders)        | ✓            | —              |
-| Label colors                             | edit (Gmail)             | edit (Gmail) | shown (Gmail)  |
-| Nested labels                            | ✓                        | ✓            | —              |
-| Drag conversations onto labels           | ✓                        | ✓            | —              |
-| Swipe actions                            | —                        | —            | ✓ (fixed)      |
-| After archive: next / previous           | ✓                        | ✓            | ✓              |
-| Snooze                                   | —                        | —            | —              |
+| Feature                                  | Mac                            | Web                             | iPhone         |
+| ---------------------------------------- | ------------------------------ | ------------------------------- | -------------- |
+| Archive, trash, restore, junk / not junk | ✓                              | ✓                               | ✓              |
+| Delete forever                           | ✓                              | ✓                               | ✓              |
+| Empty Trash / Empty Junk                 | ✓                              | ✓                               | —              |
+| Star (flag), read / unread               | ✓                              | ✓                               | ✓              |
+| Mark all as read                         | —                              | —                               | ✓              |
+| Multi-select and bulk actions            | ✓ (⌘/⇧-click)                  | ✓                               | —              |
+| Undo and redo (z ⌘Z, ⇧Z ⇧⌘Z)             | ✓                              | ✓                               | —              |
+| Apply / remove labels                    | ✓ (IMAP: move to folder)       | ✓                               | ✓ (IMAP: move) |
+| Create, rename, delete labels            | ✓ (IMAP: folders)              | ✓                               | —              |
+| Label colors                             | edit (Gmail)                   | edit (Gmail)                    | shown (Gmail)  |
+| Nested labels                            | ✓                              | ✓                               | —              |
+| Drag conversations onto labels           | ✓                              | ✓                               | —              |
+| Swipe actions                            | —                              | —                               | ✓ (fixed)      |
+| After archive: next / previous           | ✓                              | ✓                               | ✓              |
+| Snooze                                   | ✓ (on this device, while open) | ✓ (on this browser, while open) | —              |
 
 ## Projects
 
@@ -94,20 +94,29 @@ conversations are in one, never their mail.
 
 ## Composing & sending
 
-| Feature                                | Mac                                            | Web | iPhone                   |
-| -------------------------------------- | ---------------------------------------------- | --- | ------------------------ |
-| New, reply, reply all                  | ✓                                              | ✓   | ✓                        |
-| Forward                                | ✓ (with attachments)                           | ✓   | last message's text only |
-| Cc / Bcc                               | ✓ / ✓                                          | ✓   | ✓ / —                    |
-| From: pick the mailbox                 | ✓                                              | ✓   | ✓                        |
-| Contact suggestions (from cached mail) | ✓                                              | ✓   | —                        |
-| Attachments (25 MB)                    | ✓                                              | ✓   | —                        |
-| Rich text (bold, lists, links, quotes) | ✓                                              | ✓   | —                        |
-| Drafts                                 | autosaved, conflict-aware                      | ✓   | saved on close           |
-| Undo send (10 s)                       | ✓                                              | ✓   | —                        |
-| Send later                             | —                                              | —   | —                        |
-| Signatures                             | Gmail: saved in Gmail; IMAP: synced preference | ✓   | ✓ (same)                 |
-| Handles mailto: links                  | ✓ (default mail app)                           | —   | —                        |
+| Feature                                | Mac                                            | Web                             | iPhone                   |
+| -------------------------------------- | ---------------------------------------------- | ------------------------------- | ------------------------ |
+| New, reply, reply all                  | ✓                                              | ✓                               | ✓                        |
+| Forward                                | ✓ (with attachments)                           | ✓                               | last message's text only |
+| Cc / Bcc                               | ✓ / ✓                                          | ✓                               | ✓ / —                    |
+| From: pick the mailbox                 | ✓                                              | ✓                               | ✓                        |
+| Contact suggestions (from cached mail) | ✓                                              | ✓                               | —                        |
+| Attachments (25 MB)                    | ✓                                              | ✓                               | —                        |
+| Rich text (bold, lists, links, quotes) | ✓                                              | ✓                               | —                        |
+| Drafts                                 | autosaved, conflict-aware                      | ✓                               | saved on close           |
+| Undo send (10 s)                       | ✓                                              | ✓                               | —                        |
+| Send later                             | ✓ (on this device, while open)                 | ✓ (on this browser, while open) | —                        |
+| Signatures                             | Gmail: saved in Gmail; IMAP: synced preference | ✓                               | ✓ (same)                 |
+| Handles mailto: links                  | ✓ (default mail app)                           | —                               | —                        |
+
+Scheduled sends and snoozes work with Gmail and IMAP on Mac and web. The queue is local to
+that device/browser, survives restarts, and runs overdue actions when the app next opens.
+Snooze is available in the reader toolbar and a conversation's right-click menu.
+“Scheduled & snoozed” appears only when the queue is nonempty and lists every mailbox's
+pending actions: cancel a send to restore its
+contents to Drafts, or return a snoozed conversation to Inbox early. A failed or interrupted
+send stays there for review; check Sent before sending again, since delivery may be uncertain.
+These are Otter Mail actions, separate from Gmail's own scheduled and snoozed folders.
 
 ## Search
 
@@ -276,4 +285,5 @@ profile`).
 - Mac and web: Mark all as read (iPhone has it).
 - Web: translation outside Chrome.
 - Web: offline bodies (the Mac downloads them).
-- All: remote-image blocking, print, show original, snooze, send later.
+- iPhone: snooze and send later.
+- All: remote-image blocking, print, show original.
