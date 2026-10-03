@@ -1,45 +1,46 @@
 import SwiftUI
 import WebKit
 
-/**
- * An HTML message (newsletters, mostly) in WebKit, as tall as its content so
- * it scrolls with the conversation. It's shown as the sender designed it, on
- * a card; links open in the browser.
- */
+/** An HTML message in WebKit, as tall as its content so it scrolls with the conversation. */
 struct HTMLBody: View {
     let html: String
-    /** Images it shows inline (`cid:` references), and how to get their bytes. */
     var inline: [Attachment] = []
-    var load: (Attachment) async -> Data? = { _ in nil }
+    var load: @MainActor @Sendable (Attachment) async -> Data? = { _ in nil }
 
-    @State private var page = WebPage(navigationDecider: OpenLinksOutside())
+    @State private var page: WebPage?
     @State private var height: CGFloat = 200
 
     var body: some View {
-        WebView(page)
-            .scrollDisabled(true)
-            .frame(height: height)
-            .clipShape(.rect(cornerRadius: 14))
-            .task(id: html) {
-                do {
-                    for try await event in page.load(html: Self.fitted(await withImages()), baseURL: URL(string: "about:blank")!) {
-                        guard event == .finished else { continue }
-                        if let measured = try await page.callJavaScript("return document.documentElement.scrollHeight") as? Double {
-                            height = measured
-                        }
-                    }
-                } catch {}
+        Group {
+            if let page {
+                WebView(page).scrollDisabled(true)
+            } else {
+                ProgressView().frame(maxWidth: .infinity)
             }
-    }
-
-    /** The HTML with each `cid:` image it references swapped for the image itself. */
-    private func withImages() async -> String {
-        var html = html
-        for image in inline {
-            guard let cid = image.contentID, html.contains("cid:\(cid)"), let data = await load(image) else { continue }
-            html = html.replacingOccurrences(of: "cid:\(cid)", with: "data:\(image.mimeType);base64,\(data.base64EncodedString())")
         }
-        return html
+        .frame(height: height)
+        .clipShape(.rect(cornerRadius: 14))
+        .task(id: html) {
+            var configuration = WebPage.Configuration()
+            configuration.urlSchemeHandlers[URLScheme("cid")!] = InlineImages(images: inline, load: load)
+            let binding = $height
+            configuration.userContentController.add(HeightObserver { value in
+                if abs(binding.wrappedValue - value) >= 1 { binding.wrappedValue = value }
+            }, name: "messageHeight")
+            configuration.userContentController.addUserScript(WKUserScript(source: """
+                const report = () => window.webkit.messageHandlers.messageHeight.postMessage(document.documentElement.scrollHeight);
+                new ResizeObserver(report).observe(document.body);
+                report();
+                """, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+            let next = WebPage(configuration: configuration, navigationDecider: OpenLinksOutside())
+            page = next
+            do {
+                // WebKit renders the text immediately and requests inline images as subresources.
+                for try await _ in next.load(html: Self.fitted(html), baseURL: URL(string: "about:blank")!) {
+                    try Task.checkCancellation()
+                }
+            } catch {}
+        }
     }
 
     /** Fits fixed-width mail (600px tables) to the phone. */
@@ -56,6 +57,15 @@ struct HTMLBody: View {
         """
     }
 
+    private final class HeightObserver: NSObject, WKScriptMessageHandler {
+        let update: (CGFloat) -> Void
+        init(update: @escaping (CGFloat) -> Void) { self.update = update }
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard let value = message.body as? Double, value.isFinite, value > 0 else { return }
+            update(ceil(value))
+        }
+    }
+
     private struct OpenLinksOutside: WebPage.NavigationDeciding {
         func decidePolicy(
             for action: WebPage.NavigationAction,
@@ -64,6 +74,30 @@ struct HTMLBody: View {
             guard action.navigationType == .linkActivated, let url = action.request.url else { return .allow }
             await UIApplication.shared.open(url)
             return .cancel
+        }
+    }
+}
+
+/** No base64 copies of the whole document, and a slow attachment doesn't delay the text. */
+nonisolated struct InlineImages: URLSchemeHandler {
+    let images: [Attachment]
+    let load: @MainActor @Sendable (Attachment) async -> Data?
+
+    func reply(for request: URLRequest) -> AsyncThrowingStream<URLSchemeTaskResult, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                guard let url = request.url,
+                      let cid = String(url.absoluteString.dropFirst(4)).removingPercentEncoding,
+                      let image = images.first(where: { $0.contentID == cid }),
+                      let data = await load(image), !Task.isCancelled else {
+                    continuation.finish(throwing: URLError(.resourceUnavailable))
+                    return
+                }
+                continuation.yield(.response(URLResponse(url: url, mimeType: image.mimeType, expectedContentLength: data.count, textEncodingName: nil)))
+                continuation.yield(.data(data))
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 }

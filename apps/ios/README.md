@@ -11,9 +11,9 @@ their code.
   the desktop, each with its folders and labels, then Compose and Settings. Settings is ChatGPT's grouped sheet.
 - **The desktop's rows.** Who and when, the subject, a line of the latest message; the mailbox's dot
   in All mailboxes. Swipe for read, archive and trash; long-press for the rest.
-- **iOS's own bars.** The list's bottom bar (agent, search, compose) and the reader's buttons are
-  the system's glass toolbar. Replying starts from a glass field at the bottom, like ChatGPT's
-  composer.
+- **iOS's own bars.** The list's bottom bar has compact search and agent buttons on the right; Compose lives in the
+  sidebar. The reader has compact glass buttons for Archive and Trash on the left and Reply on the right.
+  Tap Reply for the sender, or hold it for Reply, Reply all and Forward.
 - **Every theme.** The themes are the desktop's (`Resources/Themes.json`), light and dark, blended
   the same way (`Theme/Theme.swift`).
 

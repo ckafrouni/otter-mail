@@ -2,8 +2,8 @@ import SwiftUI
 
 /**
  * A conversation: its subject as the headline, then each message, earlier
- * read ones folded to a line. Reply sits at the bottom like ChatGPT's
- * composer; archiving moves on as Settings › After archive says.
+ * read ones folded to a line. Compact reply and archive buttons sit at the
+ * bottom; archiving moves on as Settings › After archive says.
  */
 struct ThreadView: View {
     @Environment(MailStore.self) private var store
@@ -31,7 +31,7 @@ struct ThreadView: View {
 
     private func content(_ thread: MailThread, _ mailbox: Mailbox) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 Text(thread.subject)
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(palette.text)
@@ -128,7 +128,7 @@ struct ThreadView: View {
         }
     }
 
-    /** Archive (or Trash), and Reply as ChatGPT's composer: a glass field at the bottom. */
+    /** Archive and Trash stay together, with Reply on the other side of the message. */
     private func replyBar(_ thread: MailThread, _ mailbox: Mailbox) -> some View {
         let inInbox = thread.labels.contains("INBOX")
         return HStack(spacing: 10) {
@@ -139,26 +139,43 @@ struct ThreadView: View {
             .labelStyle(.iconOnly)
             .font(.system(size: 19))
             .foregroundStyle(palette.text)
-            .frame(width: 52, height: 52)
+            .frame(width: 44, height: 44)
             .glassEffect(.regular.interactive(), in: .circle)
 
-            Button {
-                draft = .reply(to: thread, in: mailbox, all: false)
-            } label: {
-                HStack {
-                    Text("Reply to \(replyName(thread, mailbox))")
-                        .foregroundStyle(palette.muted)
-                        .lineLimit(1)
-                    Spacer()
-                    Image(systemName: "arrowshape.turn.up.left")
-                        .foregroundStyle(palette.text)
+            if inInbox {
+                Button("Trash", systemImage: "trash") {
+                    store.trash(thread.id)
+                    leave(thread)
                 }
-                .padding(.horizontal, 20)
-                .frame(height: 52)
-                .contentShape(.capsule)
+                .labelStyle(.iconOnly)
+                .font(.system(size: 19))
+                .foregroundStyle(palette.text)
+                .frame(width: 44, height: 44)
+                .glassEffect(.regular.interactive(), in: .circle)
             }
-            .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: .capsule)
+
+            Spacer()
+
+            Button("Reply to \(replyName(thread, mailbox))", systemImage: "arrowshape.turn.up.left") {
+                draft = .reply(to: thread, in: mailbox, all: false)
+            }
+            .labelStyle(.iconOnly)
+            .font(.system(size: 19))
+            .foregroundStyle(palette.text)
+            .frame(width: 44, height: 44)
+            .glassEffect(.regular.interactive(), in: .circle)
+            .contextMenu {
+                Button("Reply", systemImage: "arrowshape.turn.up.left") {
+                    draft = .reply(to: thread, in: mailbox, all: false)
+                }
+                Button("Reply all", systemImage: "arrowshape.turn.up.left.2") {
+                    draft = .reply(to: thread, in: mailbox, all: true)
+                }
+                Button("Forward", systemImage: "arrowshape.turn.up.right") {
+                    draft = .forward(thread, in: mailbox)
+                }
+            }
+            .accessibilityHint("Touch and hold for Reply all or Forward")
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 4)

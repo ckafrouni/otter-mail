@@ -15,6 +15,38 @@ struct MobileMailTests {
         return MailThread(id: id, mailbox: mailbox, subject: "Hello", labels: labels, messages: [message])
     }
 
+    @Test func folderCachesFollowEditsSyncAndMailboxVisibility() throws {
+        let name = "FolderCacheTests.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let preferences = Preferences(defaults: defaults)
+        let personal = mailbox(), work = mailbox("work@example.com")
+        let first = thread("one"), second = thread("two", mailbox: work.email)
+        let store = MailStore(preferences: preferences, mailboxes: [personal, work], threads: [first, second])
+        for _ in 0..<2 {
+            #expect(store.threads(in: .inbox, scope: nil).count == 2)
+            #expect(store.unreadCount(in: .inbox, scope: nil) == 2)
+        }
+        store.setRead(true, first.id)
+        #expect(store.unreadCount(in: .inbox, scope: nil) == 1)
+        #expect(store.threads(in: .inbox, scope: nil).first { $0.id == first.id }?.unread == false)
+        store.setOn(false, work)
+        #expect(store.threads(in: .inbox, scope: nil).map(\.id) == [first.id])
+        #expect(store.unreadCount(in: .inbox, scope: nil) == 0)
+        store.setOn(true, work)
+        #expect(store.unreadCount(in: .inbox, scope: nil) == 1)
+        store.archive(second.id)
+        #expect(store.threads(in: .inbox, scope: nil).count == 1)
+        store.undo()
+        #expect(store.threads(in: .inbox, scope: nil).count == 2)
+        var fresh = second
+        fresh.messages[0].unread = false
+        store.upsert(threads: [fresh])
+        #expect(store.unreadCount(in: .inbox, scope: nil) == 0)
+        store.remove(threadIDs: [first.id])
+        #expect(store.threads(in: .inbox, scope: nil).map(\.id) == [second.id])
+    }
+
     @Test func undoRestoresFoldersWithoutLosingFreshMessageContent() {
         let original = thread("one", labels: ["INBOX", "Label_1"])
         let store = MailStore(preferences: Preferences(), mailboxes: [mailbox()], threads: [original])

@@ -11,7 +11,12 @@ import SwiftUI
 @Observable
 final class MailStore {
     private(set) var mailboxes: [Mailbox]
-    private(set) var threads: [MailThread]
+    private(set) var threads: [MailThread] {
+        didSet { folderThreads.removeAll(); unreadCounts.removeAll() }
+    }
+    @ObservationIgnored private var folderThreads: [Place: [MailThread]] = [:]
+    @ObservationIgnored private var unreadCounts: [Place: Int] = [:]
+    @ObservationIgnored private var cachedShown: [String] = []
     let preferences: Preferences
     private(set) var recoveredDrafts: [RecoveredDraft] = []
     @ObservationIgnored private var recoveryDirectory: URL?
@@ -103,11 +108,32 @@ final class MailStore {
 
     /** A folder's threads in `scope` (a mailbox's address, or nil for all shown), newest first. */
     func threads(in folder: Folder, scope: String?) -> [MailThread] {
-        inScope(scope).filter { matches($0, folder) }.sorted { $0.latest.date > $1.latest.date }
+        prepareFolderCache()
+        let key = Place(scope: scope, folder: folder)
+        if let cached = folderThreads[key] { return cached }
+        let result = inScope(scope).filter { matches($0, folder) }.sorted { $0.latest.date > $1.latest.date }
+        folderThreads[key] = result
+        return result
     }
 
     func unreadCount(in folder: Folder, scope: String?) -> Int {
-        inScope(scope).filter { $0.unread && matches($0, folder) }.count
+        prepareFolderCache()
+        let key = Place(scope: scope, folder: folder)
+        if let cached = unreadCounts[key] { return cached }
+        let count = inScope(scope).reduce(0) { $0 + ($1.unread && matches($1, folder) ? 1 : 0) }
+        unreadCounts[key] = count
+        return count
+    }
+
+    private func prepareFolderCache() {
+        // Cache hits must still subscribe the view to mail and visibility changes.
+        _ = threads
+        let shown = shownMailboxes.map(\.email)
+        if cachedShown != shown {
+            cachedShown = shown
+            folderThreads.removeAll()
+            unreadCounts.removeAll()
+        }
     }
 
     /** A folder's count in the sidebar, as on the desktop: its unread mail, but every draft in Drafts and none on All Mail. */
@@ -189,6 +215,8 @@ final class MailStore {
 
     func upsert(threads fresh: [MailThread]) {
         guard !fresh.isEmpty else { return }
+        var updated = threads
+        var changed = false
         var index = Dictionary(uniqueKeysWithValues: threads.enumerated().map { ($1.id, $0) })
         for var thread in fresh {
             if let pending = undoAction, pending.threads.contains(where: { $0.id == thread.id }) {
@@ -196,12 +224,14 @@ final class MailStore {
                 else { thread.labels.remove("INBOX") }
             }
             if let i = index[thread.id] {
-                if threads[i] != thread { threads[i] = thread }
+                if updated[i] != thread { updated[i] = thread; changed = true }
             } else {
-                index[thread.id] = threads.count
-                threads.append(thread)
+                index[thread.id] = updated.count
+                updated.append(thread)
+                changed = true
             }
         }
+        if changed { threads = updated }
     }
 
     func remove(threadIDs: Set<String>) {

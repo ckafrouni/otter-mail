@@ -139,6 +139,9 @@ conversations are in one, never their mail.
 | Signatures                             | Gmail: saved in Gmail; IMAP: synced preference | ✓   | ✓ (same)                                       |
 | Handles mailto: links                  | ✓ (default mail app)                           | —   | —                                              |
 
+On iPhone, Compose lives in the sidebar. In a conversation, tap the compact Reply button to
+reply to the sender, or hold it for Reply, Reply all and Forward; Trash sits beside Archive.
+
 ## Search
 
 | Feature                        | Mac                                                                        | Web | iPhone                                 |
@@ -182,7 +185,7 @@ conversations are in one, never their mail.
 | New mail during a long sync           | ✓                                  | ✓                      | —                                    |
 | Changes applied at once, synced after | ✓                                  | ✓                      | ✓ (no outbox)                        |
 
-On iPhone, conversations zoom from their list rows (respecting Reduce Motion), the navigation bar minimizes while scrolling, and selection morphs the glass buttons into bulk actions.
+On iPhone, conversations zoom from their list rows (respecting Reduce Motion), the reader's navigation bar minimizes while scrolling, and selection morphs the glass buttons into bulk actions. The mail list keeps its header in place during search and returns to a compact search button when search closes.
 
 ## Settings & customization
 

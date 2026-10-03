@@ -20,15 +20,21 @@ final class MailSync {
     private var running: [String: Task<Void, Never>] = [:]
     private var watching: [String: Task<Void, Never>] = [:]
     private var saving: Task<Void, Never>?
+    @ObservationIgnored private let cache: MailCache
+    @ObservationIgnored private var cacheLoad: Task<Void, Never>?
+    @ObservationIgnored private var forgotten: Set<String> = []
+    private(set) var loadingCache = false
+    @ObservationIgnored private var stopped = false
     /** Mailboxes with a provider call under way, and the calls waiting their turn. */
     private var busy: Set<String> = []
     private var waiting: [String: [CheckedContinuation<Void, Never>]] = [:]
     /** Folder pages being fetched ("email key"), so the same page isn't asked for twice at once. */
     private var paging: Set<String> = []
 
-    init(store: MailStore, google: GoogleAuth) {
+    init(store: MailStore, google: GoogleAuth, cache: MailCache = .live) {
         self.store = store
         self.google = google
+        self.cache = cache
     }
 
     /** The mailbox's provider: IMAP when it has IMAP settings, else Gmail. */
@@ -55,6 +61,9 @@ final class MailSync {
     private func run(
         _ email: String, _ body: (any MailProvider, inout MailboxState, [MailThread]) async throws -> MailDelta
     ) async throws -> MailDelta {
+        await waitForCache()
+        try Task.checkCancellation()
+        guard !stopped, store.mailbox(email) != nil else { throw CancellationError() }
         let provider = provider(email)
         let turns = provider.takesTurns
         if turns, busy.contains(email) {
@@ -72,6 +81,8 @@ final class MailSync {
         }
         var state = states[email] ?? MailboxState()
         let delta = try await body(provider, &state, store.allThreads(of: email))
+        try Task.checkCancellation()
+        guard !stopped, store.mailbox(email) != nil else { throw CancellationError() }
         states[email] = state
         store.remove(threadIDs: delta.removed.subtracting(delta.threads.map(\.id)))
         store.upsert(threads: delta.threads)
@@ -81,30 +92,30 @@ final class MailSync {
 
     // ── The cache ────────────────────────────────────────────────────────────
 
-    private struct Cached: Codable {
-        var mailbox: Mailbox
-        var state: MailboxState
-        var threads: [MailThread]
-    }
-
-    private static let folder = URL.applicationSupportDirectory.appending(path: "mail", directoryHint: .isDirectory)
-    private static func file(_ email: String) -> URL { folder.appending(path: "\(email.lowercased()).json") }
-
-    /** The mailboxes as they were last time, straight from disk. */
+    /** Restore before network sync, without holding up the first frame or gestures. */
     func loadCache(for emails: [String]) {
-        for email in emails {
-            guard
-                let data = try? Data(contentsOf: Self.file(email)),
-                let cached = try? JSONDecoder().decode(Cached.self, from: data)
-            else { continue }
-            states[email] = cached.state
-            store.upsert(mailbox: cached.mailbox)
-            store.upsert(threads: cached.threads)
+        guard cacheLoad == nil else { return }
+        loadingCache = true
+        let mailboxes = Dictionary(uniqueKeysWithValues: store.mailboxes.map { ($0.email, $0) })
+        cacheLoad = Task {
+            let snapshots = await cache.load(emails)
+            defer { loadingCache = false }
+            guard !Task.isCancelled else { return }
+            for cached in snapshots where !forgotten.contains(cached.mailbox.email) && store.mailbox(cached.mailbox.email) != nil {
+                states[cached.mailbox.email] = cached.state
+                if store.mailbox(cached.mailbox.email) == mailboxes[cached.mailbox.email] {
+                    store.upsert(mailbox: cached.mailbox)
+                }
+                store.upsert(threads: cached.threads)
+            }
         }
     }
 
+    func waitForCache() async { await cacheLoad?.value }
+
     /** Writes the copy soon (changes come in bursts). */
     private func scheduleSave() {
+        guard !stopped else { return }
         saving?.cancel()
         saving = Task {
             try? await Task.sleep(for: .seconds(1))
@@ -114,22 +125,20 @@ final class MailSync {
     }
 
     private func save() {
-        try? FileManager.default.createDirectory(at: Self.folder, withIntermediateDirectories: true)
-        for mailbox in store.mailboxes where !mailbox.signedOut {
-            // The newest few hundred threads are plenty to open with; the rest reloads.
-            let threads = store.allThreads(of: mailbox.email).sorted { $0.latest.date > $1.latest.date }.prefix(400)
-            let cached = Cached(mailbox: mailbox, state: states[mailbox.email] ?? MailboxState(), threads: Array(threads))
-            try? JSONEncoder().encode(cached).write(to: Self.file(mailbox.email), options: .atomic)
+        let snapshots = store.mailboxes.filter { !$0.signedOut && !forgotten.contains($0.email) }.map { mailbox in
+            MailCache.Snapshot(mailbox: mailbox, state: states[mailbox.email] ?? MailboxState(), threads: store.allThreads(of: mailbox.email))
         }
+        cache.save(snapshots)
     }
 
     func forget(_ email: String) {
+        forgotten.insert(email)
         states[email] = nil
         providers[email] = nil
         running[email]?.cancel()
         running[email] = nil
         watching.removeValue(forKey: email)?.cancel()
-        try? FileManager.default.removeItem(at: Self.file(email))
+        cache.remove(email)
     }
 
     /** Signed out (or moved to other servers): the provider and its IDLE go; the copy stays. */
@@ -139,8 +148,11 @@ final class MailSync {
     }
 
     func forgetAll() {
+        stopped = true
+        saving?.cancel()
+        cacheLoad?.cancel()
         for email in Set(states.keys).union(providers.keys) { forget(email) }
-        try? FileManager.default.removeItem(at: Self.folder)
+        cache.removeAll()
     }
 
     // ── Syncing ──────────────────────────────────────────────────────────────
@@ -156,6 +168,9 @@ final class MailSync {
 
     /** Catches one mailbox up (one sync at a time per mailbox). */
     func sync(_ email: String, notify: Bool = false) async {
+        await waitForCache()
+        guard !stopped, !Task.isCancelled, store.mailbox(email) != nil else { return }
+        forgotten.remove(email)
         if let running = running[email] { return await running.value }
         let task = Task { await catchUp(email, notify: notify) }
         running[email] = task
@@ -250,11 +265,13 @@ final class MailSync {
 
     /** A page on opening the folder where none yet says where its list ends, before the list gets there (not before a first sync). */
     func open(_ folder: Folder, scope: String?) async {
+        await waitForCache()
         let key = Self.key(folder)
         await loadMore(folder, in: mailboxes(scope).filter { states[$0]?.unbounded(key) == true })
     }
 
     private func loadMore(_ folder: Folder, in emails: [String]) async {
+        await waitForCache()
         let key = Self.key(folder)
         for email in emails where states[email]?.pages[key] != "" && paging.insert("\(email) \(key)").inserted {
             _ = try? await run(email) { provider, state, known in try await provider.loadMore(folder, &state, known: known) }
@@ -264,6 +281,7 @@ final class MailSync {
 
     /** The servers' search, in each mailbox of `scope`; answers the matching thread ids. */
     func search(_ query: String, scope: String?) async -> [String] {
+        await waitForCache()
         var found: [String] = []
         for email in mailboxes(scope) {
             guard let (ids, threads) = try? await provider(email).search(query, known: store.allThreads(of: email)) else { continue }

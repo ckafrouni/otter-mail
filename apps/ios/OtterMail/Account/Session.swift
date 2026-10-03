@@ -30,6 +30,7 @@ final class Session {
     @ObservationIgnored let google = GoogleAuth()
     @ObservationIgnored private var sync: MailSync?
     @ObservationIgnored private var pushTopic: String?
+    @ObservationIgnored private var refreshing: Task<Void, Never>?
     /** The account's `ui` and `settings` sections as last seen, so writes keep the keys only other apps have. */
     @ObservationIgnored private var remoteSections: [String: [String: Any]] = [:]
     @ObservationIgnored private var pushingPreferences: Task<Void, Never>?
@@ -99,15 +100,27 @@ final class Session {
 
     /** Everything from the relay, then mail from Gmail: on launch, and when the app comes back. */
     func refreshAccount() async {
-        guard case .signedIn = state else { return }
-        async let preferences: Void = pullPreferences()
-        async let accounts: Void = pullAccounts()
-        _ = await (preferences, accounts)
-        if pushTopic == nil { pushTopic = try? await relay.me().pushTopic }
-        connect()
-        await sync?.syncAll()
-        await sync?.watch(pushTopic: pushTopic)
-        await updateBadge()
+        if let refreshing { return await refreshing.value }
+        guard case .signedIn = state, let currentSync = sync else { return }
+        let task = Task {
+            await currentSync.waitForCache()
+            guard !Task.isCancelled, sync === currentSync else { return }
+            async let preferences: Void = pullPreferences()
+            async let accounts: Void = pullAccounts()
+            _ = await (preferences, accounts)
+            guard !Task.isCancelled, sync === currentSync else { return }
+            if pushTopic == nil { pushTopic = try? await relay.me().pushTopic }
+            guard !Task.isCancelled, sync === currentSync else { return }
+            connect()
+            await currentSync.syncAll()
+            guard !Task.isCancelled, sync === currentSync else { return }
+            await currentSync.watch(pushTopic: pushTopic)
+            await updateBadge()
+        }
+        refreshing = task
+        await task.value
+        // A newer session may already be refreshing after sign-out.
+        if sync === currentSync { refreshing = nil }
     }
 
     /** Listens to the relay while the app is open. */
@@ -412,6 +425,8 @@ final class Session {
 
     /** Back to the welcome screen, with nothing of the account left here. */
     private func endSession() {
+        refreshing?.cancel()
+        refreshing = nil
         store.commitPendingAction()
         store.clearRecovery()
         let mailboxes = store.mailboxes

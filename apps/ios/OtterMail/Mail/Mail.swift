@@ -119,10 +119,12 @@ nonisolated struct Message: Identifiable, Hashable, Codable {
 
     /** The message's own words (not the history it quotes), whitespace collapsed, as Gmail's snippet. */
     var snippet: String {
-        Quote.split(text).body.split(whereSeparator: \.isNewline)
+        // A one-line preview must not scan megabytes of newsletter or quoted history while scrolling.
+        let body = Quote.split(String(text.prefix(4096))).body
+        return String(body.split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && !$0.hasPrefix(">") }
-            .joined(separator: " ")
+            .joined(separator: " ").prefix(240))
     }
 }
 

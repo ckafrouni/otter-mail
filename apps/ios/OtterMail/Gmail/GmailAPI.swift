@@ -64,7 +64,8 @@ nonisolated struct GmailAPI {
         return ((response.threads ?? []).map(\.id), response.nextPageToken)
     }
 
-    /** A whole thread; nil when it's gone. */
+    /** A whole thread; decode JSON, MIME and HTML off the caller's actor. Nil when it's gone. */
+    @concurrent
     func thread(_ id: String) async throws -> MailThread? {
         do {
             let thread: GmailThread = try await get("threads/\(id)", query: [.init(name: "format", value: "full")])
@@ -138,6 +139,7 @@ nonisolated struct GmailAPI {
         return Dictionary((response.drafts ?? []).map { ($0.message.id, $0.id) }) { a, _ in a }
     }
 
+    @concurrent
     func attachment(message: String, id: String) async throws -> Data {
         struct Response: Decodable { var data: String }
         let response: Response = try await get("messages/\(message)/attachments/\(id)")

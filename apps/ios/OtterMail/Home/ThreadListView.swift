@@ -2,8 +2,8 @@ import SwiftUI
 
 /**
  * A folder's threads, laid out like Otter Code's task list: who, what, and a
- * line of it. The bottom bar is iOS's own: search, the agent (when it's on)
- * and compose (the sidebar is a swipe from the left, or a tap on the title).
+ * line of it. The bottom bar is iOS's own: search and the agent (when it's on).
+ * Compose lives in the sidebar, a swipe from the left or a tap on the title.
  */
 struct ThreadListView: View {
     @Environment(MailStore.self) private var store
@@ -16,7 +16,6 @@ struct ThreadListView: View {
     let messageTransition: Namespace.ID
     let onDrawer: () -> Void
     let onAgent: () -> Void
-    let onCompose: () -> Void
     let onSettings: () -> Void
     let onResume: (Draft) -> Void
 
@@ -74,7 +73,10 @@ struct ThreadListView: View {
                     .task(id: "\(place)-\(sync.cursor(place.folder, scope: place.scope))") { await sync.loadMore(place.folder, scope: place.scope) }
             }
 
-            if threads.isEmpty && (searching || recoveries.isEmpty) && !(store.sync?.hasMore(place.folder, scope: place.scope) ?? false) {
+            if store.sync?.loadingCache == true && threads.isEmpty {
+                ProgressView().frame(maxWidth: .infinity).listRowSeparator(.hidden)
+            }
+            if store.sync?.loadingCache != true && threads.isEmpty && (searching || recoveries.isEmpty) && !(store.sync?.hasMore(place.folder, scope: place.scope) ?? false) {
                 ContentUnavailableView(
                     searching ? "No results" : "Nothing in \(place.folder.title)",
                     systemImage: searching ? "magnifyingglass" : place.folder.symbol,
@@ -92,6 +94,10 @@ struct ThreadListView: View {
         .background(palette.canvas)
         .contentMargins(.bottom, 24, for: .scrollContent)
         .searchable(text: $query, prompt: "Search")
+        // Keep the header in place and return to a button instead of expanding
+        // another search field while the keyboard is being dismissed.
+        .searchPresentationToolbarBehavior(.avoidHidingContent)
+        .searchToolbarBehavior(.minimize)
         .task(id: place) {
             collapsedDays.removeAll()
             selected.removeAll()
@@ -143,8 +149,9 @@ struct ThreadListView: View {
                 }
                 ToolbarSpacer(.flexible, placement: .bottomBar)
             } else {
+                ToolbarSpacer(.flexible, placement: .bottomBar)
                 DefaultToolbarItem(kind: .search, placement: .bottomBar)
-                ToolbarSpacer(.fixed, placement: .bottomBar)
+                if session.agent.isOn { ToolbarSpacer(.fixed, placement: .bottomBar) }
             }
             if selecting || session.agent.isOn {
                 ToolbarItem(id: "secondary-action", placement: .bottomBar) {
@@ -173,24 +180,19 @@ struct ThreadListView: View {
                         }
                     }.disabled(selected.isEmpty)
                 }
-            } else if session.agent.isOn {
-                ToolbarSpacer(.fixed, placement: .bottomBar)
             }
-            if !selecting || place.folder != .trash {
+            if selecting && place.folder != .trash {
                 ToolbarItem(id: "primary-action", placement: .bottomBar) {
-                    if selecting {
-                        Button("Move to Trash", systemImage: "trash", role: .destructive) { store.trash(selected); endSelection() }
-                            .disabled(selected.isEmpty)
-                    } else {
-                        Button("New message", systemImage: "square.and.pencil", action: onCompose)
-                    }
+                    Button("Move to Trash", systemImage: "trash", role: .destructive) { store.trash(selected); endSelection() }
+                        .disabled(selected.isEmpty)
                 }
             }
         }
         .onChange(of: threads.map(\.id)) { _, ids in selected.formIntersection(ids) }
         .onChange(of: query) { _, _ in selected.removeAll() }
         .toolbarTitleDisplayMode(.inline)
-        .minimizingNavigationBar(enabled: !selecting && !searching)
+        // Search and scroll minimization otherwise animate the same bar's insets.
+        .minimizingNavigationBar(enabled: false)
     }
 
     /** The folder's threads, down to where its pages reached (so the next page adds to the bottom). */
