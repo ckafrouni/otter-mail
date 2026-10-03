@@ -22,6 +22,9 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.hostname === "mail.otterware.dev") {
+      // Google's consent screen still links Otter Mail's home page here: the
+      // product page, not the app (which only asks a visitor to sign in).
+      if (url.pathname === "/") return Response.redirect(`${SITE}/`, 301);
       url.protocol = "https:";
       url.hostname = "mail.otterware.app";
       url.port = "";

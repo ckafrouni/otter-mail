@@ -20,7 +20,15 @@ function serve(url: string, accept?: string) {
 const html = "text/html,application/xhtml+xml,*/*;q=0.8";
 
 describe("site domain migration", () => {
-  it.each(["/", "/app?view=inbox", "/privacy/", "/assets/app.js?version=2", "/missing"])(
+  it("sends the old domain's home page, the consent screen's, to Otter Mail's page", async () => {
+    const { response, fetch } = serve("https://mail.otterware.dev/");
+    const result = await response;
+    expect(result.status).toBe(301);
+    expect(result.headers.get("location")).toBe("https://otterware.app/mail/");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each(["/app?view=inbox", "/privacy/", "/assets/app.js?version=2", "/missing"])(
     "redirects the old domain's %s before serving assets",
     async (path) => {
       const { response, fetch } = serve(`https://mail.otterware.dev${path}`);
