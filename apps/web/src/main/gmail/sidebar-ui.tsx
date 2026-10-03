@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { ChevronDownIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { ScrollArea } from "~/components/ui/scroll-area";
 
 import type { KeybindingCommand } from "../keybindings/commands";
 import { HintTooltip, IconBtn, UnreadPill } from "./ui";
@@ -63,9 +64,12 @@ export function NewRow({
 /** A sidebar's scrolling body, under its heading and New row. */
 export function SidebarBody({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-0 flex-1 scroll-fade-y overflow-y-auto px-(--sidebar-content-inset) pb-8 pt-3">
+    <ScrollArea
+      className="flex-1"
+      viewportClassName="scroll-fade-y px-(--sidebar-content-inset) pb-8 pt-3"
+    >
       {children}
-    </div>
+    </ScrollArea>
   );
 }
 

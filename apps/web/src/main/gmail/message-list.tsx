@@ -11,6 +11,7 @@ import {
 } from "../theme/interface-settings";
 import { Dialog } from "~/components/ui/dialog";
 import { EmptyState } from "~/components/ui/empty-state";
+import { ScrollArea } from "~/components/ui/scroll-area";
 import { Text } from "~/components/ui/text";
 import { toast } from "./toast";
 import {
@@ -102,6 +103,9 @@ type MessageListProps = {
   renderFloatingReader?: (navigation: ReactNode, title: string) => ReactNode;
   /** Rendered at the start of the title band (window title when the sidebar is hidden). */
   headerLeading?: ReactNode;
+  /** Clip the list to the shared panel's corners where it meets the frame. */
+  roundedLeft?: boolean;
+  roundedRight?: boolean;
   /** A view's space has no sidebar: the list names it, and New message and Edit are here. */
   space?: { name: string; onCompose: () => void; onEdit: () => void };
   /** Active account — used for account-mode queries and as a fallback owner id. */
@@ -290,7 +294,7 @@ function MessageDayGroup({
   const unread = group.messages.filter((message) => message.threadUnread ?? message.unread).length;
   return (
     <section data-message-day={group.day}>
-      <h3 className="sticky top-0 z-10 bg-(--sidebar-panel-surface)">
+      <h3 className="sticky top-0 z-10 bg-canvas">
         <button
           type="button"
           data-message-day-header=""
@@ -817,6 +821,8 @@ function formatMailboxSummary(total: number, unread: number): string {
 export function MessageList({
   headerLeading,
   headerTrailing,
+  roundedLeft,
+  roundedRight,
   renderFloatingReader,
   space,
   accountId,
@@ -1848,14 +1854,22 @@ export function MessageList({
         {headerTrailing}
       </div>
 
-      <div
+      <ScrollArea
         ref={scrollRef}
         data-message-list-style={messageListStyle}
         data-group-messages-by-day={groupByDay || undefined}
         data-dim-read-messages={dimReadMessages || undefined}
         onScroll={maybeLoadMore}
-        className={[
-          "message-list-scroll min-h-0 flex-1 overflow-y-auto pb-1 pt-[9px] [scrollbar-gutter:stable_both-edges]",
+        className={cn(
+          "flex-1",
+          roundedLeft && "rounded-bl-xl",
+          roundedRight && "rounded-br-xl",
+          !search && roundedLeft && "rounded-tl-xl",
+          !search && roundedRight && "rounded-tr-xl",
+        )}
+        contentClassName={filteredMessages.length === 0 ? "h-full" : undefined}
+        viewportClassName={[
+          "message-list-scroll pb-1 pt-[9px]",
           checked.size > 0 ? "pb-16" : "",
         ].join(" ")}
       >
@@ -1950,7 +1964,7 @@ export function MessageList({
             ) : null}
           </>
         )}
-      </div>
+      </ScrollArea>
 
       {checked.size > 0 ? (
         <div className="absolute inset-x-0 bottom-3 z-10 flex justify-center px-3">

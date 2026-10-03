@@ -25,6 +25,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { changelogUrl } from "@otter-mail/shared/changelog";
+import { ScrollArea } from "~/components/ui/scroll-area";
 import { gmailApi, type SettingsPane } from "../gmail/api";
 import {
   DropdownMenu,
@@ -136,7 +137,11 @@ export function SettingsNav({
 
   return (
     <>
-      <div className="flex min-h-0 flex-1 flex-col gap-0.5 scroll-fade-y overflow-y-auto px-(--sidebar-content-inset) pb-8 pt-3">
+      <ScrollArea
+        className="flex-1"
+        viewportClassName="scroll-fade-y px-(--sidebar-content-inset) pb-8 pt-3"
+        contentClassName="flex flex-col gap-0.5"
+      >
         <h2 className="mb-1 flex h-8 items-center px-(--sidebar-row-content-inset) text-base font-semibold text-sidebar-foreground">
           Settings
         </h2>
@@ -250,7 +255,7 @@ export function SettingsNav({
             );
           })
         )}
-      </div>
+      </ScrollArea>
       <div className="flex shrink-0 flex-col gap-0.5 px-(--sidebar-content-inset) pt-1 pb-(--sidebar-content-inset)">
         {features.defaultMailApp ? <DefaultMailRow /> : null}
         <div className="flex items-center gap-1">

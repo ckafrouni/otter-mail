@@ -197,6 +197,7 @@ On iPhone, conversations zoom from their list rows (respecting Reduce Motion), t
 | Contrast, glass opacity, font size, reading width                                                                | ✓   | ✓   | —                                                                          |
 | Message list styles: Classic, With dividers                                                                      | ✓   | ✓   | ✓                                                                          |
 | Collapsible day separators, on by default in every mail layout                                                   | ✓   | ✓   | ✓                                                                          |
+| Overlay scrollbars in the mail panes and Settings, hidden when idle                                              | ✓   | ✓   | native                                                                     |
 | Dim read message backgrounds, on by default in every mail layout                                                 | ✓   | ✓   | ✓                                                                          |
 | Keyboard navigation highlights rows; Enter opens (optional open with arrows)                                     | ✓   | ✓   | —                                                                          |
 | Configurable delay before keyboard previews are marked read (2 seconds by default); clicks mark read immediately | ✓   | ✓   | —                                                                          |

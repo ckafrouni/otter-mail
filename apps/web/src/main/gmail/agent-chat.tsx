@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { MessageScroller } from "@shadcn/react/message-scroller";
+import { ScrollArea } from "~/components/ui/scroll-area";
 import {
   ArrowDownIcon,
   ChevronDownIcon,
@@ -1827,7 +1828,11 @@ export function AgentChatPanel({
       ) : (
         <MessageScroller.Provider autoScroll defaultScrollPosition="end">
           <MessageScroller.Root className="relative min-h-0 flex-1">
-            <MessageScroller.Viewport className="topbar-scroll-fade h-full overflow-y-auto px-3 pb-3 pt-(--workspace-titlebar-scroll-fade-height)">
+            <ScrollArea
+              className="h-full"
+              viewportClassName="topbar-scroll-fade px-3 pb-3 pt-(--workspace-titlebar-scroll-fade-height)"
+              render={<MessageScroller.Viewport />}
+            >
               <MessageScroller.Content className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-2">
                 {turns.length === 0 && hydrating === activeId ? (
                   <div className="px-2 pt-6 text-center text-sm text-placeholder">
@@ -1910,7 +1915,7 @@ export function AgentChatPanel({
                   );
                 })}
               </MessageScroller.Content>
-            </MessageScroller.Viewport>
+            </ScrollArea>
             <MessageScroller.Button
               direction="end"
               render={(props, state) =>

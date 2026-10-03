@@ -44,11 +44,10 @@
   /* The rail of spaces down the window's left edge (space-rail.tsx),
      under the title band; the panes start after it. */
   --workspace-rail-width: 52px;
-  --app-scrollbar-width: 6px;
   /* Height of the fade under borderless top bars (Otter Code). */
   --workspace-titlebar-scroll-fade-height: 1.5rem;
-  --app-scrollbar-thumb: rgb(217 217 217);
-  --app-scrollbar-thumb-hover: rgb(191 191 191);
+  --app-scrollbar-thumb: color-mix(in srgb, var(--foreground) 18%, transparent);
+  --app-scrollbar-thumb-hover: color-mix(in srgb, var(--foreground) 28%, transparent);
   --glass-blur: 12px;
   --glass-opacity: 80%;
   /* The Mac window's frame over its glass (home-view.tsx): thinner than
@@ -139,8 +138,6 @@ html[data-platform="web"] {
   );
 }
 .dark {
-  --app-scrollbar-thumb: rgb(255 255 255 / 8%);
-  --app-scrollbar-thumb-hover: rgb(255 255 255 / 12%);
   --glass-blur: 16px;
   --glass-saturation: 1.08;
   --appearance-contrast-target: white;
@@ -738,33 +735,6 @@ html[data-theme-switching] *::after {
   color: var(--muted-foreground);
 }
 
-/* Slim scrollbars everywhere (6px thumb, no track). */
-::-webkit-scrollbar {
-  width: var(--app-scrollbar-width);
-  height: var(--app-scrollbar-width);
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-/* Overlay-style, like Codex: the thumb shows while its scroller is hovered. */
-::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 3px;
-}
-:hover::-webkit-scrollbar-thumb {
-  background: var(--app-scrollbar-thumb);
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--app-scrollbar-thumb-hover);
-}
-.te-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
-.te-scroll:hover {
-  scrollbar-color: var(--app-scrollbar-thumb) transparent;
-}
-
 /* In-page tooltip entrance (see HintTooltip). */
 @keyframes tooltip-in {
   from {
@@ -823,7 +793,7 @@ html[data-theme-switching] *::after {
 
 /*
  * Otter Code's borderless top bar: scrolled content fades out beneath it
- * instead of meeting a hairline. The scrollbar lane stays opaque.
+ * instead of meeting a hairline. The overlay scrollbar sits outside the mask.
  */
 @utility topbar-scroll-fade {
   -webkit-mask-image:
@@ -837,13 +807,12 @@ html[data-theme-switching] *::after {
       rgb(0 0 0 / 96%) 82%,
       black 100%
     ),
-    linear-gradient(black, black), linear-gradient(black, black);
-  -webkit-mask-position: top, bottom, right;
+    linear-gradient(black, black);
+  -webkit-mask-position: top, bottom;
   -webkit-mask-repeat: no-repeat;
   -webkit-mask-size:
     100% calc(var(--workspace-titlebar-scroll-fade-height) + 1px),
-    100% calc(100% - var(--workspace-titlebar-scroll-fade-height)),
-    var(--app-scrollbar-width) 100%;
+    100% calc(100% - var(--workspace-titlebar-scroll-fade-height));
   mask-image:
     linear-gradient(
       to bottom,
@@ -855,13 +824,12 @@ html[data-theme-switching] *::after {
       rgb(0 0 0 / 96%) 82%,
       black 100%
     ),
-    linear-gradient(black, black), linear-gradient(black, black);
-  mask-position: top, bottom, right;
+    linear-gradient(black, black);
+  mask-position: top, bottom;
   mask-repeat: no-repeat;
   mask-size:
     100% calc(var(--workspace-titlebar-scroll-fade-height) + 1px),
-    100% calc(100% - var(--workspace-titlebar-scroll-fade-height)),
-    var(--app-scrollbar-width) 100%;
+    100% calc(100% - var(--workspace-titlebar-scroll-fade-height));
 }
 
 /* A scroller whose rows fade out at both ends instead of being cut off by

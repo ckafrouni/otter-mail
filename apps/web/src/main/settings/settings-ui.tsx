@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { Undo2Icon } from "lucide-react";
+import { ScrollArea } from "~/components/ui/scroll-area";
 import { cn, HintTooltip } from "../gmail/ui";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../gmail/select";
 
@@ -340,7 +341,7 @@ export function SettingsPageContainer({
 }) {
   const headerRef = useSettingsSearchTarget<HTMLElement>(searchId);
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto" data-settings-page-scroll="">
+    <ScrollArea className="flex-1" data-settings-page-scroll="">
       <div
         {...props}
         className={cn("mx-auto w-full max-w-[47rem] space-y-10 px-6 pb-20 pt-14", className)}
@@ -373,7 +374,7 @@ export function SettingsPageContainer({
         ) : null}
         {children}
       </div>
-    </div>
+    </ScrollArea>
   );
 }
 

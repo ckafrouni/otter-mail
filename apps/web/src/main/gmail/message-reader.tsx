@@ -13,6 +13,7 @@ import {
 import { Popover } from "radix-ui";
 import { Dialog } from "~/components/ui/dialog";
 import { EmptyState } from "~/components/ui/empty-state";
+import { ScrollArea } from "~/components/ui/scroll-area";
 import { Text } from "~/components/ui/text";
 import { sendWithUndo } from "./undo-send";
 import { toast } from "./toast";
@@ -2867,11 +2868,10 @@ export function MessageReader({
         ) : null}
 
         {/* Conversation */}
-        <div
-          className={cn(
-            // The scrollbar's lane on both sides, always: the centered column
-            // doesn't slide when expanding a message makes the thread scroll.
-            "min-h-0 flex-1 overflow-y-auto pb-6 [scrollbar-gutter:stable_both-edges]",
+        <ScrollArea
+          className="flex-1"
+          viewportClassName={cn(
+            "pb-6",
             // Room for the pinned summary, so the column centers beside it.
             summaryShown && "pr-[18rem]",
           )}
@@ -2939,7 +2939,7 @@ export function MessageReader({
               });
             })()}
           </div>
-        </div>
+        </ScrollArea>
 
         {/* Pinned in the reader's top-right corner, still while the conversation scrolls. */}
         {summaryShown ? (

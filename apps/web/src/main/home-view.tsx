@@ -285,12 +285,12 @@ function PaneResizer({ onPointerDown }: { onPointerDown: (e: ReactPointerEvent) 
 const PANE = "min-h-0 overflow-hidden";
 /** The sidebar's body sits in the panel, between the frame's tone and the
     canvas, with a faint full-height divider before the list. */
-const PANE_SIDEBAR = `${PANE} relative text-sidebar-foreground before:pointer-events-none before:absolute before:bottom-px before:left-px before:right-0 before:top-[calc(var(--workspace-topbar-height)+1px)] before:-z-10 before:rounded-l-[calc(var(--radius-xl)-1px)] before:bg-(--sidebar-panel-surface) after:pointer-events-none after:absolute after:bottom-0 after:right-0 after:top-0 after:w-px after:bg-border/70`;
+const PANE_SIDEBAR = `${PANE} relative text-sidebar-foreground before:pointer-events-none before:absolute before:bottom-px before:left-px before:right-0 before:top-[calc(var(--workspace-topbar-height)+1px)] before:-z-10 before:rounded-l-[calc(var(--radius-xl)-1px)] before:bg-(--sidebar-panel-surface) after:pointer-events-none after:absolute after:bottom-0 after:right-0 after:top-0 after:z-20 after:w-px after:bg-border/70`;
 /** Faint full-height dividers, through the title band (ChatGPT): on the
     list's right, the chat's left. */
-const PANE_LIST = `${PANE} relative after:pointer-events-none after:absolute after:bottom-0 after:right-0 after:top-0 after:w-px after:bg-border/70`;
+const PANE_LIST = `${PANE} relative after:pointer-events-none after:absolute after:bottom-0 after:right-0 after:top-0 after:z-20 after:w-px after:bg-border/70`;
 const PANE_MAIN = PANE;
-const PANE_CHAT = `${PANE} relative before:pointer-events-none before:absolute before:bottom-0 before:left-0 before:top-0 before:w-px before:bg-border/70`;
+const PANE_CHAT = `${PANE} relative before:pointer-events-none before:absolute before:bottom-0 before:left-0 before:top-0 before:z-20 before:w-px before:bg-border/70`;
 /** Clips a collapsible pane while its width animates open or closed (Otter
     Code's panel animations); the pane keeps its width so nothing reflows. */
 const PANE_FRAME =
@@ -1361,7 +1361,12 @@ function MailHome() {
             {/* The inset content panel, behind the panes and under their title bands. */}
             <div
               aria-hidden
-              className="pointer-events-none absolute bottom-1 left-0 right-1 top-(--workspace-topbar-height) -z-10 rounded-xl border border-(--panel-edge) bg-canvas"
+              className="pointer-events-none absolute bottom-1 left-0 right-1 top-(--workspace-topbar-height) -z-10 rounded-xl bg-canvas"
+            />
+            {/* The rim stays above sticky day headers and the panes' surfaces. */}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute bottom-1 left-0 right-1 top-(--workspace-topbar-height) z-30 rounded-xl border border-(--panel-edge)"
             />
             <div
               ref={setMailWorkspace}
@@ -1496,6 +1501,8 @@ function MailHome() {
                       <MessageList
                         headerLeading={sidebarOpen ? null : <TitlebarInset />}
                         headerTrailing={wideInbox ? titleTrailing : undefined}
+                        roundedLeft={!sidebarOpen}
+                        roundedRight={wideInbox && !chatOpen}
                         renderFloatingReader={
                           floatingLayout && !composeOpen
                             ? (navigation, title) => (
