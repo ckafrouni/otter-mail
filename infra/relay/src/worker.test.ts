@@ -654,7 +654,8 @@ describe("preferences", () => {
 
     const { token: other } = await signIn("someone-else@example.com");
     expect(await preferences(other)).toEqual({ preferences: {}, hermesKey: null });
-  });
+    // Inspecting D1 starts a second Wrangler runtime; allow its cold start in CI.
+  }, 30_000);
 
   it("keeps every section when devices write at the same time", async () => {
     const { token } = await signIn("prefs-race@example.com");
