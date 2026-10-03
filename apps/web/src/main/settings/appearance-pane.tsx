@@ -85,6 +85,7 @@ import {
   SettingsSection,
 } from "./settings-ui";
 import { searchableSetting } from "./settings-search";
+import { AppIconPicker } from "./app-icon-picker";
 
 export type ColorScheme = "system" | "light" | "dark";
 
@@ -1027,6 +1028,7 @@ export function AppearancePane() {
         </SettingsSection>
 
         <ThemeLibrary />
+        <AppIconPicker />
       </div>
 
       <MailLayoutPicker />

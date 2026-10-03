@@ -189,7 +189,10 @@ export function createBuildConfig(options: {
     nodeGypRebuild: false,
     files: ["package.json", "dist-electron/**/*", "renderer/**/*", "!**/*.map"],
     directories: { buildResources: "resources", output: "dist" },
-    extraResources: [{ from: "bin/translator", to: "bin/translator" }],
+    extraResources: [
+      { from: "bin/translator", to: "bin/translator" },
+      { from: "resources/app-icons", to: "app-icons" },
+    ],
     mac: {
       target: options.target === "dmg" ? ["dmg", "zip"] : ["zip"],
       category: "public.app-category.productivity",

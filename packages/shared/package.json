@@ -5,6 +5,7 @@
   "description": "What every app shows the same, the iPhone app included: the color themes, the demo mailbox and what views can wear; and the changelog's format, for the site.",
   "type": "module",
   "exports": {
+    "./app-icons": "./src/app-icons.ts",
     "./themes": "./src/theme-palettes.ts",
     "./theme-display": "./src/theme-display.ts",
     "./demo-mailboxes": "./src/demo-mailboxes.ts",

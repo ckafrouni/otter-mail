@@ -16,6 +16,9 @@ their code.
   Tap Reply for the sender, or hold it for Reply, Reply all and Forward.
 - **Every theme.** The themes are the desktop's (`Resources/Themes.json`), light and dark, blended
   the same way (`Theme/Theme.swift`).
+- **App icons.** Appearance has an independent icon picker for the seven built-in palettes.
+  UIKit remembers the choice on this iPhone. `pnpm icons:themes` exports the alternate icons and
+  their previews from the existing brand artwork, together with the Mac and web variants.
 
 ## How it works
 

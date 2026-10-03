@@ -15,8 +15,10 @@ import { focusMainWindow } from "../windows/main-window.js";
 import { setSettingsTarget, takeSettingsTarget } from "../windows/settings-window.js";
 import { registerTrayPopoverHandlers } from "./tray-popover.js";
 import { registerSupportHandlers } from "./support.js";
+import { registerAppIconHandlers } from "./app-icon.js";
 
 export function registerHandlers(): void {
+  registerAppIconHandlers();
   // Settings live in the main window. Any window can deep-link into a pane;
   // the main window pulls the target on mount and whenever settings:open is
   // broadcast.

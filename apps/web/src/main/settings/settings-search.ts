@@ -185,6 +185,12 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   // Appearance
   {
+    id: "app-icon",
+    title: "App icon",
+    pane: "appearance",
+    searchTerms: ["dock favicon otter colors icon"],
+  },
+  {
     id: "color-scheme",
     title: "Color scheme",
     pane: "appearance",
