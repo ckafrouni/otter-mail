@@ -40,8 +40,22 @@ import type { MailView } from "../types.js";
 const UI_FILE = "ui-preferences.json";
 export type UiPreferences = Record<string, string>;
 
-export async function getUiPreferences(): Promise<UiPreferences> {
-  return (await readJson<UiPreferences>(UI_FILE)) ?? {};
+export async function getUiPreferences(initialize = false): Promise<UiPreferences> {
+  const cached = (await readJson<UiPreferences>(UI_FILE)) ?? {};
+  // A new browser has no palette yet. Fetch it before its first render instead
+  // of waiting for the event stream; returning browsers keep the local fast path.
+  if (
+    initialize &&
+    platform().relaySession === "cookie" &&
+    getOtterUser() &&
+    Object.keys(cached).length === 0
+  ) {
+    await pullPreferences().catch((err: unknown) =>
+      logger.info("preferences", `Couldn't load initial appearance: ${String(err)}`),
+    );
+    return (await readJson<UiPreferences>(UI_FILE)) ?? cached;
+  }
+  return cached;
 }
 
 async function writeUiPreferences(ui: UiPreferences): Promise<void> {

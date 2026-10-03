@@ -25,6 +25,10 @@ if (!window.desktopBridge) {
     document.body.replaceChildren(main);
     throw err;
   }
+  const { loadSyncedPreferences } = await import("./synced-preferences");
+  await loadSyncedPreferences(true).catch((err) =>
+    console.warn("Couldn't load UI preferences", err),
+  );
 }
 
 await import("./app");

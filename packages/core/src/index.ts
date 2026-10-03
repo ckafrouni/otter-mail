@@ -48,7 +48,9 @@ export async function startCore(platform: Platform): Promise<void> {
   registerProjectHandlers();
   registerTodoistHandlers();
   handle("keybindings:read", async () => readKeybindings());
-  handle("preferences:getUi", async () => getUiPreferences());
+  handle("preferences:getUi", async (params: unknown) =>
+    getUiPreferences((params as { initialize?: unknown } | undefined)?.initialize === true),
+  );
   handle("preferences:setUi", async (params: unknown) => {
     const { key, value } = (params ?? {}) as { key?: unknown; value?: unknown };
     if (typeof key !== "string" || typeof value !== "string")

@@ -63,15 +63,25 @@ function apply(ui: UiPreferences, skip: ReadonlySet<string> = new Set()): void {
   }
 }
 
+let initialPreferences: Promise<void> | undefined;
+
+/** The browser awaits this before mounting, so its first render uses its saved palette. */
+export function loadSyncedPreferences(initialize = false): Promise<void> {
+  return (initialPreferences ??= window.desktopBridge
+    .invoke<UiPreferences>("preferences:getUi", { initialize })
+    .then((ui) => {
+      const newer = new Set(settled);
+      for (const key of SYNCED_KEYS) {
+        const here = localStorage.getItem(key);
+        if (ui[key] === undefined && here !== null && !newer.has(key))
+          setSyncedPreference(key, here);
+      }
+      apply(ui, newer);
+    }));
+}
+
 /** Takes the account's UI choices, gives it the ones it lacks, and follows its changes. */
 export function startSyncedPreferences(): () => void {
-  void window.desktopBridge.invoke<UiPreferences>("preferences:getUi").then((ui) => {
-    const newer = new Set(settled);
-    for (const key of SYNCED_KEYS) {
-      const here = localStorage.getItem(key);
-      if (ui[key] === undefined && here !== null && !newer.has(key)) setSyncedPreference(key, here);
-    }
-    apply(ui, newer);
-  });
+  void loadSyncedPreferences().catch((err) => console.warn("Couldn't load UI preferences", err));
   return window.desktopBridge.on("preferences:uiChanged", (ui) => apply(ui as UiPreferences));
 }
