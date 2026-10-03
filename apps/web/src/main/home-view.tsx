@@ -71,7 +71,7 @@ import {
   type UndoAction,
 } from "./gmail/undo";
 import { getAccountColor, getAccountContrastColor } from "./gmail/account-style";
-import { gmailApi, type ChatChange, type MailtoTarget } from "./gmail/api";
+import { gmailApi, type ChatChange, type MailtoTarget, type SettingsPane } from "./gmail/api";
 import type { QuoteContext } from "./gmail/chat-context";
 import type { GmailAccount, GmailMessageSummary, MailView } from "./gmail/types";
 import {
@@ -366,6 +366,10 @@ function MailHome() {
   const [mailtoPrefill, setMailtoPrefill] = useState<MailtoTarget | null>(null);
   const [mailtoSeq, setMailtoSeq] = useState(0);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // The pane Settings was last on: opening it again without asking for one
+  // (the menu, ⌘,) returns there.
+  const lastPaneRef = useRef<SettingsPane>("general");
+  if (settingsRoute) lastPaneRef.current = settingsRoute.pane;
   // In-app settings page; null = mail. Opened from the sidebar footer, ⌘,
   // (menu accelerator → backend broadcast), or any window's deep link.
   const openSettings = useCallback(
@@ -388,8 +392,9 @@ function MailHome() {
       try {
         const target = await gmailApi.getSettingsTarget();
         if (!target) return;
-        console.log("[HomeView:openSettings]", { pane: target.pane });
-        openSettingsRef.current({ pane: target.pane });
+        const pane = target.pane ?? lastPaneRef.current;
+        console.log("[HomeView:openSettings]", { pane });
+        openSettingsRef.current({ pane });
       } catch (error) {
         console.log("[HomeView:getSettingsTarget] failed", { error: String(error) });
       }
@@ -1351,7 +1356,7 @@ function MailHome() {
             selectedSpaceId={effectiveAccountId}
             onSelectSpace={handleSelectAccount}
             settingsOpen={settingsRoute !== null}
-            onOpenSettings={(pane = "general") => openSettings({ pane })}
+            onOpenSettings={(pane = lastPaneRef.current) => openSettings({ pane })}
             onSync={syncNow}
             syncing={globalSync.syncing || manualSyncing}
           />
@@ -1725,7 +1730,7 @@ function MailHome() {
           onSelectAccount={handleSelectAccount}
           onOpenProject={openProject}
           onCompose={() => setComposeOpen(true)}
-          onOpenSettings={(pane = "general") => openSettings({ pane })}
+          onOpenSettings={(pane = lastPaneRef.current) => openSettings({ pane })}
           onNewView={() => openViewEditor("new")}
           onToggleChat={toggleChat}
           onToggleSidebar={toggleSidebar}

@@ -30,9 +30,10 @@ export function registerHandlers(): void {
       p?.pane === "accounts" ||
       p?.pane === "keybindings" ||
       p?.pane === "agents" ||
+      p?.pane === "integrations" ||
       p?.pane === "otter"
         ? p.pane
-        : "general";
+        : undefined;
     setSettingsTarget({ pane });
     await focusMainWindow();
     broadcast("settings:open");

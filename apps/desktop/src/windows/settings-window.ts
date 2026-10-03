@@ -1,5 +1,13 @@
 export type SettingsTarget = {
-  pane: "general" | "appearance" | "keybindings" | "accounts" | "agents" | "otter";
+  /** None: the pane Settings was last on. */
+  pane?:
+    | "general"
+    | "appearance"
+    | "keybindings"
+    | "accounts"
+    | "agents"
+    | "integrations"
+    | "otter";
 };
 
 // Where the in-app settings page should navigate on open. The main window

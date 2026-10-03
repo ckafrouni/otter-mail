@@ -379,7 +379,8 @@ export type SettingsPane =
   | "integrations"
   /** The Otter account page, opened from the user button at the bottom of the nav. */
   | "otter";
-export type SettingsTarget = { pane: SettingsPane };
+/** No pane: the one Settings was last on. */
+export type SettingsTarget = { pane?: SettingsPane };
 
 export type AddImapAccountParams = {
   email: string;
