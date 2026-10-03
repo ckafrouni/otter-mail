@@ -122,7 +122,7 @@ struct HomeView: View {
     }
 
     private func setDrawer(open: Bool) {
-        withAnimation(reduceMotion ? nil : .smooth(duration: 0.32)) { drawerOpen = open }
+        withAnimation(reduceMotion ? nil : .smooth(duration: 0.2)) { drawerOpen = open }
     }
 }
 
@@ -149,7 +149,7 @@ private struct MailDrawer<Sidebar: View, Content: View>: View {
                         if isOpen {
                             Color.black.opacity((colorScheme == .dark ? 0.3 : 0.08) * offset / width)
                                 .clipShape(.rect(cornerRadius: 44))
-                                .onTapGesture { withAnimation(reduceMotion ? nil : .smooth(duration: 0.32)) { isOpen = false } }
+                                .onTapGesture { withAnimation(reduceMotion ? nil : .smooth(duration: 0.2)) { isOpen = false } }
                                 .gesture(gesture(width: width))
                         }
                     }
@@ -173,7 +173,7 @@ private struct MailDrawer<Sidebar: View, Content: View>: View {
             .onChanged { value in drag = value.translation.width }
             .onEnded { value in
                 let open = (isOpen ? width : 0) + value.predictedEndTranslation.width > width / 2
-                withAnimation(reduceMotion ? nil : .interpolatingSpring(duration: 0.35, bounce: 0)) {
+                withAnimation(reduceMotion ? nil : .interpolatingSpring(duration: 0.2, bounce: 0)) {
                     isOpen = open
                     drag = 0
                 }

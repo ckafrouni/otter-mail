@@ -9,6 +9,7 @@ import SwiftUI
 struct ThemeSettings: View {
     @Environment(Preferences.self) private var preferences
     @Environment(\.palette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ScrollView {
@@ -19,7 +20,7 @@ struct ThemeSettings: View {
                         light: preferences.lightTheme == theme.id,
                         dark: preferences.darkTheme == theme.id,
                         onPick: { modes in
-                            withAnimation(.smooth) {
+                            withAnimation(reduceMotion ? nil : .smooth(duration: 0.2)) {
                                 if modes.contains(.light) { preferences.lightTheme = theme.id }
                                 if modes.contains(.dark) { preferences.darkTheme = theme.id }
                             }

@@ -8,6 +8,7 @@ import SwiftUI
 struct SidebarView: View {
     @Environment(MailStore.self) private var store
     @Environment(\.palette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @Binding var place: Place
     let onSelect: (Place) -> Void
@@ -17,6 +18,8 @@ struct SidebarView: View {
     /** The page shown: a mailbox's address, or `Self.all`. */
     @State private var page: String?
     private static let all = "__all__"
+
+    private var pageAnimation: Animation? { reduceMotion ? nil : .smooth(duration: 0.2) }
 
     private var pages: [String] {
         (store.offersCombined ? [Self.all] : []) + store.shownMailboxes.map(\.email)
@@ -51,7 +54,7 @@ struct SidebarView: View {
         .background(palette.sidebar)
         .onAppear { page = place.scope ?? Self.all }
         .onChange(of: place.scope) { _, scope in
-            withAnimation(.smooth) { page = scope ?? Self.all }
+            withAnimation(pageAnimation) { page = scope ?? Self.all }
         }
         .onChange(of: page) { _, page in
             // Swiped to another mailbox: the list behind follows.
@@ -75,7 +78,7 @@ struct SidebarView: View {
             }
             .scrollIndicators(.hidden)
             .onChange(of: page) { _, page in
-                withAnimation(.smooth) { reader.scrollTo(page, anchor: .center) }
+                withAnimation(pageAnimation) { reader.scrollTo(page, anchor: .center) }
             }
         }
     }
@@ -84,7 +87,7 @@ struct SidebarView: View {
         let selected = (page ?? Self.all) == key
         let mailbox = store.mailbox(key)
         return Button {
-            withAnimation(.smooth) { page = key }
+            withAnimation(pageAnimation) { page = key }
         } label: {
             HStack(spacing: 6) {
                 if let mailbox {

@@ -23,6 +23,7 @@ struct ThreadListView: View {
     @State private var query = ""
     @State private var selecting = false
     @State private var selected: Set<String> = []
+    @State private var swipedThread: String?
     /** What Gmail's search found for `query` (it knows mail that isn't loaded here). */
     @State private var found: (query: String, ids: [String]) = ("", [])
 
@@ -92,6 +93,11 @@ struct ThreadListView: View {
         .listSectionSeparator(.hidden, edges: .top)
         .scrollContentBackground(.hidden)
         .background(palette.canvas)
+        .onScrollPhaseChange { _, phase in
+            if phase != .idle { swipedThread = nil }
+        }
+        .onChange(of: selecting) { _, _ in swipedThread = nil }
+        .onChange(of: query) { _, _ in swipedThread = nil }
         .contentMargins(.bottom, 24, for: .scrollContent)
         .searchable(text: $query, prompt: "Search")
         // Keep the header in place and return to a button instead of expanding
@@ -99,6 +105,7 @@ struct ThreadListView: View {
         .searchPresentationToolbarBehavior(.avoidHidingContent)
         .searchToolbarBehavior(.minimize)
         .task(id: place) {
+            swipedThread = nil
             collapsedDays.removeAll()
             selected.removeAll()
             selecting = false
@@ -117,7 +124,7 @@ struct ThreadListView: View {
         }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                Button(action: onDrawer) {
+                Button { swipedThread = nil; onDrawer() } label: {
                     Header(title: searching ? "Search" : place.folder.title, scope: scopeName)
                 }
                 .buttonStyle(.plain)
@@ -129,7 +136,7 @@ struct ThreadListView: View {
                     Button("Done", action: endSelection)
                 } else {
                     Menu("More", systemImage: "ellipsis") {
-                        Button("Select messages", systemImage: "checkmark.circle") { withAnimation(selectionAnimation) { selecting = true } }
+                        Button("Select messages", systemImage: "checkmark.circle") { withAnimation(actionAnimation) { selecting = true } }
                             .disabled(threads.isEmpty)
                         Button("Mark all as read", systemImage: "envelope.open") {
                             for thread in threads where thread.unread { store.setRead(true, thread.id) }
@@ -218,10 +225,10 @@ struct ThreadListView: View {
         }
     }
 
-    private var selectionAnimation: Animation? { reduceMotion ? nil : .smooth(duration: 0.3) }
+    private var actionAnimation: Animation? { reduceMotion ? nil : .smooth(duration: 0.18) }
 
     private func endSelection() {
-        withAnimation(selectionAnimation) { selected.removeAll(); selecting = false }
+        withAnimation(actionAnimation) { selected.removeAll(); selecting = false }
     }
 
     private var bulkLabels: some View {
@@ -308,7 +315,9 @@ struct ThreadListView: View {
                     .matchedTransitionSource(id: thread.id, in: messageTransition)
             }
         }
-        .listRowBackground(
+        .padding(.horizontal, 20)
+        .padding(.vertical, 9)
+        .background(
             palette.canvas.overlay {
                 if preferences.dimReadMessages && !thread.unread && !thread.isDraft {
                     RoundedRectangle(cornerRadius: preferences.messageListStyle == .classic ? 8 : 0)
@@ -323,33 +332,43 @@ struct ThreadListView: View {
                 }
             }
         )
-        .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: 9, leading: 20, bottom: 9, trailing: 20))
-        .swipeActions(edge: .leading) {
-            if !selecting {
-                Button(thread.unread ? "Read" : "Unread", systemImage: thread.unread ? "envelope.open" : "envelope.badge") {
-                    store.setRead(thread.unread, thread.id)
-                }
-                .tint(palette.focus)
-            }
-        }
-        .swipeActions(edge: .trailing) {
-            if !selecting {
-                if place.folder == .trash || place.folder == .junk {
-                    Button("Delete", systemImage: "trash", role: .destructive) { store.deleteForever(thread.id) }
-                    Button("Inbox", systemImage: "tray.and.arrow.down") { store.moveToInbox(thread.id) }
-                } else {
-                    Button("Trash", systemImage: "trash", role: .destructive) { store.trash(thread.id) }
-                    if thread.labels.contains("INBOX") {
-                        Button("Archive", systemImage: "archivebox") { store.archive(thread.id) }
-                            .tint(.indigo)
-                    }
-                }
-            }
-        }
         .contextMenu {
             if !selecting { ThreadActions(thread: thread) }
         }
+        .modifier(MailSwipeActions(
+            id: thread.id, activeRow: $swipedThread,
+            leading: selecting ? [] : [
+                MailSwipeAction(title: thread.unread ? "Read" : "Unread", symbol: thread.unread ? "envelope.open" : "envelope.badge", tint: palette.focus) {
+                    withAnimation(actionAnimation) { store.setRead(thread.unread, thread.id) }
+                },
+            ],
+            trailing: selecting ? [] : trailingActions(thread)
+        ))
+        .listRowBackground(palette.canvas)
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets())
+    }
+
+    private func trailingActions(_ thread: MailThread) -> [MailSwipeAction] {
+        if place.folder == .trash || place.folder == .junk {
+            return [
+                MailSwipeAction(title: "Delete", symbol: "trash", tint: .red) {
+                    withAnimation(actionAnimation) { store.deleteForever(thread.id) }
+                },
+                MailSwipeAction(title: "Inbox", symbol: "tray.and.arrow.down", tint: palette.focus) {
+                    withAnimation(actionAnimation) { store.moveToInbox(thread.id) }
+                },
+            ]
+        }
+        var actions = [MailSwipeAction(title: "Trash", symbol: "trash", tint: .red) {
+            withAnimation(actionAnimation) { store.trash(thread.id) }
+        }]
+        if thread.labels.contains("INBOX") {
+            actions.append(MailSwipeAction(title: "Archive", symbol: "archivebox", tint: .indigo) {
+                withAnimation(actionAnimation) { store.archive(thread.id) }
+            })
+        }
+        return actions
     }
 
     /** "Inbox Personal": the folder, then where it is, quieter (Otter Code's wordmark). */

@@ -10,6 +10,7 @@ struct ThreadView: View {
     @Environment(Preferences.self) private var preferences
     @Environment(Session.self) private var session
     @Environment(\.palette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let threadID: String
     let place: Place
@@ -47,7 +48,7 @@ struct ThreadView: View {
                         if message.draft {
                             draft = .resume(message, in: thread)
                         } else if !open {
-                            withAnimation(.snappy) { _ = expanded.insert(message.id) }
+                            withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) { _ = expanded.insert(message.id) }
                         }
                     }
                     if message.id != thread.messages.last?.id {
