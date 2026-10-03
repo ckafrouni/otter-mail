@@ -266,6 +266,14 @@ async function invoke<T>(channel: string, params?: unknown): Promise<T> {
     if (result?.redirectTo) location.assign(result.redirectTo);
     return result as T;
   }
+  if (channel === "otter:signOut" && !__DEMO__) {
+    const form = document.createElement("form");
+    form.method = "post";
+    form.action = `${RELAY_URL}/v1/auth/browser-sign-out/start`;
+    document.body.appendChild(form);
+    form.submit();
+    return undefined as T;
+  }
   let result: T;
   try {
     result = await backend.invoke<T>(channel, params);

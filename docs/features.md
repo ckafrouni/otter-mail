@@ -290,6 +290,9 @@ The Google-backed Otter identity also signs in to Otter Drive. Drive receives on
 claims; Gmail authorization stays with Mail. Existing Mail accounts and sessions keep their IDs.
 Sign-in and account management live at `accounts.otterware.app`, an independent service with
 its own identity database. Mail's old endpoints remain compatible with installed clients.
+The web apps automatically reuse an existing Accounts login in the same browser. **Sign out
+of Otter** in either web app signs out of both Mail and Drive in that browser, including
+older sessions. Other browsers, the Mac and iPhone apps, and CLI credentials stay signed in.
 Accounts used by Drive are deleted through the central account page, which confirms
 the effect on both apps and requires transferring or deleting owned shared drives first. Older Mail
 clients receive a link to that page instead of deleting a shared identity without confirmation.

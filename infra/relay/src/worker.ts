@@ -161,6 +161,27 @@ app.notFound((c) => c.json({ error: "Not found." }, 404));
 app.get("/", (c) => c.text("Otter Mail relay\n"));
 
 /** Sign-in, sign-out, devices and account deletion. */
+// Standalone local development has no Accounts service. Production forwards
+// this request above to the coordinator that visits every cookie owner.
+app.post("/v1/auth/browser-sign-out/start", async (c) => {
+  if (c.req.header("origin") !== c.env.APP_ORIGIN) throw new HTTPException(403);
+  const headers = new Headers(c.req.raw.headers);
+  headers.set("content-type", "application/json");
+  headers.delete("content-length");
+  headers.delete("authorization");
+  const result = await c.var.auth.handler(
+    new Request(new URL("/v1/auth/sign-out", c.req.url), {
+      method: "POST",
+      headers,
+      body: "{}",
+    }),
+  );
+  if (!result.ok) throw new HTTPException(502, { message: "Could not sign out. Try again." });
+  for (const cookie of result.headers.getSetCookie())
+    c.header("Set-Cookie", cookie, { append: true });
+  c.header("Cache-Control", "no-store");
+  return c.redirect(c.env.APP_ORIGIN, 303);
+});
 app.on(["GET", "POST"], "/v1/auth/*", (c) => c.var.auth.handler(c.req.raw));
 app.get("/.well-known/*", (c) => c.var.auth.handler(c.req.raw));
 app.route("/otter", identity);

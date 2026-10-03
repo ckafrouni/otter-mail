@@ -332,6 +332,30 @@ describe("sign-in", () => {
 });
 
 describe("devices", () => {
+  it("supports browser sign-out in standalone development without ending a different device", async () => {
+    const response = await signInRequest(
+      await idToken("browser-logout@example.com", { sub: "browser-logout" }),
+    );
+    const token = response.headers.get("set-auth-token")!;
+    const cookie = response.headers
+      .getSetCookie()
+      .map((value) => value.split(";")[0])
+      .join("; ");
+    const other = await signIn("browser-logout@example.com", "browser-logout");
+    const logout = (origin: string) =>
+      fetch(`${base}/v1/auth/browser-sign-out/start`, {
+        method: "POST",
+        headers: { origin, cookie, authorization: `Bearer ${other.token}` },
+        redirect: "manual",
+      });
+    expect((await logout("https://evil.example")).status).toBe(403);
+    expect((await call("GET", "/v1/me", token)).status).toBe(200);
+    const signedOut = await logout(APP_ORIGIN);
+    expect(signedOut.status).toBe(303);
+    expect(signedOut.headers.get("location")).toBe(APP_ORIGIN);
+    expect((await call("GET", "/v1/me", token)).status).toBe(401);
+    expect((await call("GET", "/v1/me", other.token)).status).toBe(200);
+  });
   it("lists each signed-in device", async () => {
     const mac1 = await signIn("devices@example.com", "devices-sub");
     await signIn("devices@example.com", "devices-sub");

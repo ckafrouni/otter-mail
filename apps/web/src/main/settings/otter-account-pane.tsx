@@ -186,7 +186,7 @@ function SignedInPane({ state }: { state: OtterAccountState }) {
               disabled={busy}
               onClick={() => run(otterApi.signOut, "Couldn't sign out")}
             >
-              Sign out
+              Sign out of Otter
             </Btn>
           }
         />

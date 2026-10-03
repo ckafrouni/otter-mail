@@ -49,10 +49,20 @@ The old organization header and list endpoint remain read compatibility for inst
 Accounts uses host-only `__Host-otter-accounts.*` cookies. Mail cookies retain their
 `mail.otterware.app` scope; Drive cookies are host-only. Never
 broaden either to `.otterware.app`, which includes executable uploaded content.
-Drive sign-out ends the local session. Revoking a Mail browser session sends signed OIDC
-back-channel logout to its associated Drive browser sessions. Delivery is best effort
-and cannot guarantee immediate revocation if Drive is unavailable. CLI sessions and API
-keys are independent of an individual browser session.
+The Mail landing page and Drive login page check Accounts for an existing browser session
+and start their normal OIDC sign-in automatically when one exists. The status check uses
+credentialed CORS restricted to the two app origins and exposes no identity or token.
+
+Both web apps' **Sign out of Otter** buttons navigate through exact-origin POST forms:
+Accounts ends its browser session, the Mail relay clears its browser session and cookie,
+then Drive clears its browser session and cookie. This also clears preserved legacy sessions
+that predate Accounts. Every hop rejects untrusted origins; return destinations are fixed.
+A failed hop stops with an error instead of reporting successful logout. Other browsers,
+native Mail sessions, CLI sessions and API keys remain signed in.
+
+Revoking a device session still sends signed OIDC back-channel logout to associated Drive
+sessions. That notification is best effort if Drive is unavailable; explicit browser sign-out
+also visits Drive directly, so it does not rely on notification delivery.
 
 Issuing a Drive identity records an `identity_apps` link. The legacy Mail delete endpoint
 refuses linked identities before removing any sessions. `/otter/account` requires a recent
