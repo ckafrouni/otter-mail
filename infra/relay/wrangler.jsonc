@@ -22,6 +22,9 @@
     },
   ],
   "durable_objects": { "bindings": [{ "name": "USER_HUB", "class_name": "UserHub" }] },
+  "services": [
+    { "binding": "ACCOUNTS", "service": "otter-accounts", "entrypoint": "MailIdentity" },
+  ],
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserHub"] }],
   // The web app's tunnel, per user and minute (periods are 10 or 60 seconds):
   // to the servers of their IMAP mailboxes, and to any other host (checking a
@@ -37,6 +40,8 @@
   ],
   // Secrets (`wrangler secret put`): BETTER_AUTH_SECRET, GOOGLE_WEB_CLIENT_SECRET.
   "vars": {
+    "IDENTITY_MODE": "accounts",
+    "ACCOUNTS_ORIGIN": "https://accounts.otterware.app",
     "BETTER_AUTH_URL": "https://relay.mail.otterware.app",
     // The apps' OAuth clients in the otter-mail project: "Desktop app", "iOS"
     // (the iPhone app, comma-separated: development and App Store bundle IDs),

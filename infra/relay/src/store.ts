@@ -16,6 +16,31 @@ export type Db = DrizzleD1Database<typeof schema>;
 
 export const openDb = (d1: D1Database): Db => drizzle(d1, { schema, casing: "snake_case" });
 
+/** Mail's local profile is a projection; only Accounts can authenticate it. */
+export async function ensureUser(
+  db: D1Database,
+  user: { id: string; name: string; email: string; emailVerified: boolean; image?: string | null },
+): Promise<void> {
+  await db
+    .prepare(`INSERT INTO user (id, name, email, email_verified, image, created_at, updated_at)
+    SELECT ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM deleted_identity WHERE user_id = ?)
+    ON CONFLICT(id) DO UPDATE SET name=excluded.name, email=excluded.email,
+      email_verified=excluded.email_verified, image=excluded.image, updated_at=excluded.updated_at
+    WHERE name IS NOT excluded.name OR email IS NOT excluded.email
+      OR email_verified IS NOT excluded.email_verified OR image IS NOT excluded.image`)
+    .bind(
+      user.id,
+      user.name,
+      user.email,
+      Number(user.emailVerified),
+      user.image ?? null,
+      Date.now(),
+      Date.now(),
+      user.id,
+    )
+    .run();
+}
+
 const accountFields = {
   email: linkedAccounts.email,
   provider: linkedAccounts.provider,

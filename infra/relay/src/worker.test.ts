@@ -17,6 +17,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { createLocalJWKSet, exportJWK, generateKeyPair, jwtVerify, SignJWT } from "jose";
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 import { unstable_startWorker } from "wrangler";
+import { localConfig } from "../scripts/local-config.ts";
 import type { ListProjectsResponse, Project } from "@otter-mail/contracts/projects";
 import type {
   CreateAgentTokenResponse,
@@ -84,11 +85,17 @@ beforeAll(async () => {
   mailTarget = `127.0.0.1:${(mailServer.address() as net.AddressInfo).port}`;
 
   persistDir = fs.mkdtempSync(path.join(os.tmpdir(), "otter-relay-test-"));
+  // This suite exercises the local standalone identity. The central service has
+  // its own integration suite; do not discover or call deployed services here.
+  const config = path.join(persistDir, "wrangler.jsonc");
+  fs.writeFileSync(config, localConfig());
   execFileSync(
     "pnpm",
     [
       "exec",
       "wrangler",
+      "--config",
+      config,
       "d1",
       "migrations",
       "apply",
@@ -101,8 +108,9 @@ beforeAll(async () => {
   );
 
   worker = await unstable_startWorker({
-    config: path.join(root, "wrangler.jsonc"),
+    config,
     bindings: {
+      IDENTITY_MODE: { type: "plain_text", value: "legacy" },
       GOOGLE_CLIENT_ID: { type: "plain_text", value: CLIENT_ID },
       GOOGLE_IOS_CLIENT_ID: {
         type: "plain_text",

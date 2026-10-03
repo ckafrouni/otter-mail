@@ -31,3 +31,6 @@ tmp/
 # Wrangler local secrets (infra/relay)
 .dev.vars
 apps/ios/.build/
+
+# Generated standalone relay config for local development.
+infra/relay/.wrangler.local.jsonc

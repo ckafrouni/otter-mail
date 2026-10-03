@@ -1,9 +1,22 @@
 # Shared Otter identity
 
-Mail's existing Better Auth users are the Otter identity. The issuer is
-`https://relay.mail.otterware.app/v1/auth`; discovery is at
-`/v1/auth/.well-known/openid-configuration`. Existing Mail sign-in, Google callbacks,
-cookies, bearer tokens, user IDs and auth secrets stay in place.
+[Otter Accounts](https://github.com/otterware-app/otter-accounts) owns the shared Better Auth
+identity at `https://accounts.otterware.app/v1/auth`. It has its own Cloudflare Worker and
+D1 database; Mail retains only the local user profile needed by its application tables.
+Discovery is at `/v1/auth/.well-known/openid-configuration` on Accounts.
+
+Mail's existing Google identities, user IDs, session tokens, auth secret and signing keys
+are preserved. Installed clients still call the Mail relay: its private `ACCOUNTS` binding
+forwards auth requests and verifies API sessions. The relay's `IdentityLifecycle` RPC closes
+revoked sessions' WebSockets and deletes Mail data when Accounts deletes an identity.
+Neither RPC interface is exposed over public HTTP.
+
+Mail browser sign-in uses the fixed `otter-mail` OIDC client with S256 PKCE, a host-bound
+state cookie and the exact callback `https://relay.mail.otterware.app/v1/auth/callback/otter`.
+The callback validates the ID token and sets the original Mail cookie for the central session.
+Google's existing `/v1/auth/callback/google` registration remains: requests for new Accounts
+flows redirect to Accounts, where Better Auth verifies the original host-bound state cookie.
+Gmail mailbox authorization and sealed refresh tokens stay in the Mail relay.
 
 Drive is the fixed first-party client `otter-drive`: authorization code + S256 PKCE,
 exact redirects, and only `openid profile email`. Dynamic registration is disabled.
@@ -33,7 +46,8 @@ The old organization header and list endpoint remain read compatibility for inst
 
 ## Sessions and deletion
 
-Mail cookies retain their `mail.otterware.app` scope; Drive cookies are host-only. Never
+Accounts uses host-only `__Host-otter-accounts.*` cookies. Mail cookies retain their
+`mail.otterware.app` scope; Drive cookies are host-only. Never
 broaden either to `.otterware.app`, which includes executable uploaded content.
 Drive sign-out ends the local session. Revoking a Mail browser session sends signed OIDC
 back-channel logout to its associated Drive browser sessions. Delivery is best effort
@@ -49,7 +63,23 @@ released, Drive atomically removes the user's folders, memberships, keys and ses
 retains a subject tombstone. Documents in other people's shared drives remain. Mail then
 removes the app link and identity. Retrying partial failures is idempotent.
 
-## Rollout
+## Moving to the independent Accounts service
+
+The Accounts repo owns its deployment config, identity schema and tests. This repo owns
+Mail's profile projection and lifecycle adapter. The Drive repo configures its issuer.
+All three deploy separately; Otter Code still uses Clerk.
+
+Pause relay account requests with `IDENTITY_MODE=paused` while copying the auth tables into
+Accounts. Preserve auth secrets before import. Keep Accounts in `MAINTENANCE=true` until
+counts and foreign keys match. Then enable Accounts, set the relay to `IDENTITY_MODE=accounts`,
+and update Drive's issuer. Existing Mail sessions remain valid through the private binding.
+Remove stale authentication rows from Mail after verification; do not remove its user profiles.
+Do not roll back to the old identity database after the new service has accepted writes.
+
+For standalone local Mail development and tests, `scripts/local-config.ts` removes the service
+binding and selects the local identity implementation. Production always uses Accounts.
+
+## Original Mail/Drive identity migration
 
 1. Back up both production D1 databases privately and record Time Travel bookmarks and
    user/session/document/version/file/key counts. Exports contain authentication material.

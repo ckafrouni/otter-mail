@@ -8,6 +8,7 @@
  */
 
 import { zValidator } from "@hono/zod-validator";
+import { WorkerEntrypoint } from "cloudflare:workers";
 import { Hono } from "hono";
 import { bearerAuth } from "hono/bearer-auth";
 import { cors } from "hono/cors";
@@ -42,6 +43,13 @@ export { UserHub } from "./user-hub.ts";
 
 export interface Env {
   DB: D1Database;
+  /** Private compatibility adapter to the independent Otter Accounts service. */
+  ACCOUNTS?: {
+    fetch(request: Request): Promise<Response>;
+    getSession(headers: Record<string, string>): ReturnType<Auth["api"]["getSession"]>;
+  };
+  IDENTITY_MODE?: "legacy" | "paused" | "accounts";
+  ACCOUNTS_ORIGIN?: string;
   USER_HUB: DurableObjectNamespace<UserHub>;
   /** The desktop app's Google OAuth client ("Desktop app" type). */
   GOOGLE_CLIENT_ID: string;
@@ -121,6 +129,21 @@ app.use("/v1/*", (c, next) =>
 );
 
 app.use(async (c, next) => {
+  if (c.env.IDENTITY_MODE === "paused" && !c.req.path.startsWith("/push/")) {
+    c.header("Retry-After", "60");
+    return c.json({ error: "Account maintenance in progress. Please try again shortly." }, 503);
+  }
+  if (
+    c.env.IDENTITY_MODE === "accounts" &&
+    (c.req.path.startsWith("/v1/auth/") ||
+      c.req.path.startsWith("/.well-known/") ||
+      c.req.path.startsWith("/otter/"))
+  ) {
+    if (!c.env.ACCOUNTS) return c.json({ error: "Accounts is unavailable." }, 503);
+    if (c.req.path.startsWith("/otter/"))
+      return c.redirect(`${c.env.ACCOUNTS_ORIGIN}${c.req.path}${new URL(c.req.url).search}`, 307);
+    return c.env.ACCOUNTS.fetch(c.req.raw);
+  }
   const db = store.openDb(c.env.DB);
   c.set("db", db);
   c.set("auth", createAuth(c.env, db));
@@ -147,9 +170,13 @@ app.route("/otter", identity);
 const authed = new Hono<App>();
 
 authed.use(async (c, next) => {
-  const found = await c.var.auth.api.getSession({ headers: c.req.raw.headers });
+  const central = c.env.IDENTITY_MODE === "accounts";
+  const found = central
+    ? await c.env.ACCOUNTS?.getSession(Object.fromEntries(c.req.raw.headers))
+    : await c.var.auth.api.getSession({ headers: c.req.raw.headers });
   if (!found) throw new HTTPException(401, { message: "Not signed in." });
   const { session, user } = found;
+  if (central) await store.ensureUser(c.env.DB, user);
   c.set("session", {
     id: session.id,
     user: { id: user.id, email: user.email, name: user.name || null, picture: user.image ?? null },
@@ -596,5 +623,21 @@ app.post(
     return c.body(null, 204);
   },
 );
+
+/** Account lifecycle calls are private Worker RPC, never public HTTP routes. */
+export class IdentityLifecycle extends WorkerEntrypoint<Env> {
+  async disconnect(userId: string, sessionId?: string): Promise<void> {
+    await hub(this.env, userId).disconnect(sessionId);
+  }
+  async deleteUser(userId: string): Promise<void> {
+    await this.env.DB.batch([
+      this.env.DB.prepare("INSERT OR IGNORE INTO deleted_identity (user_id) VALUES (?)").bind(
+        userId,
+      ),
+      this.env.DB.prepare("DELETE FROM user WHERE id = ?").bind(userId),
+    ]);
+    await this.disconnect(userId);
+  }
+}
 
 export default app;

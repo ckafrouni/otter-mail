@@ -5,7 +5,7 @@
   "description": "relay.mail.otterware.app: Otter account sign-in, linked accounts and realtime Gmail notifications.",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --local-upstream localhost:8787 --var BETTER_AUTH_URL:http://localhost:8787 --var APP_ORIGIN:http://localhost:5833 --var COOKIE_DOMAIN: --var TUNNEL_ALLOW_PRIVATE:true",
+    "dev": "node scripts/dev.ts --local-upstream localhost:8787 --var IDENTITY_MODE:legacy --var BETTER_AUTH_URL:http://localhost:8787 --var APP_ORIGIN:http://localhost:5833 --var COOKIE_DOMAIN: --var TUNNEL_ALLOW_PRIVATE:true",
     "deploy": "wrangler d1 migrations apply otter-mail-relay --remote && wrangler deploy",
     "smoke": "node scripts/smoke.ts",
     "test": "vp test run",

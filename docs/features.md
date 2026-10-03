@@ -288,8 +288,10 @@ claude.ai connectors) can't reach a server on the Mac.
 
 The Google-backed Otter identity also signs in to Otter Drive. Drive receives only identity
 claims; Gmail authorization stays with Mail. Existing Mail accounts and sessions keep their IDs.
-Accounts used by Drive are deleted through the relay's `/otter/account` page, which confirms
-the effect on both apps and requires transferring any last-owner Drive teams first. Older Mail
+Sign-in and account management live at `accounts.otterware.app`, an independent service with
+its own identity database. Mail's old endpoints remain compatible with installed clients.
+Accounts used by Drive are deleted through the central account page, which confirms
+the effect on both apps and requires transferring or deleting owned shared drives first. Older Mail
 clients receive a link to that page instead of deleting a shared identity without confirmation.
 
 ## Google OAuth scopes

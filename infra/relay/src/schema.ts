@@ -32,6 +32,11 @@ export const user = sqliteTable("user", {
   updatedAt: updatedAt(),
 });
 
+/** Prevents an in-flight request from restoring a deleted Accounts profile. */
+export const deletedIdentity = sqliteTable("deleted_identity", {
+  userId: text().primaryKey(),
+});
+
 /** One per signed-in device. */
 export const session = sqliteTable(
   "session",

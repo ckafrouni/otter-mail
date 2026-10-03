@@ -137,3 +137,15 @@ credentials (`wrangler login`, or `CLOUDFLARE_API_TOKEN`).
 Secrets (`wrangler secret put …`): `BETTER_AUTH_SECRET` (also keys the Gmail token sealing),
 `GOOGLE_WEB_CLIENT_SECRET` (the "Web application" OAuth client, whose ID is `GOOGLE_WEB_CLIENT_ID`
 in `wrangler.jsonc`). Locally, put them in `.dev.vars` (gitignored).
+
+## Shared identity service
+
+Production authentication is owned by [Otter Accounts](https://github.com/otterware-app/otter-accounts),
+with a dedicated Worker and D1 database at `accounts.otterware.app`. The relay keeps legacy
+Mail auth URLs working through the private `ACCOUNTS` service binding (`MailIdentity` entrypoint).
+`IdentityLifecycle` handles session disconnects and account deletion in Mail. Mail's Google Gmail
+permissions, sealed refresh tokens, profiles and application data remain here. See
+[shared identity](../../docs/shared-identity.md) for the compatibility and rollout details.
+
+`pnpm dev` generates a standalone local config without the production service binding; its
+local database and fake/developer identities remain independent of production Accounts.
