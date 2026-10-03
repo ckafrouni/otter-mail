@@ -286,6 +286,12 @@ claude.ai connectors) can't reach a server on the Mac.
 | Sign out; devices, sign out a device | ✓        | ✓        | ✓                                   |
 | Delete account                       | ✓        | ✓        | ✓                                   |
 
+The Google-backed Otter identity also signs in to Otter Drive. Drive receives only identity
+claims; Gmail authorization stays with Mail. Existing Mail accounts and sessions keep their IDs.
+Accounts used by Drive are deleted through the relay's `/otter/account` page, which confirms
+the effect on both apps and requires transferring any last-owner Drive teams first. Older Mail
+clients receive a link to that page instead of deleting a shared identity without confirmation.
+
 ## Google OAuth scopes
 
 What each scope in `GMAIL_SCOPES` (`packages/contracts/src/index.ts`) is for:

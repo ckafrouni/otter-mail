@@ -30,6 +30,7 @@ import { PROJECT_LIMITS, type ListProjectsResponse } from "@otter-mail/contracts
 import { createAuth, googleClientIds, googleKeys, type Auth } from "./auth.ts";
 import * as gmail from "./gmail.ts";
 import { InvalidTokenError, verifyGoogleJwt } from "./google-jwt.ts";
+import identity from "./identity.ts";
 import * as mcp from "./mcp.ts";
 import * as preferences from "./preferences.ts";
 import * as projects from "./projects.ts";
@@ -52,6 +53,8 @@ export interface Env {
   GOOGLE_WEB_CLIENT_SECRET: string;
   /** Where the web app runs (https://mail.otterware.app): trusted for CORS and redirects. */
   APP_ORIGIN: string;
+  /** The first-party Drive app, for the shared account lifecycle. */
+  DRIVE_ORIGIN: string;
   /** The session cookie's domain, shared with the web app ("mail.otterware.app"); unset locally. */
   COOKIE_DOMAIN?: string;
   /** Pub/Sub topic Gmail publishes to (`projects/…/topics/…`). */
@@ -83,7 +86,7 @@ export interface Env {
 
 type Session = { id: string; user: RelayUser };
 
-type App = { Bindings: Env; Variables: { db: store.Db; auth: Auth; session: Session } };
+export type App = { Bindings: Env; Variables: { db: store.Db; auth: Auth; session: Session } };
 
 /** Verifies a Google ID token issued to one of the apps. */
 async function verifyIdToken(env: Env, idToken: string) {
@@ -136,6 +139,8 @@ app.get("/", (c) => c.text("Otter Mail relay\n"));
 
 /** Sign-in, sign-out, devices and account deletion. */
 app.on(["GET", "POST"], "/v1/auth/*", (c) => c.var.auth.handler(c.req.raw));
+app.get("/.well-known/*", (c) => c.var.auth.handler(c.req.raw));
+app.route("/otter", identity);
 
 // ── Signed-in routes ────────────────────────────────────────────────────────
 

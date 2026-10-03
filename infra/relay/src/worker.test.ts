@@ -14,7 +14,7 @@ import * as path from "node:path";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { exportJWK, generateKeyPair, SignJWT } from "jose";
+import { createLocalJWKSet, exportJWK, generateKeyPair, jwtVerify, SignJWT } from "jose";
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 import { unstable_startWorker } from "wrangler";
 import type { ListProjectsResponse, Project } from "@otter-mail/contracts/projects";
@@ -1267,5 +1267,119 @@ describe("Gmail pushes next to IMAP mailboxes", () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(mailEvents(device.events)).toEqual([]);
     device.socket.close();
+  });
+});
+
+// The shared account uses the existing Mail identity and an app-scoped code.
+describe("Otter identity provider", () => {
+  const callback = "https://drive.otterware.app/api/auth/callback/otter";
+  const verifier = "a".repeat(64);
+  async function authorize(token: string, overrides: Record<string, string> = {}) {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+    const query = new URLSearchParams({
+      client_id: "otter-drive",
+      redirect_uri: callback,
+      response_type: "code",
+      scope: "openid profile email",
+      state: "drive-state",
+      nonce: "drive-nonce",
+      code_challenge: Buffer.from(digest).toString("base64url"),
+      code_challenge_method: "S256",
+      ...overrides,
+    });
+    const response = await fetch(`${base}/v1/auth/oauth2/authorize?${query}`, {
+      headers: { cookie: `__Secure-better-auth.session_token=${token}`, accept: "text/html" },
+      redirect: "manual",
+    });
+    // Node fetch sends Sec-Fetch-Mode: cors; the provider returns its redirect as JSON.
+    if (response.status === 200) {
+      const data = (await response.json()) as { redirect?: boolean; url?: string };
+      expect(data.redirect).toBe(true);
+      return Response.redirect(data.url!, 302);
+    }
+    return response;
+  }
+  function exchange(code: string, codeVerifier = verifier) {
+    return fetch(`${base}/v1/auth/oauth2/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: "otter-drive",
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: callback,
+        code_verifier: codeVerifier,
+      }),
+    });
+  }
+  it("publishes discovery and keeps shared sign-in cookies away from content hosts", async () => {
+    const response = await call("GET", "/v1/auth/.well-known/openid-configuration");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      issuer: "https://relay.mail.otterware.app/v1/auth",
+      code_challenge_methods_supported: ["S256"],
+    });
+    const page = await call("GET", "/otter/sign-in");
+    expect(page.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+    expect(await page.text()).toContain("Continue with Google");
+  });
+  it("issues a verified identity for Drive without moving the Mail user or ending their session", async () => {
+    const { token, user } = await signIn("shared-identity@example.com");
+    const authorization = await authorize(token);
+    expect(authorization.status, await authorization.clone().text()).toBe(302);
+    const redirect = new URL(authorization.headers.get("location")!);
+    expect(redirect.origin + redirect.pathname).toBe(callback);
+    expect(redirect.searchParams.get("state")).toBe("drive-state");
+    const code = redirect.searchParams.get("code")!;
+    expect(code).toBeTruthy();
+    const response = await exchange(code);
+    const tokens = (await response.json()) as {
+      id_token: string;
+      access_token: string;
+      error?: string;
+    };
+    expect(response.status, JSON.stringify(tokens)).toBe(200);
+    const keys = await (await call("GET", "/v1/auth/jwks")).json();
+    const { payload } = await jwtVerify(
+      tokens.id_token,
+      createLocalJWKSet(keys as Parameters<typeof createLocalJWKSet>[0]),
+      { issuer: "https://relay.mail.otterware.app/v1/auth", audience: "otter-drive" },
+    );
+    expect(payload).toMatchObject({
+      sub: user.id,
+      email: user.email,
+      email_verified: true,
+      nonce: "drive-nonce",
+    });
+    expect(payload.sid).toBeTypeOf("string");
+    expect((await call("GET", "/v1/me", token)).status).toBe(200);
+    expect((await exchange(code)).status).toBe(400);
+    // A legacy Mail client's deletion must be rejected before deleting any session.
+    const deletion = await call("POST", "/v1/auth/delete-user", token, {});
+    expect(deletion.status).toBe(403);
+    expect(await deletion.text()).toContain("also signs in to Otter Drive");
+    expect((await call("GET", "/v1/me", token)).status).toBe(200);
+    // An OAuth access token is not a Mail session and cannot read mail settings.
+    expect((await call("GET", "/v1/me", tokens.access_token)).status).toBe(401);
+  });
+  it("rejects an unregistered redirect and a wrong PKCE verifier", async () => {
+    const { token } = await signIn("pkce@example.com");
+    const invalid = await authorize(token, {
+      redirect_uri: "https://usercontent.otterware.app/callback",
+    });
+    expect(invalid.headers.get("location") ?? "").not.toContain(
+      "https://usercontent.otterware.app",
+    );
+    expect(invalid.status).toBe(302);
+    expect(invalid.headers.get("location")).toContain("/error?");
+    const authorization = await authorize(token);
+    const code = new URL(authorization.headers.get("location")!).searchParams.get("code")!;
+    expect((await exchange(code, "b".repeat(64))).status).toBe(401);
+  });
+  it("requires an explicit same-origin confirmation for shared deletion", async () => {
+    const { token } = await signIn("delete-origin@example.com");
+    const response = await call("POST", "/otter/delete-account", token, { confirmation: "DELETE" });
+    expect(response.status).toBe(403);
+    expect((await call("GET", "/v1/me", token)).status).toBe(200);
   });
 });

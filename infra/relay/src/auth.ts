@@ -7,9 +7,12 @@
  * device, so Settings can list and sign out devices.
  */
 
+import { oauthProvider } from "@better-auth/oauth-provider";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { bearer } from "better-auth/plugins";
+import { APIError } from "better-auth/api";
+import { bearer, jwt } from "better-auth/plugins";
+import { eq } from "drizzle-orm";
 
 import { GOOGLE_JWKS_URL, remoteKeys, verifyGoogleJwt } from "./google-jwt.ts";
 import * as schema from "./schema.ts";
@@ -32,7 +35,7 @@ const hub = (env: Env, userId: string) => env.USER_HUB.get(env.USER_HUB.idFromNa
 
 export function createAuth(env: Env, db: Db) {
   return betterAuth({
-    appName: "Otter Mail",
+    appName: "Otter",
     baseURL: env.BETTER_AUTH_URL,
     basePath: "/v1/auth",
     secret: env.BETTER_AUTH_SECRET,
@@ -61,8 +64,49 @@ export function createAuth(env: Env, db: Db) {
       // Deleting the account needs no recent sign-in; the app asks for confirmation.
       freshAge: 0,
     },
-    user: { deleteUser: { enabled: true } },
-    plugins: [bearer()],
+    // Old Mail clients only confirm deleting Mail data. Shared accounts must
+    // confirm the wider effect on the account page before this endpoint runs.
+    user: {
+      deleteUser: {
+        enabled: true,
+        beforeDelete: async (user) => {
+          const linked = await db.query.identityApps.findFirst({
+            where: eq(schema.identityApps.userId, user.id),
+          });
+          if (linked)
+            throw new APIError("FORBIDDEN", {
+              message: `This account also signs in to Otter Drive. Manage deletion at ${env.BETTER_AUTH_URL}/otter/account.`,
+            });
+        },
+      },
+    },
+    disabledPaths: ["/token"],
+    plugins: [
+      bearer(),
+      jwt({ jwks: { keyPairConfig: { alg: "RS256" } }, disableSettingJwtHeader: true }),
+      oauthProvider({
+        loginPage: `${env.BETTER_AUTH_URL}/otter/sign-in`,
+        consentPage: `${env.BETTER_AUTH_URL}/otter/consent`,
+        scopes: ["openid", "profile", "email"],
+        grantTypes: ["authorization_code"],
+        allowDynamicClientRegistration: false,
+        clientPrivileges: () => false,
+        customIdTokenClaims: async ({ user, metadata, scopes }) => {
+          if (metadata?.app === "otter-drive") {
+            await db
+              .insert(schema.identityApps)
+              .values({ userId: user.id, appId: "otter-drive" })
+              .onConflictDoNothing();
+          }
+          return {
+            ...(scopes.includes("email")
+              ? { email: user.email, email_verified: user.emailVerified }
+              : {}),
+            ...(scopes.includes("profile") ? { name: user.name, picture: user.image } : {}),
+          };
+        },
+      }),
+    ],
     databaseHooks: {
       session: {
         delete: {

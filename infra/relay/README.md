@@ -75,6 +75,8 @@ Mac ◀──── WebSocket /v1/events ◀── UserHub (Durable Object, one 
   the web app), sessions (bearer tokens for the Mac app, a cookie shared with mail.otterware.app
   for the web app; one per device, 90 days, renewed with use), device list, account deletion.
   Signing a session out closes its sockets.
+- `src/identity.ts`: shared Otter sign-in and account deletion pages. Drive uses the relay as
+  an OIDC provider with PKCE; see [shared identity](../../docs/shared-identity.md).
 - `src/gmail.ts`: the web app's Gmail sign-in popup, and token refreshes.
 - `src/preferences.ts`: merging preference sections, sealing the Hermes key.
 - `src/projects.ts`: projects, their threads and links; the project tools' store.

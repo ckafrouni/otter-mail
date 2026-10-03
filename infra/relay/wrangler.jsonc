@@ -46,6 +46,7 @@
     "GOOGLE_WEB_CLIENT_ID": "187875144740-drhr59ablkv4ovonrjisd7fj5dv28d6o.apps.googleusercontent.com",
     // The web app: trusted for CORS and sign-in redirects; shares the session cookie.
     "APP_ORIGIN": "https://mail.otterware.app",
+    "DRIVE_ORIGIN": "https://drive.otterware.app",
     "COOKIE_DOMAIN": "mail.otterware.app",
     "PUSH_TOPIC": "projects/otter-mail/topics/gmail-push",
     "PUSH_AUDIENCE": "https://relay.mail.otterware.app/push/gmail",
