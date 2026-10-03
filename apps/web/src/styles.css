@@ -664,7 +664,7 @@ html[data-platform="web"] {
     scale: 0.6;
   }
 }
-/* The setup's field of mail, drifting as on the landing page. */
+/* The setup's field of mail, drifting. */
 @keyframes mail-field-slide {
   to {
     transform: translateX(-50%);

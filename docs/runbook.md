@@ -12,7 +12,7 @@ breaks. The details behind each step are in `docs/release.md`, `infra/relay/READ
 
 ## Web app and relay
 
-Cloudflare Workers Builds deploys `site/` (https://mail.otterware.app) and `infra/relay`
+Cloudflare Workers Builds deploys `site/` (the web app, https://mail.otterware.app) and `infra/relay`
 (https://relay.mail.otterware.app) on every push to `main` that touches them. The relay's
 database and secrets stay with the existing workers. The old mail site redirects to `.app`;
 the old relay still serves installed apps. See [domain migration](domain-migration.md) for

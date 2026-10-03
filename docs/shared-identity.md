@@ -49,9 +49,10 @@ The old organization header and list endpoint remain read compatibility for inst
 Accounts uses host-only `__Host-otter-accounts.*` cookies. Mail cookies retain their
 `mail.otterware.app` scope; Drive cookies are host-only. Never
 broaden either to `.otterware.app`, which includes executable uploaded content.
-The Mail landing page and Drive login page check Accounts for an existing browser session
-and start their normal OIDC sign-in automatically when one exists. The status check uses
-credentialed CORS restricted to the two app origins and exposes no identity or token.
+The Mail web app starts its normal OIDC sign-in as it opens when it has no session, and the
+Drive login page does when Accounts has one. otterware.app's nav checks Accounts too, to show
+"Account" instead of "Sign in". The status check uses credentialed CORS restricted to those
+origins and exposes no identity or token.
 
 Both web apps' **Sign out of Otter** buttons navigate through exact-origin POST forms:
 Accounts ends its browser session, the Mail relay clears its browser session and cookie,

@@ -7,9 +7,9 @@ description: Write an Otter Mail changelog note (changelog/<version>.md) in the 
 
 The changelog is how Otter Mail announces itself: marketing and brand as much
 as a record. Notes live in `changelog/<version>.md` at the repository root.
-The site shows them at https://mail.otterware.app/changelog, all on one page,
+The website shows them at https://otterware.app/mail/changelog, all on one page,
 newest first, with the versions down the side (each note's anchor is its
-version: /changelog/#0.5.17); the app only links there ("Changelog" in ⌘K, in the ?
+version: /mail/changelog/#0.5.17); the app only links there ("Changelog" in ⌘K, in the ?
 menu at the bottom of Settings, and on the update card). The format lives in `packages/shared/src/changelog.ts`.
 
 The iPhone app releases on its own (TestFlight) and isn't in this changelog.
@@ -37,9 +37,11 @@ its own. The file is named for the version it ships (or shipped) in; for one
 not out yet, the latest `vX.Y.Z` tag bumped the way the release will bump it.
 `gh release list --limit 1` shows the latest.
 
-A note for a version not released yet stays hidden: the site shows only the
+A note for a version not released yet stays hidden: the website shows only the
 versions up to the one `main` last released. So it's safe on `main` ahead of
-the release. A push to `main` that changes `changelog/` redeploys the site.
+the release. The website (otterware-app/website) copies `changelog/` and that
+version every hour, so a note shows there within the hour of landing or of its
+release; run its Mail changelog workflow to copy it sooner.
 
 The note is also the GitHub Release's: the Release workflow puts it above
 GitHub's generated notes, and when it lands after the release, the Changelog
@@ -107,7 +109,7 @@ Type what you want and Enter does it: commands you name come first, and mail sea
 
 ## Check it
 
-- Site: `pnpm --filter @otter-mail/site build`, then serve `site/dist` (e.g.
-  `python3 -m http.server --directory site/dist`) and open `/changelog/`.
-- `pnpm --filter @otter-mail/site test`: every note parses and every image it
+- `pnpm --filter @otter-mail/shared test`: every note parses and every image it
   shows exists.
+- The page itself: copy the note and its images into a checkout of the website
+  (`changelog/mail/`), then `pnpm dev` there and open `/mail/changelog/`.

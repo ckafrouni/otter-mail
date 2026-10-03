@@ -19,7 +19,7 @@ const repoRoot = NodePath.resolve(import.meta.dirname, "..");
 
 export function releaseNotes(version: string, text: string): string {
   const entry = parseChangelogEntry(version, text);
-  // The site serves the note's images at /changelog/images/<name>; the note's
+  // The website serves the note's images at /mail/changelog/images/<name>; the note's
   // sections go a level under its title.
   const body = entry.body
     .replace(/^## /gm, "### ")

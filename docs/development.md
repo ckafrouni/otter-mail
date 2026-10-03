@@ -17,7 +17,6 @@
 | `pnpm dev:web`           | The web app alone, against `VITE_RELAY_URL`.                                       |
 | `pnpm dev:demo`          | The web app on a made-up mailbox, no accounts (see [Demo mailbox](#demo-mailbox)). |
 | `pnpm dev:mail`          | A local IMAP server with a seeded mailbox (see [IMAP locally](#imap-locally)).     |
-| `pnpm dev:site`          | The website alone (landing page, changelog, legal pages) on :4321, from `site/`.   |
 | `pnpm dev:ios`           | Builds the iPhone app and runs it in the simulator (see `apps/ios/README.md`).     |
 | `pnpm ios:resources`     | Re-exports the themes and demo mailbox the iPhone app bundles.                     |
 | `pnpm start`             | Runs the built app unpackaged (`pnpm build` first).                                |
@@ -74,9 +73,10 @@ browser needed; otherwise it runs the same browser flow with identity scopes onl
 `pnpm --filter @otter-mail/relay dev`).
 
 The consent screen is published but not yet verified by Google, so sign-in shows an "unverified
-app" warning and is capped at 100 users. The home page, privacy policy and terms it links to live
-in `site/` and are served at https://mail.otterware.app; Cloudflare Workers Builds deploys them on
-every push to `main` that touches `site/` (as it does the relay, see `infra/relay/README.md`).
+app" warning and is capped at 100 users. The home page, privacy policy and terms it links to are
+on https://otterware.app/mail/ (the `website` repository); the web app, at
+https://mail.otterware.app, is `site/`, which Cloudflare Workers Builds deploys on every push to
+`main` that touches it (as it does the relay, see `infra/relay/README.md`).
 
 ## The web app
 
@@ -134,5 +134,5 @@ and trash, and plenty of non-ASCII names. Use it to build and test without your 
   to start over (close other demo tabs first).
 - Real builds leave all of it out: `__DEMO__` is `false` unless `VITE_DEMO=1`.
 
-`pnpm --filter @otter-mail/site build` assembles the deployable site (landing pages plus the
-app) in `site/dist`.
+`pnpm --filter @otter-mail/site build` assembles the deployable site (the web app) in
+`site/dist`.

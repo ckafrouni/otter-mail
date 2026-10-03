@@ -1,10 +1,11 @@
 /**
  * The changelog: short notes on Mac and web releases, `changelog/<version>.md`
- * at the repository root (images beside it in `changelog/images/`), on the
- * site at /changelog and on the version's GitHub Release
+ * at the repository root (images beside it in `changelog/images/`), on
+ * otterware.app/mail/changelog (the website copies them hourly) and on the
+ * version's GitHub Release
  * (scripts/changelog-release-notes.ts); the app only links there. A note is marketing, written
- * when the user asks for one, before or after its release: the site shows the
- * versions up to the one main last released. How to write one: the
+ * when the user asks for one, before or after its release: the website shows
+ * the versions up to the one main last released. How to write one: the
  * write-changelog skill (.agents/skills).
  */
 
@@ -73,6 +74,6 @@ export function changelogImageName(src: string): string | null {
   return match ? match[1]! : null;
 }
 
-/** The site's changelog, or one release's note there. */
+/** The changelog on otterware.app, or one release's note there. */
 export const changelogUrl = (version?: string | null) =>
-  `https://mail.otterware.app/changelog/${version ? `#${version}` : ""}`;
+  `https://otterware.app/mail/changelog/${version ? `#${version}` : ""}`;

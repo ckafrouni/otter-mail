@@ -143,7 +143,7 @@ const messageRoute = createRoute({
   component: () => null,
 });
 
-/** mail.otterware.app/app, the site's link to the app. */
+/** mail.otterware.app/app, the app's address before it moved to /. */
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "app",

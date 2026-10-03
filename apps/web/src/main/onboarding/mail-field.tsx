@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 
 /**
- * The landing page's backdrop (site/public/index.html): lines of
+ * The setup's backdrop: lines of
  * real-sounding mail drifting past, too soft to read. The middle stays clear
  * for the step in front of it, and the field fades out at the top and bottom.
  */

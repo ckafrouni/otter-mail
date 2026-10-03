@@ -1,11 +1,19 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
-import { changelogImageName } from "@otter-mail/shared/changelog";
-import { readChangelog } from "./changelog.ts";
+import { changelogImageName, parseChangelogEntry } from "./changelog.ts";
+
+const notes = NodePath.resolve(import.meta.dirname, "../../../changelog");
 
 describe("changelog", () => {
-  const entries = readChangelog();
+  const entries = NodeFS.readdirSync(notes)
+    .filter((name) => /^\d+\.\d+\.\d+\.md$/.test(name))
+    .map((name) =>
+      parseChangelogEntry(
+        name.slice(0, -3),
+        NodeFS.readFileSync(NodePath.join(notes, name), "utf8"),
+      ),
+    );
 
   it("parses every note", () => {
     expect(entries.length).toBeGreaterThan(0);
@@ -16,12 +24,14 @@ describe("changelog", () => {
   });
 
   it("finds every image a note shows", () => {
-    const images = NodePath.resolve(import.meta.dirname, "../../changelog/images");
     for (const e of entries) {
       for (const [, src] of e.body.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)/g)) {
         const name = changelogImageName(src!);
         expect(name, `${e.version}: ${src} should be images/<file>`).not.toBeNull();
-        expect(NodeFS.existsSync(NodePath.join(images, name!)), `${e.version}: ${src}`).toBe(true);
+        expect(
+          NodeFS.existsSync(NodePath.join(notes, "images", name!)),
+          `${e.version}: ${src}`,
+        ).toBe(true);
       }
     }
   });

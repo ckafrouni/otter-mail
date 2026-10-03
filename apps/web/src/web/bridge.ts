@@ -281,7 +281,7 @@ async function invoke<T>(channel: string, params?: unknown): Promise<T> {
     if (channel === "todoist:signIn") closeTodoistPopup();
     throw error;
   }
-  // Signed out (or the account deleted): back to the landing page.
+  // Signed out (or the account deleted): back to the start, which signs in again.
   if (channel === "otter:signOut" || channel === "otter:deleteAccount") location.assign("/");
   return result;
 }

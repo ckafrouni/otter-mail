@@ -9,7 +9,6 @@
     "dev:demo": "node scripts/dev-runner.ts dev:demo",
     "dev:mail": "node scripts/dev-mail.ts",
     "dev:desktop": "node scripts/dev-runner.ts dev:desktop",
-    "dev:site": "pnpm --filter @otter-mail/site dev",
     "start": "vp run --filter @otter-mail/desktop start",
     "build": "vp run --filter './apps/*' build",
     "build:translator": "node scripts/build-translator.ts",

@@ -56,12 +56,13 @@ when a feature lands or goes.
 - `assets/`: app icons like T3 Code's: `prod/` for releases, `dev/` for the blueprint variant that
   unpackaged runs wear. `pnpm icons:export` regenerates the dev icon and both `.icns` files.
 - `changelog/`: notes on Mac and web releases (`<version>.md`, images in `images/`), shown on
-  the site at /changelog and on the version's GitHub Release (workflows copy it there); the app
-  only links there. A note is marketing, written only when the user asks for one (the
+  otterware.app/mail/changelog (the website repository copies them hourly) and on the version's
+  GitHub Release (workflows copy it there); the app only links there. A note is marketing, written only when the user asks for one (the
   `write-changelog` skill). Format in `packages/shared/src/changelog.ts`.
-- `site/`: https://mail.otterware.app, a Cloudflare Worker: the landing page, privacy policy and
-  terms, and the web app (`/` shows the app when signed in, `/app` always, and so does any
-  other page that isn't a file: the app's own routes).
+- `site/`: https://mail.otterware.app, a Cloudflare Worker: the web app, at `/` and any other
+  page that isn't a file (the app's own routes). Otter Mail's page, privacy policy and terms are
+  on https://otterware.app/mail/ (the `website` repository, with every Otterware app's page);
+  their old addresses here redirect there.
 - Deploys: Cloudflare Workers Builds deploys `infra/relay` and `site/` on pushes to `main` that
   touch them; GitHub Actions smoke-tests the relay every 6 hours (keyless Google Cloud access).
 
@@ -86,8 +87,6 @@ it; the web app needs it (the relay keeps its Gmail sign-ins alive).
   a browser, e.g. the T3 preview). `pnpm dev:desktop` runs the Mac app (Vite dev server +
   main-process watcher + Electron with reload); `pnpm dev:web` the web app alone. Both apps render
   the same `apps/web`, so UI work is checked in the browser. See docs/development.md.
-- `pnpm dev:site`: the website alone (the landing page, changelog, privacy and terms) on :4321,
-  served from `site/` as you edit; a reload shows the change.
 - `pnpm dev:ios`: the iPhone app in the simulator (it has the same demo mailbox, from the welcome
   screen).
 - `pnpm dev:demo`: the web app on a seeded demo mailbox (a pretend Gmail, no Google or Otter

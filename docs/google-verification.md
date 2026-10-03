@@ -19,7 +19,7 @@ does the job; justifications below.
 
 ### Sensitive scopes (calendar.events.owned, contacts.readonly, contacts.other.readonly)
 
-> Otter Mail is a desktop email client for macOS (https://mail.otterware.app).
+> Otter Mail is a desktop email client for macOS (https://otterware.app/mail/).
 > calendar.events.owned: when a user receives a calendar invitation by email, Otter Mail shows the
 > event and lets the user Accept, Decline or reply Maybe from the message; the reply is written to
 > that event on the user's own primary calendar (events.list by the invitation's iCalUID, then
@@ -44,7 +44,7 @@ does the job; justifications below.
 
 Features: **Email client**.
 
-> Otter Mail is a full Gmail client for macOS (https://mail.otterware.app) that users sign in to
+> Otter Mail is a full Gmail client for macOS (https://otterware.app/mail/) that users sign in to
 > in place of the Gmail website. With this scope the user reads and searches their mail, sends,
 > replies and forwards, saves drafts, applies and removes labels, archives, marks read/unread,
 > moves mail to Trash or Spam, and permanently deletes messages when they empty Trash or Spam or

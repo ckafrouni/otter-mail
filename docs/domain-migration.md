@@ -33,8 +33,9 @@ The project and OAuth client IDs remain unchanged (`otter-mail`). In Google Auth
 - Redirect URI: `https://relay.mail.otterware.app/v1/auth/callback/google`
 - Redirect URI: `https://relay.mail.otterware.app/v1/gmail/callback`
 
-Branding uses the new home page, `https://mail.otterware.app/privacy/` and
-`https://mail.otterware.app/terms/`; authorised domains include both `otterware.app` and
+Branding uses the home page `https://otterware.app/mail/`, `https://otterware.app/mail/privacy/`
+and `https://otterware.app/mail/terms/` (they moved there from `mail.otterware.app`, which
+redirects); authorised domains include both `otterware.app` and
 `otterware.dev`. Verify ownership of the new domain in Google Search Console with the
 project owner's Google account, retaining the verification DNS record. Google's branding
 and data-access reviews are separate from deploying the app; the previously approved
@@ -81,7 +82,7 @@ Native apps retain their local caches, credentials and sessions.
 
 ## Verification
 
-- Check the landing page, `/app`, `/privacy/` and `/terms/` on the new host over HTTPS.
+- Check the app, `/app`, and the redirects of `/privacy/` and `/terms/` on the new host over HTTPS.
 - Check old-host redirects with paths and query strings, including static asset URLs.
 - Check a cookie-authenticated request's CORS origin and session cookie domain on the relay.
 - Run relay tests and the production smoke test after changing push or GitHub trust settings.

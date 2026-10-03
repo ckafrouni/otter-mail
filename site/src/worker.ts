@@ -1,20 +1,22 @@
 /**
- * mail.otterware.app: the landing page for visitors, the web app for anyone
- * signed in to Otter Mail (the relay's session cookie is shared with this
- * domain). Everything else is static: /app (the app itself), /privacy,
- * /terms, /changelog, and the app's assets; and any other page is one of the
- * app's own (/you@gmail.com/INBOX/…, /settings/…), so it gets the app.
+ * mail.otterware.app: the web app, for every page that isn't one of its files
+ * (/you@gmail.com/INBOX/…, /settings/…); it signs in first if need be. Otter
+ * Mail's page, changelog, privacy policy and terms are on otterware.app: their
+ * old addresses here (in Google's consent screen, past releases' notes, links
+ * out there) go to them.
  */
 
 interface Env {
   ASSETS: Fetcher;
 }
 
+const SITE = "https://otterware.app/mail";
+
 /** A release's old page, now its note on the one changelog page. */
 const CHANGELOG_VERSION = /^\/changelog\/(\d+\.\d+\.\d+)\/?$/;
 
-/** better-auth's session cookie (the __Secure- prefix over https). */
-const SESSION_COOKIE = /(?:^|;\s*)(?:__Secure-)?better-auth\.session_token=/;
+/** Pages that moved to otterware.app/mail/, and what is under them. */
+const MOVED = /^\/(?:changelog|privacy|terms)(?:\/|$)/;
 
 export default {
   async fetch(request, env) {
@@ -26,15 +28,19 @@ export default {
       return Response.redirect(url.toString(), 308);
     }
     const version = CHANGELOG_VERSION.exec(url.pathname)?.[1];
-    if (version) return Response.redirect(new URL(`/changelog/#${version}`, url).toString(), 301);
-    const signedIn = SESSION_COOKIE.test(request.headers.get("cookie") ?? "");
-    // "/app" serves app.html (with the app's relative asset paths still resolving from /).
-    const page = url.pathname === "/" && signedIn ? new URL("/app", url) : url;
-    const response = await env.ASSETS.fetch(new Request(page, request));
-    // A browser opening one of the app's pages (it routes them itself; it
-    // signs in first if need be). Missing files stay missing.
+    if (version) return Response.redirect(`${SITE}/changelog/#${version}`, 301);
+    if (MOVED.test(url.pathname)) {
+      const path =
+        url.pathname.endsWith("/") || url.pathname.includes(".")
+          ? url.pathname
+          : `${url.pathname}/`;
+      return Response.redirect(`${SITE}${path}`, 301);
+    }
+    const response = await env.ASSETS.fetch(request);
+    // A browser opening one of the app's pages (it routes them itself). Missing
+    // files stay missing.
     if (response.status === 404 && request.headers.get("accept")?.includes("text/html")) {
-      return env.ASSETS.fetch(new Request(new URL("/app", url), request));
+      return env.ASSETS.fetch(new Request(new URL("/", url), request));
     }
     return response;
   },

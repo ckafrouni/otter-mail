@@ -1,6 +1,6 @@
-// mail.otterware.app: Otter Mail's landing page, privacy policy and terms, and
-// the web app (apps/web), assembled in dist/ by scripts/build.ts. The Worker
-// redirects the old domain and picks, at /, the landing page or the app.
+// mail.otterware.app: the web app (apps/web), assembled in dist/ by
+// scripts/build.ts. The Worker redirects the old domain and the pages that moved
+// to otterware.app/mail/, and answers the app's own pages with the app.
 // Cloudflare Workers Builds deploys it on pushes to main
 // (`pnpm --filter @otter-mail/site run deploy`).
 {
@@ -11,7 +11,6 @@
     "directory": "./dist",
     "binding": "ASSETS",
     "html_handling": "auto-trailing-slash",
-    "not_found_handling": "404-page",
     // Every old-domain URL, including static assets and /app, must redirect.
     "run_worker_first": true,
   },

@@ -21,12 +21,6 @@
       "previewUrl": "http://localhost:5833"
     },
     {
-      "name": "Dev (website)",
-      "command": "pnpm dev:site",
-      "icon": "play",
-      "previewUrl": "http://localhost:4321"
-    },
-    {
       "name": "Dev (Mac app)",
       "command": "pnpm dev:desktop",
       "icon": "play"
